@@ -312,9 +312,9 @@ if st.session_state.auth_user is None:
                     index=0
                 )
                 strafatti_pw_input = st.text_input(
-                    "Password (al primo accesso inserisci il tuo Cognome):",
+                    "Password (al primo accesso per Stefano: Amministratore1968, per gli altri: Cognome):",
                     type="password",
-                    help="Es. per Stefano inserisci Pirani al primo accesso."
+                    help="Per Stefano inserisci Amministratore1968 al primo accesso, per gli altri il proprio Cognome."
                 )
                 submit_strafatti = st.form_submit_button("🚀 Entra nel Club Strafatti", type="primary", use_container_width=True)
 
@@ -389,10 +389,11 @@ header_left, header_right = st.columns([4, 1])
 with header_left:
     group_label = "🏆 Gruppo Strafatti" if current_user.group == "strafatti" else "🤝 Gruppo Amici"
     group_color = "#2ECC71" if current_user.group == "strafatti" else "#3498DB"
+    admin_badge = '<span style="color: #F1C40F; font-weight: bold; border-left: 1px solid #3b4963; padding-left: 10px;">👑 Amministratore di Sistema</span>' if current_user.is_admin else f'<span style="color: {group_color}; font-weight: bold; border-left: 1px solid #3b4963; padding-left: 10px;">{group_label}</span>'
     st.markdown(f"""
         <div class="user-header-pill">
             <span>🏌️‍♂️ Connesso: <b>{current_user.first_name} {current_user.last_name}</b></span>
-            <span style="color: {group_color}; font-weight: bold; border-left: 1px solid #3b4963; padding-left: 10px;">{group_label}</span>
+            {admin_badge}
         </div>
     """, unsafe_allow_html=True)
 
@@ -697,12 +698,18 @@ def render_strokes_lost_radar(strokes_lost):
 # =========================================================
 # MAIN DASHBOARD TABS
 # =========================================================
-nav_tab1, nav_tab2, nav_tab3, nav_tab4 = st.tabs([
+tab_titles = [
     "📊 Live Dashboard & Diagnosi PGA",
     "🏌️‍♂️ Profilo Personale & Sacca Mazze",
     "📈 Storico Partite & Trend",
     "🎯 Benchmark & Strokes Gained"
-])
+]
+if current_user.is_admin:
+    tab_titles.append("👑 Amministrazione & Utenti")
+
+all_tabs = st.tabs(tab_titles)
+nav_tab1, nav_tab2, nav_tab3, nav_tab4 = all_tabs[0], all_tabs[1], all_tabs[2], all_tabs[3]
+nav_admin = all_tabs[4] if current_user.is_admin else None
 
 
 # ---------------------------------------------------------
@@ -1030,7 +1037,70 @@ with nav_tab4:
         b1.metric("GIR %", f"{player_m['gir_pct']}%", delta=f"{diffs['gir_diff']}% vs Target")
         b2.metric("Fairway Hit %", f"{player_m['fairway_pct']}%", delta=f"{diffs['fairway_diff']}% vs Target")
         b3.metric("Media Putt (18b eq)", f"{player_m['putts_18h_equivalent']}", delta=f"{diffs['putts_diff']} putt", delta_color="normal")
-        b4.metric("Scrambling %", f"{player_m['scrambling_pct']}%", delta=f"{diffs['scrambling_diff']}% vs Target")
-
         st.markdown("---")
         st.markdown(f"**Dispersione Maggiore Identificata:** `{comparison['biggest_bottleneck']}` (+{comparison['max_strokes_lost']} colpi persi stimati)")
+
+
+# ---------------------------------------------------------
+# TAB 5: ADMIN & USERS MANAGEMENT (EXCLUSIVE FOR STEFANO)
+# ---------------------------------------------------------
+if current_user.is_admin and nav_admin:
+    with nav_admin:
+        st.subheader("👑 Pannello di Controllo Amministratore (Stefano)")
+        st.caption("Pannello riservato all'Amministratore di Sistema per visualizzare tutti i membri, reimpostare password e monitorare il circolo.")
+
+        all_users = auth_manager.get_all_users()
+
+        col_a1, col_a2, col_a3 = st.columns(3)
+        col_a1.metric("Membri Totali Iscritti", len(all_users))
+        strafatti_count = sum(1 for u in all_users if u.group == "strafatti")
+        amici_count = sum(1 for u in all_users if u.group == "amici")
+        col_a2.metric("Membri Gruppo Strafatti", strafatti_count)
+        col_a3.metric("Membri Gruppo Amici", amici_count)
+
+        st.markdown("---")
+        st.markdown("### 📋 Registro Membri & Credenziali")
+
+        users_table_data = []
+        for u in all_users:
+            role_tag = "👑 Admin" if u.is_admin else "Membro"
+            status_tag = "⚠️ Primo Accesso (In Attesa)" if u.must_change_password else "✅ Password Attiva"
+            users_table_data.append({
+                "User ID": u.user_id,
+                "Nome": u.first_name,
+                "Cognome": u.last_name,
+                "Gruppo": "Strafatti" if u.group == "strafatti" else "Amici",
+                "Ruolo": role_tag,
+                "Stato Password": status_tag,
+                "Provider IA": u.ai_config.provider.upper()
+            })
+
+        st.dataframe(pd.DataFrame(users_table_data), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.markdown("### 🔧 Gestione Credenziali & Azioni Rapide")
+
+        target_user_id = st.selectbox(
+            "Seleziona l'utente su cui intervenire:",
+            options=[u.user_id for u in all_users],
+            format_func=lambda uid: next(f"{u.first_name} {u.last_name} ({u.group}) — ID: {u.user_id}" for u in all_users if u.user_id == uid)
+        )
+
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            if st.button("🔄 Reimposta Password Utente", use_container_width=True, help="Reimposta la password al valore iniziale del Cognome"):
+                ok_rst, msg_rst = auth_manager.admin_reset_user_password(target_user_id)
+                if ok_rst:
+                    st.success(msg_rst)
+                    st.rerun()
+                else:
+                    st.error(msg_rst)
+
+        with col_act2:
+            if st.button("🗑️ Elimina Utente (Non Amministratore)", type="secondary", use_container_width=True):
+                ok_del, msg_del = auth_manager.admin_delete_user(target_user_id)
+                if ok_del:
+                    st.success(msg_del)
+                    st.rerun()
+                else:
+                    st.error(msg_del)

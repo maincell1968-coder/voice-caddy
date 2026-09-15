@@ -20,13 +20,15 @@ def test_strafatti_initial_users():
     users_file = temp_dir / "users.json"
     auth = AuthManager(data_file=users_file)
 
-    # 1. Test that Stefano logs in with initial password Pirani
-    ok, user, msg = auth.authenticate_strafatti("Stefano", "Pirani")
+    # 1. Test that Stefano logs in with initial password Amministratore1968 and is admin
+    ok, user, msg = auth.authenticate_strafatti("Stefano", "Amministratore1968")
     assert ok, f"Login Stefano fallito: {msg}"
     assert user.first_name == "Stefano"
     assert user.last_name == "Pirani"
+    assert user.is_admin is True
+    assert user.role == "admin"
     assert user.must_change_password is True
-    print("[OK] Stefano Pirani autenticato con successo (primo accesso)")
+    print("[OK] Stefano Pirani autenticato come Amministratore con Amministratore1968")
 
     # 2. Test wrong password for Stefano
     ok, _, msg = auth.authenticate_strafatti("Stefano", "Errata")
