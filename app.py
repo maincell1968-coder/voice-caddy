@@ -14,7 +14,7 @@ from core.db import DatabaseManager
 from core.strokes_gained import StrokesGainedBenchmarkEngine
 from core.pdf_export import PDFReportGenerator
 from core.course import CourseRegistry, CONERO_GOLF_CLUB, GolfCourse
-from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex, get_default_bag
+from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex, get_default_bag, sort_clubs_by_distance
 from core.visualizer import GolfHoleVisualizer
 from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
@@ -900,9 +900,14 @@ with nav_tab2:
 
     with col_prof_r:
         st.markdown("### 🎒 Composizione Sacca Bastoni Personale")
+        st.caption("⚡ I bastoni salvati si allineano automaticamente in base alla distanza: dal Driver più lungo fino al Putter.")
 
+        if "bag_save_success" in st.session_state:
+            st.success(st.session_state.pop("bag_save_success"))
+
+        sorted_bag = sort_clubs_by_distance(prof.clubs_in_bag)
         clubs_data = []
-        for idx, c in enumerate(prof.clubs_in_bag):
+        for idx, c in enumerate(sorted_bag):
             clubs_data.append({
                 "Mazza": c.club_name,
                 "Marca": c.brand or "Generica",
@@ -943,6 +948,9 @@ with nav_tab2:
                         carry_meters=float(row["Distanza Carry (m)"]) if pd.notna(row["Distanza Carry (m)"]) else 0.0
                     ))
 
+            # Allinea automaticamente le voci inserite in base alla distanza: dal driver più lungo fino al putt
+            updated_clubs = sort_clubs_by_distance(updated_clubs)
+
             st.session_state.user_profile.player_name = m_name
             st.session_state.user_profile.handicap = m_hcp
             st.session_state.user_profile.category = new_cat
@@ -950,7 +958,8 @@ with nav_tab2:
             st.session_state.user_profile.clubs_in_bag = updated_clubs
 
             st.session_state.user_profile.save_for_user(current_user.user_id)
-            st.success(f"✅ Profilo e Sacca di {current_user.first_name} salvati in modo permanente!")
+            st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
+            st.rerun()
 
 
 # ---------------------------------------------------------

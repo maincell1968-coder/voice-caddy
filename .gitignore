@@ -8,7 +8,9 @@ __pycache__/
 venv/
 ENV/
 
-# Voice Caddy Local Data & Temp
+# Voice Caddy Local Data & Temp (Users, Passwords, Profiles, DB)
+data/
+data/**
 *.db
 *.wav
 *.m4a
@@ -21,3 +23,4 @@ temp/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+

@@ -34,8 +34,77 @@ class ClubDetail(BaseModel):
     carry_meters: float = Field(..., description="Distanza media di volo/totale in metri")
 
 
+CLUB_HIERARCHY_RANK = {
+    "driver": 1,
+    "legno 2": 2,
+    "legno 3": 3,
+    "legno 4": 4,
+    "legno 5": 5,
+    "legno 7": 6,
+    "legno 9": 7,
+    "legno": 8,
+    "ibrido 2": 9,
+    "ibrido 3": 10,
+    "ibrido 4": 11,
+    "ibrido 5": 12,
+    "ibrido 6": 13,
+    "ibrido": 14,
+    "driving iron": 15,
+    "ferro 1": 16,
+    "ferro 2": 17,
+    "ferro 3": 18,
+    "ferro 4": 19,
+    "ferro 5": 20,
+    "ferro 6": 21,
+    "ferro 7": 22,
+    "ferro 8": 23,
+    "ferro 9": 24,
+    "pitching wedge": 25,
+    "pw": 25,
+    "gap wedge": 26,
+    "gw": 26,
+    "approach wedge": 27,
+    "aw": 27,
+    "sand wedge": 28,
+    "sw": 28,
+    "lob wedge": 29,
+    "lw": 29,
+    "wedge": 30,
+    "chipper": 31,
+    "putter": 999,
+    "putt": 999,
+}
+
+
+def sort_clubs_by_distance(clubs: List[ClubDetail]) -> List[ClubDetail]:
+    """
+    Allinea e ordina i bastoni della sacca in base alla distanza:
+    dal Driver più lungo fino al Putter.
+    
+    Regole di ordinamento:
+    1. Tutti i bastoni di distanza sono ordinati in ordine decrescente di carry_meters.
+    2. A parità di distanza, viene rispettata la gerarchia canonica dei bastoni da golf.
+    3. Il Putter è posizionato sempre come ultimo bastone della sacca.
+    """
+    def _rank(name: str) -> int:
+        n = name.lower().strip()
+        for key, r in CLUB_HIERARCHY_RANK.items():
+            if key in n:
+                return r
+        return 50
+
+    def _sort_key(c: ClubDetail):
+        n = c.club_name.lower().strip()
+        is_putt = 1 if ("putt" in n) else 0
+        dist = float(c.carry_meters) if c.carry_meters is not None else 0.0
+        rank = _rank(c.club_name)
+        return (is_putt, -dist, rank, n)
+
+    return sorted(clubs, key=_sort_key)
+
+
 def get_default_bag() -> List[ClubDetail]:
-    return [
+    raw_bag = [
         ClubDetail(club_name="Driver", brand="TaylorMade", model_type="Qi10 / Stealth 2", shaft_flex=ShaftFlex.STIFF, carry_meters=220),
         ClubDetail(club_name="Legno 3", brand="Callaway", model_type="Paradym Ai Smoke", shaft_flex=ShaftFlex.STIFF, carry_meters=195),
         ClubDetail(club_name="Ibrido 4", brand="Ping", model_type="G430", shaft_flex=ShaftFlex.REGULAR, carry_meters=175),
@@ -46,6 +115,7 @@ def get_default_bag() -> List[ClubDetail]:
         ClubDetail(club_name="Sand Wedge (56°)", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=85),
         ClubDetail(club_name="Putter", brand="Scotty Cameron", model_type="Phantom X", shaft_flex=ShaftFlex.REGULAR, carry_meters=0)
     ]
+    return sort_clubs_by_distance(raw_bag)
 
 
 class UserProfile(BaseModel):
@@ -55,6 +125,10 @@ class UserProfile(BaseModel):
     preferred_ball: Optional[str] = Field(default="Titleist Pro V1", description="Marca/modello di palla preferita")
     clubs_in_bag: List[ClubDetail] = Field(default_factory=get_default_bag, description="Lista completa delle mazze presenti in sacca con dettagli e distanze")
     notes: Optional[str] = Field(default="", description="Note tattiche personali o obiettivi di stagione")
+
+    def sort_clubs(self) -> None:
+        """Ordina i bastoni in sacca dal Driver più lungo fino al Putter."""
+        self.clubs_in_bag = sort_clubs_by_distance(self.clubs_in_bag)
 
     @classmethod
     def determine_category(cls, hcp: float) -> PlayerCategory:
@@ -98,6 +172,7 @@ class UserProfile(BaseModel):
         return "Dettaglio Sacca e Distanze del Giocatore:\n" + "\n".join(lines)
 
     def save_to_file(self, file_path: str | Path = "user_profile.json") -> bool:
+        self.sort_clubs()
         try:
             p = Path(file_path)
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +187,9 @@ class UserProfile(BaseModel):
         if p.exists():
             try:
                 data = json.loads(p.read_text(encoding="utf-8"))
-                return cls.model_validate(data)
+                profile = cls.model_validate(data)
+                profile.sort_clubs()
+                return profile
             except Exception:
                 return None
         return None
@@ -177,6 +254,7 @@ def parse_user_setup_transcript(setup_transcript_text: str, ai_config: Optional[
             )
             profile = completion.choices[0].message.parsed
             profile.category = UserProfile.determine_category(profile.handicap)
+            profile.sort_clubs()
             return profile
         except Exception:
             pass
@@ -197,4 +275,5 @@ def parse_user_setup_transcript(setup_transcript_text: str, ai_config: Optional[
     data_dict = extract_json_from_llm_response(raw)
     profile = UserProfile.model_validate(data_dict)
     profile.category = UserProfile.determine_category(profile.handicap)
+    profile.sort_clubs()
     return profile

@@ -59,7 +59,41 @@ STRAFATTI_INITIAL_MEMBERS = [
 
 
 def _hash_password(password: str, salt: str) -> str:
-    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+    """
+    Cripta in modo sicuro la password tramite PBKDF2-HMAC-SHA256 con 100.000 iterazioni e salt crittografico.
+    """
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        100_000
+    ).hex()
+
+
+def _verify_password(password_attempt: str, salt: str, expected_hash: str) -> bool:
+    """
+    Verifica se la password corrisponde all'hash criptato utilizzando secrets.compare_digest
+    per prevenire qualsiasi vulnerabilità di timing attack.
+    Supporta la crittografia moderna PBKDF2-HMAC-SHA256 ed offre retrocompatibilità con hash legacy SHA-256.
+    """
+    if not password_attempt or not salt or not expected_hash:
+        return False
+    # 1. Verifica crittografica principale PBKDF2-HMAC-SHA256
+    pbkdf2_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password_attempt.encode("utf-8"),
+        salt.encode("utf-8"),
+        100_000
+    ).hex()
+    if secrets.compare_digest(pbkdf2_hash, expected_hash):
+        return True
+
+    # 2. Retrocompatibilità con hash legacy SHA-256 semplice
+    legacy_hash = hashlib.sha256((salt + password_attempt).encode("utf-8")).hexdigest()
+    if secrets.compare_digest(legacy_hash, expected_hash):
+        return True
+
+    return False
 
 
 class AuthManager:
@@ -158,8 +192,7 @@ class AuthManager:
         password_attempt = password_attempt.strip()
 
         for user in candidates:
-            attempt_hash = _hash_password(password_attempt, user.salt)
-            if attempt_hash == user.password_hash:
+            if _verify_password(password_attempt, user.salt, user.password_hash):
                 return True, user, "Autenticazione riuscita."
             
             # Special check for Stefano if on initial password
@@ -187,8 +220,7 @@ class AuthManager:
 
         if amici_candidates:
             for user in amici_candidates:
-                attempt_hash = _hash_password(password_attempt, user.salt)
-                if attempt_hash == user.password_hash:
+                if _verify_password(password_attempt, user.salt, user.password_hash):
                     return True, user, "Autenticazione riuscita."
             
             for user in amici_candidates:

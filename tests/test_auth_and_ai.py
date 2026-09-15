@@ -7,11 +7,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.auth import AuthManager, AIUserConfig, STRAFATTI_INITIAL_MEMBERS
+from core.auth import AuthManager, AIUserConfig, STRAFATTI_INITIAL_MEMBERS, _hash_password, _verify_password
 from core.db import DatabaseManager
 from core.schemas import GolfRoundData
 from core.demo_data import get_demo_golf_round
-from core.user_profile import UserProfile
+from core.user_profile import UserProfile, ClubDetail, ShaftFlex, sort_clubs_by_distance
 from core.ai_provider import test_ai_connection, get_openai_client_for_config
 
 
@@ -135,9 +135,73 @@ def test_ai_config():
     print("[OK] Configurazione IA salvata e ricaricata per l'utente")
 
 
+def test_club_distance_sorting():
+    # Creiamo un set di bastoni inseriti in ordine completamente sparso
+    raw_clubs = [
+        ClubDetail(club_name="Sand Wedge (56°)", carry_meters=85),
+        ClubDetail(club_name="Putter", carry_meters=0),
+        ClubDetail(club_name="Ferro 7", carry_meters=145),
+        ClubDetail(club_name="Driver", carry_meters=230),
+        ClubDetail(club_name="Legno 3", carry_meters=200),
+        ClubDetail(club_name="Ferro 4", carry_meters=175),
+        ClubDetail(club_name="Pitching Wedge", carry_meters=115),
+    ]
+
+    sorted_clubs = sort_clubs_by_distance(raw_clubs)
+    club_names = [c.club_name for c in sorted_clubs]
+    distances = [c.carry_meters for c in sorted_clubs]
+
+    # Verifica: il Driver con la distanza maggiore deve essere primo
+    assert club_names[0] == "Driver"
+    assert distances[0] == 230
+
+    # Verifica: il Putter deve essere SEMPRE l'ultimo elemento della lista
+    assert club_names[-1] == "Putter"
+
+    # Verifica: le distanze dei bastoni di gioco sono strettamente decrescenti
+    game_distances = distances[:-1]
+    assert game_distances == sorted(game_distances, reverse=True), f"Distanze non decrescenti: {game_distances}"
+
+    # Test con inserimento nuovo bastone nel mezzo (es. Ibrido 3 a 190m)
+    new_club = ClubDetail(club_name="Ibrido 3", carry_meters=190)
+    raw_clubs.append(new_club)
+    resorted = sort_clubs_by_distance(raw_clubs)
+    new_names = [c.club_name for c in resorted]
+
+    assert new_names[0] == "Driver"     # 230m
+    assert new_names[1] == "Legno 3"    # 200m
+    assert new_names[2] == "Ibrido 3"   # 190m (inserito correttamente al terzo posto)
+    assert new_names[3] == "Ferro 4"    # 175m
+    assert new_names[-1] == "Putter"    # Putter rimane in fondo
+    print("[OK] Ordinamento bastoni per distanza (dal Driver più lungo al Putter) verificato con successo")
+
+
+def test_password_encryption_and_verification():
+    import secrets
+    salt = secrets.token_hex(16)
+    plain = "SuperPasswordSegreta2026!"
+
+    # 1. Verifica che la password venga criptata con PBKDF2 (hash a 64 caratteri esadecimali)
+    hashed = _hash_password(plain, salt)
+    assert len(hashed) == 64
+    assert hashed != plain
+    assert _verify_password(plain, salt, hashed) is True
+    assert _verify_password("PasswordSbagliata", salt, hashed) is False
+
+    # 2. Verifica retrocompatibilità per hash legacy SHA-256
+    import hashlib
+    legacy_hash = hashlib.sha256((salt + plain).encode("utf-8")).hexdigest()
+    assert _verify_password(plain, salt, legacy_hash) is True
+    assert _verify_password("PasswordSbagliata", salt, legacy_hash) is False
+    print("[OK] Crittografia forte PBKDF2-HMAC-SHA256 e compare_digest con retrocompatibilità verificate")
+
+
 if __name__ == "__main__":
     test_strafatti_initial_users()
     test_amici_dynamic_users()
     test_database_multiuser()
     test_ai_config()
+    test_club_distance_sorting()
+    test_password_encryption_and_verification()
     print("\n[SUCCESS] TUTTI I TEST UNITARI SONO STATI SUPERATI CON SUCCESSO!")
+
