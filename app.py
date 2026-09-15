@@ -19,6 +19,7 @@ from core.visualizer import GolfHoleVisualizer
 from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
 from core.ai_provider import test_ai_connection, AIProviderError
+from core.telegram_config import TelegramConfigManager
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -207,6 +208,7 @@ st.markdown("""
 auth_manager = AuthManager()
 db = DatabaseManager()
 course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
+tg_manager = TelegramConfigManager()
 
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
@@ -617,6 +619,57 @@ with st.sidebar:
         )
 
     process_btn = st.button("🚀 Analizza Partita con la Tua IA", type="primary", use_container_width=True, disabled=not uploaded_files)
+
+    # ---------------------------------------------------------
+    # TELEGRAM BOT LIVE IN CAMPO
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("📱 Bot Telegram (Live in Campo)")
+    st.caption("Registra o scrivi i colpi buca per buca durante la partita dallo smartphone.")
+
+    curr_token = tg_manager.get_token()
+    token_status_color = "#2ECC71" if curr_token else "#E74C3C"
+    token_status_text = "✅ Configurato" if curr_token else "⚠️ Da Configurare"
+    st.markdown(f"Stato Bot: <b style='color:{token_status_color};'>{token_status_text}</b>", unsafe_allow_html=True)
+
+    with st.expander("⚙️ Gestione Bot Telegram", expanded=not bool(curr_token)):
+        tb_input = st.text_input(
+            "Token Telegram (@BotFather):",
+            value=curr_token,
+            type="password",
+            key="sidebar_tg_token",
+            help="Incolla qui il token rilasciato da @BotFather su Telegram"
+        )
+        col_tb1, col_tb2 = st.columns(2)
+        with col_tb1:
+            if st.button("💾 Salva Token", key="save_tg_tok_btn", use_container_width=True):
+                tg_manager.set_token(tb_input)
+                st.success("Token salvato con successo!")
+                st.rerun()
+        with col_tb2:
+            if st.button("🔌 Verifica Bot", key="test_tg_tok_btn", use_container_width=True):
+                ok_t, msg_t, b_uname = tg_manager.test_token(tb_input)
+                if ok_t:
+                    st.session_state["tg_status_info"] = (True, f"✅ Bot attivo: @{b_uname}", b_uname)
+                else:
+                    st.session_state["tg_status_info"] = (False, f"❌ {msg_t}", None)
+
+        if "tg_status_info" in st.session_state:
+            ok_si, msg_si, u_si = st.session_state["tg_status_info"]
+            if ok_si:
+                st.success(msg_si)
+                st.markdown(f"[👉 **Apri la chat del Bot su Telegram**](https://t.me/{u_si})")
+            else:
+                st.error(msg_si)
+
+        st.markdown(f"""
+            <div style="background-color:#121824; border:1px solid #2b384e; border-radius:8px; padding:10px; margin-top:8px; font-size:0.83rem; color:#CBD5E1;">
+                <b>🚀 Come giocare con Telegram:</b><br>
+                1. Avvia il bot sul PC cliccando su <code>avvia_telegram_bot.bat</code><br>
+                2. Apri il bot su Telegram e digita: <code>/giocatore {current_user.first_name}</code><br>
+                3. Invia note vocali o messaggi con i colpi giocati!
+            </div>
+        """, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------
@@ -1169,3 +1222,32 @@ if current_user.is_admin and nav_admin:
                     st.rerun()
                 else:
                     st.error(msg_del)
+
+        st.markdown("---")
+        st.markdown("### 🤖 Configurazione & Chat Telegram del Circolo")
+        st.caption("Stato globale del server Telegram e associazioni chat dei membri.")
+
+        col_tadmin1, col_tadmin2 = st.columns([3, 2])
+        with col_tadmin1:
+            admin_tok = tg_manager.get_token()
+            new_admin_tok = st.text_input("TELEGRAM_BOT_TOKEN globale:", value=admin_tok, type="password", key="admin_tg_tok_input")
+            if st.button("💾 Salva Token Globale", key="admin_save_tg_btn"):
+                tg_manager.set_token(new_admin_tok)
+                st.success("Token salvato nel sistema!")
+                st.rerun()
+
+            ok_adm, msg_adm, adm_uname = tg_manager.test_token(new_admin_tok)
+            if ok_adm:
+                st.success(f"✅ Bot Telegram Operativo: **@{adm_uname}**")
+                st.markdown(f"[👉 **Apri Bot su Telegram (@{adm_uname})**](https://t.me/{adm_uname})")
+            elif new_admin_tok:
+                st.warning(f"Verifica connessione: {msg_adm}")
+
+        with col_tadmin2:
+            st.markdown("<b>Chat Collegate:</b>", unsafe_allow_html=True)
+            users_map = tg_manager.load_users_map()
+            if not users_map:
+                st.info("Nessun membro ha ancora collegato la propria chat Telegram. Digiteranno `/giocatore [Nome]` in chat.")
+            else:
+                for cid, data in users_map.items():
+                    st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)
