@@ -568,6 +568,7 @@ with st.sidebar:
         new_provider = "custom"
 
     if new_provider == "groq":
+        from core.ai_provider import get_default_groq_key
         club_groq_key = os.environ.get("GROQ_API_KEY", "")
         if not club_groq_key:
             try:
@@ -575,6 +576,8 @@ with st.sidebar:
                     club_groq_key = st.secrets["GROQ_API_KEY"]
             except Exception:
                 pass
+        if not club_groq_key:
+            club_groq_key = get_default_groq_key()
 
         groq_key_val = getattr(user_ai, "groq_api_key", "") or club_groq_key
         groq_api_key = st.text_input(
@@ -605,7 +608,8 @@ with st.sidebar:
         col_t1, col_t2 = st.columns(2)
         with col_t1:
             if st.button("🔌 Test Groq Cloud", use_container_width=True):
-                test_cfg = AIUserConfig(provider="groq", groq_api_key=groq_api_key, groq_model=groq_model)
+                effective_key = groq_api_key or club_groq_key or get_default_groq_key()
+                test_cfg = AIUserConfig(provider="groq", groq_api_key=effective_key, groq_model=groq_model)
                 ok, msg = test_ai_connection(test_cfg)
                 if ok:
                     st.success(msg)
@@ -613,8 +617,9 @@ with st.sidebar:
                     st.error(msg)
         with col_t2:
             if st.button("💾 Salva IA", key="save_groq_btn", use_container_width=True):
+                effective_key = groq_api_key or club_groq_key or get_default_groq_key()
                 user_ai.provider = "groq"
-                setattr(user_ai, "groq_api_key", groq_api_key)
+                setattr(user_ai, "groq_api_key", effective_key)
                 setattr(user_ai, "groq_model", groq_model)
                 auth_manager.update_user_ai_config(current_user.user_id, user_ai)
                 st.success("Configurazione salvata con successo!")
