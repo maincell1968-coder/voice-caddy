@@ -1,0 +1,23 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+venv/
+ENV/
+
+# Voice Caddy Local Data & Temp
+*.db
+*.wav
+*.m4a
+*.mp3
+*.opus
+*.aac
+*.ogg
+imports/
+temp/
+
+# Streamlit secrets
+.streamlit/secrets.toml
