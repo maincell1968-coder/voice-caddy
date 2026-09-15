@@ -40,7 +40,9 @@ def get_openai_client_for_config(config: AIUserConfig) -> Tuple[OpenAI, str]:
             base_url="https://api.groq.com/openai/v1",
             api_key=api_key
         )
-        model = getattr(config, "groq_model", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
+        model = getattr(config, "groq_model", "groq/compound-mini") or "groq/compound-mini"
+        if "llama" in model.lower():
+            model = "groq/compound-mini"
         return client, model
 
     elif provider == "ollama":

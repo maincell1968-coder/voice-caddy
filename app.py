@@ -532,8 +532,8 @@ with st.sidebar:
     user_ai = current_user.ai_config
     if not hasattr(user_ai, "groq_api_key"):
         setattr(user_ai, "groq_api_key", "")
-    if not hasattr(user_ai, "groq_model"):
-        setattr(user_ai, "groq_model", "llama-3.3-70b-versatile")
+    if not hasattr(user_ai, "groq_model") or getattr(user_ai, "groq_model") == "llama-3.3-70b-versatile":
+        setattr(user_ai, "groq_model", "groq/compound-mini")
 
     provider_options = [
         "Groq Cloud (100% Gratuito - Consigliato)",
@@ -583,11 +583,21 @@ with st.sidebar:
             value=groq_key_val,
             help="100% gratuita senza carta di credito. Generala su https://console.groq.com/keys"
         )
-        cur_groq_model = getattr(user_ai, "groq_model", "llama-3.3-70b-versatile")
+        groq_model_options = [
+            "groq/compound-mini",
+            "qwen/qwen3.8-27b",
+            "groq/compound",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
+        ]
+        cur_groq_model = getattr(user_ai, "groq_model", "groq/compound-mini")
+        if cur_groq_model not in groq_model_options:
+            cur_groq_model = "groq/compound-mini"
+        model_idx = groq_model_options.index(cur_groq_model)
         groq_model = st.selectbox(
-            "Modello Groq Llama:",
-            options=["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-            index=0 if cur_groq_model == "llama-3.3-70b-versatile" else 1
+            "Modello Groq Gratuito:",
+            options=groq_model_options,
+            index=model_idx
         )
         st.caption("💡 *Groq Cloud è 100% gratuito per sempre: non richiede carta di credito e non costa nulla.*")
         st.markdown("[👉 **Ottieni la tua chiave gratuita Groq in 10 secondi su console.groq.com**](https://console.groq.com/keys)")

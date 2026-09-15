@@ -16,7 +16,7 @@ USERS_FILE = DATA_DIR / "users.json"
 class AIUserConfig(BaseModel):
     provider: str = Field(default="groq", description="Provider IA: 'groq', 'ollama', 'openai', 'custom'")
     groq_api_key: str = Field(default="", description="Chiave API Groq personale o di circolo (100% gratuita)")
-    groq_model: str = Field(default="llama-3.3-70b-versatile", description="Modello Groq (es. llama-3.3-70b-versatile, llama-3.1-8b-instant)")
+    groq_model: str = Field(default="groq/compound-mini", description="Modello Groq (es. groq/compound-mini, qwen/qwen3.8-27b, groq/compound, openai/gpt-oss-120b)")
     ollama_url: str = Field(default="http://localhost:11434", description="URL dell'istanza Ollama locale o remota")
     ollama_model: str = Field(default="llama3", description="Modello Ollama da utilizzare (es. llama3, mistral, qwen2.5)")
     openai_api_key: str = Field(default="", description="Chiave API OpenAI personale dell'utente")
