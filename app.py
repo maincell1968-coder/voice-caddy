@@ -1,5 +1,7 @@
 import os
 import tempfile
+import json
+import urllib.request
 from pathlib import Path
 import streamlit as st
 import pandas as pd
@@ -544,7 +546,34 @@ with st.sidebar:
 
     if new_provider == "ollama":
         ollama_url = st.text_input("URL Server Ollama:", value=user_ai.ollama_url or "http://localhost:11434")
-        ollama_model = st.text_input("Nome Modello Ollama:", value=user_ai.ollama_model or "llama3.1", help="es. llama3.1, mistral, qwen2.5, phi4, deepseek-r1")
+
+        # Rileva automaticamente i modelli installati localmente su Ollama
+        installed_models = []
+        try:
+            req_models = urllib.request.Request(f"{ollama_url.rstrip('/')}/api/tags", headers={"User-Agent": "VoiceCaddy/1.0"})
+            with urllib.request.urlopen(req_models, timeout=2) as resp_m:
+                m_data = json.loads(resp_m.read().decode("utf-8"))
+                installed_models = [m.get("name", "") for m in m_data.get("models", []) if m.get("name")]
+        except Exception:
+            pass
+
+        if installed_models:
+            preferred = user_ai.ollama_model if user_ai.ollama_model in installed_models else (
+                "llama3:latest" if "llama3:latest" in installed_models else installed_models[0]
+            )
+            idx_m = installed_models.index(preferred) if preferred in installed_models else 0
+            ollama_model = st.selectbox(
+                "Modello Ollama Rilevato sul tuo PC:",
+                options=installed_models,
+                index=idx_m,
+                help="Modelli già scaricati e pronti all'uso sul tuo computer."
+            )
+        else:
+            ollama_model = st.text_input(
+                "Nome Modello Ollama:",
+                value=user_ai.ollama_model or "llama3",
+                help="es. llama3, mistral, qwen2.5, phi4"
+            )
         st.caption("💡 *Ollama è 100% gratuito, offline e non consuma alcun gettone.*")
 
         col_t1, col_t2 = st.columns(2)

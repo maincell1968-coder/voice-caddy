@@ -16,7 +16,7 @@ USERS_FILE = DATA_DIR / "users.json"
 class AIUserConfig(BaseModel):
     provider: str = Field(default="ollama", description="Provider IA: 'ollama', 'openai', 'custom'")
     ollama_url: str = Field(default="http://localhost:11434", description="URL dell'istanza Ollama locale o remota")
-    ollama_model: str = Field(default="llama3.1", description="Modello Ollama da utilizzare (es. llama3.1, mistral, qwen2.5)")
+    ollama_model: str = Field(default="llama3", description="Modello Ollama da utilizzare (es. llama3, mistral, qwen2.5)")
     openai_api_key: str = Field(default="", description="Chiave API OpenAI personale dell'utente")
     openai_model: str = Field(default="gpt-4o", description="Modello OpenAI (es. gpt-4o, gpt-4o-mini)")
     custom_base_url: str = Field(default="", description="Base URL per endpoint compatibile OpenAI (es. Groq, DeepSeek, Together, LM Studio)")
