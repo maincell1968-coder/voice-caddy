@@ -15,6 +15,7 @@ class DatabaseManager:
     """
     SQLite Database Manager for persisting historical golf rounds,
     enabling trend tracking, handicap progression, and statistics over time.
+    Supports multi-user isolation with user_id and group_name tracking.
     """
 
     def __init__(self, db_path: Path = DB_PATH):
@@ -32,6 +33,8 @@ class DatabaseManager:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS rounds (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT DEFAULT 'default_user',
+                    group_name TEXT DEFAULT 'strafatti',
                     course_name TEXT,
                     date_played TEXT,
                     holes_played INTEGER,
@@ -46,9 +49,18 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Check for existing table missing user_id / group_name columns
+            cursor.execute("PRAGMA table_info(rounds)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "user_id" not in columns:
+                cursor.execute("ALTER TABLE rounds ADD COLUMN user_id TEXT DEFAULT 'default_user'")
+            if "group_name" not in columns:
+                cursor.execute("ALTER TABLE rounds ADD COLUMN group_name TEXT DEFAULT 'strafatti'")
+
             conn.commit()
 
-    def save_round(self, round_data: GolfRoundData) -> int:
+    def save_round(self, round_data: GolfRoundData, user_id: str = "default_user", group_name: str = "strafatti") -> int:
         summary = round_data.performance_summary
         info = round_data.round_info
         json_str = round_data.model_dump_json()
@@ -57,11 +69,14 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO rounds (
+                    user_id, group_name,
                     course_name, date_played, holes_played, total_score, total_putts,
                     fairway_accuracy_pct, gir_pct, scrambling_pct, penalty_strokes,
                     primary_miss, json_data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                user_id,
+                group_name,
                 info.course_name or "Giro Senza Nome",
                 info.date or "Non specificata",
                 info.holes_played,
@@ -77,16 +92,26 @@ class DatabaseManager:
             conn.commit()
             return cursor.lastrowid
 
-    def get_all_rounds(self) -> List[Dict[str, Any]]:
+    def get_all_rounds(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, course_name, date_played, holes_played, total_score,
-                       total_putts, fairway_accuracy_pct, gir_pct, scrambling_pct,
-                       penalty_strokes, primary_miss, created_at
-                FROM rounds
-                ORDER BY id DESC
-            """)
+            if user_id:
+                cursor.execute("""
+                    SELECT id, user_id, group_name, course_name, date_played, holes_played, total_score,
+                           total_putts, fairway_accuracy_pct, gir_pct, scrambling_pct,
+                           penalty_strokes, primary_miss, created_at
+                    FROM rounds
+                    WHERE user_id = ?
+                    ORDER BY id DESC
+                """, (user_id,))
+            else:
+                cursor.execute("""
+                    SELECT id, user_id, group_name, course_name, date_played, holes_played, total_score,
+                           total_putts, fairway_accuracy_pct, gir_pct, scrambling_pct,
+                           penalty_strokes, primary_miss, created_at
+                    FROM rounds
+                    ORDER BY id DESC
+                """)
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
@@ -106,10 +131,10 @@ class DatabaseManager:
             conn.commit()
             return cursor.rowcount > 0
 
-    def get_historical_stats(self) -> Dict[str, Any]:
+    def get_historical_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT 
                     COUNT(*) as total_rounds,
                     AVG(total_score) as avg_score,
@@ -118,7 +143,13 @@ class DatabaseManager:
                     AVG(gir_pct) as avg_gir_pct,
                     AVG(scrambling_pct) as avg_scrambling_pct
                 FROM rounds
-            """)
+            """
+            params = ()
+            if user_id:
+                query += " WHERE user_id = ?"
+                params = (user_id,)
+
+            cursor.execute(query, params)
             row = cursor.fetchone()
             if not row or row["total_rounds"] == 0:
                 return {
@@ -127,9 +158,9 @@ class DatabaseManager:
                 }
             return {
                 "total_rounds": row["total_rounds"],
-                "avg_score": round(row["avg_score"], 1),
-                "avg_putts": round(row["avg_putts"], 1),
-                "avg_fairway_pct": round(row["avg_fairway_pct"], 1),
-                "avg_gir_pct": round(row["avg_gir_pct"], 1),
-                "avg_scrambling_pct": round(row["avg_scrambling_pct"], 1)
+                "avg_score": round(row["avg_score"], 1) if row["avg_score"] else 0.0,
+                "avg_putts": round(row["avg_putts"], 1) if row["avg_putts"] else 0.0,
+                "avg_fairway_pct": round(row["avg_fairway_pct"], 1) if row["avg_fairway_pct"] else 0.0,
+                "avg_gir_pct": round(row["avg_gir_pct"], 1) if row["avg_gir_pct"] else 0.0,
+                "avg_scrambling_pct": round(row["avg_scrambling_pct"], 1) if row["avg_scrambling_pct"] else 0.0
             }

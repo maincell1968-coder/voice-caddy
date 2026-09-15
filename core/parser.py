@@ -2,27 +2,26 @@ from __future__ import annotations
 
 import os
 from typing import Optional
-from openai import OpenAI
 from core.schemas import GolfRoundData
 from core.user_profile import UserProfile
 from core.course import GolfCourse, CONERO_GOLF_CLUB
+from core.auth import AIUserConfig
+from core.ai_provider import execute_round_analysis
 
 
 def parse_golf_audio_transcript(
     transcript_text: str,
     user_profile: Optional[UserProfile] = None,
     course: Optional[GolfCourse] = None,
+    ai_config: Optional[AIUserConfig] = None,
     api_key: Optional[str] = None,
     model_name: str = "gpt-4o"
 ) -> GolfRoundData:
     """
     Parses unstructured golf audio transcripts into a structured Pydantic GolfRoundData object,
     evaluating the Target Landing Area (Ideal vs Actual landing zone) based on player's HCP and course parameters.
+    Uses the user's private AI configuration (Ollama, personal OpenAI, or Custom endpoint).
     """
-    key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise ValueError("OpenAI API Key non trovata. Inseriscila nella barra laterale o impostala nell'ambiente.")
-
     profile = user_profile or UserProfile()
     active_course = course or CONERO_GOLF_CLUB
 
@@ -63,17 +62,20 @@ Per OGNI buca analizzata, compila obbligatoriamente l'oggetto `target_landing_an
 - Genera la `professional_diagnosis` in tono coerente con la Categoria del giocatore.
 """
 
-    client = OpenAI(api_key=key)
+    config = ai_config
+    if config is None:
+        # Fallback to OpenAI with provided api_key or env var
+        config = AIUserConfig(
+            provider="openai",
+            openai_api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
+            openai_model=model_name
+        )
 
-    completion = client.beta.chat.completions.parse(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
-        ],
-        response_format=GolfRoundData
+    parsed_data = execute_round_analysis(
+        transcript_text=transcript_text,
+        system_prompt=system_prompt,
+        ai_config=config
     )
-    parsed_data: GolfRoundData = completion.choices[0].message.parsed
 
     if not parsed_data.round_info.course_name or parsed_data.round_info.course_name == "Circolo Golf Non Specificato":
         parsed_data.round_info.course_name = active_course.name

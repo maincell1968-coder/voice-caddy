@@ -8,6 +8,9 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from openai import OpenAI
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROFILES_DIR = PROJECT_ROOT / "data" / "profiles"
+
 
 class PlayerCategory(str, Enum):
     CATEGORY_1 = "Prima Categoria (HCP 0 - 9)"
@@ -97,6 +100,7 @@ class UserProfile(BaseModel):
     def save_to_file(self, file_path: str | Path = "user_profile.json") -> bool:
         try:
             p = Path(file_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(self.model_dump_json(indent=2), encoding="utf-8")
             return True
         except Exception:
@@ -113,16 +117,44 @@ class UserProfile(BaseModel):
                 return None
         return None
 
+    def save_for_user(self, user_id: str) -> bool:
+        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = PROFILES_DIR / f"{user_id}.json"
+        return self.save_to_file(file_path)
 
-def parse_user_setup_transcript(setup_transcript_text: str, api_key: Optional[str] = None) -> UserProfile:
+    @classmethod
+    def load_for_user(cls, user_id: str, default_name: str = "Giocatore") -> UserProfile:
+        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = PROFILES_DIR / f"{user_id}.json"
+        profile = cls.load_from_file(file_path)
+        if profile is None:
+            profile = cls(
+                player_name=default_name,
+                handicap=14.0,
+                category=PlayerCategory.CATEGORY_2,
+                preferred_ball="Titleist Pro V1",
+                clubs_in_bag=get_default_bag()
+            )
+            profile.save_for_user(user_id)
+        return profile
+
+
+def parse_user_setup_transcript(setup_transcript_text: str, ai_config: Optional[Any] = None, api_key: Optional[str] = None) -> UserProfile:
     """
     Parses a short audio voice setup memo into a structured UserProfile Pydantic object.
     """
-    key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise ValueError("OpenAI API Key non trovata.")
+    from core.ai_provider import get_openai_client_for_config, extract_json_from_llm_response
+    from core.auth import AIUserConfig
 
-    client = OpenAI(api_key=key)
+    if ai_config is None:
+        key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not key:
+            raise ValueError("Configurazione IA non trovata. Configura la tua IA personale.")
+        config = AIUserConfig(provider="openai", openai_api_key=key)
+    else:
+        config = ai_config
+
+    client, model = get_openai_client_for_config(config)
 
     system_prompt = (
         "Sei un assistente specializzato per Voice Caddy. "
@@ -133,14 +165,36 @@ def parse_user_setup_transcript(setup_transcript_text: str, api_key: Optional[st
         "Assegna la PlayerCategory corretta."
     )
 
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4o",
+    if config.provider.lower() == "openai":
+        try:
+            completion = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Audio di presentazione e setup dell'utente:\n\n{setup_transcript_text}"}
+                ],
+                response_format=UserProfile
+            )
+            profile = completion.choices[0].message.parsed
+            profile.category = UserProfile.determine_category(profile.handicap)
+            return profile
+        except Exception:
+            pass
+
+    # Ollama / Custom fallback
+    schema_json = json.dumps(UserProfile.model_json_schema(), ensure_ascii=False)
+    extended_prompt = f"{system_prompt}\n\nRispondi solo con un JSON conforme al seguente schema:\n{schema_json}"
+
+    response = client.chat.completions.create(
+        model=model,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": extended_prompt},
             {"role": "user", "content": f"Audio di presentazione e setup dell'utente:\n\n{setup_transcript_text}"}
         ],
-        response_format=UserProfile
+        temperature=0.1
     )
-    profile: UserProfile = completion.choices[0].message.parsed
+    raw = response.choices[0].message.content
+    data_dict = extract_json_from_llm_response(raw)
+    profile = UserProfile.model_validate(data_dict)
     profile.category = UserProfile.determine_category(profile.handicap)
     return profile
