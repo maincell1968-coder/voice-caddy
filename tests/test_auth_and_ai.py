@@ -40,7 +40,7 @@ def test_strafatti_initial_users():
     assert not ok
     print("[OK] Utente non autorizzato nel Gruppo Strafatti respinto")
 
-    # 4. Test the two Marcos: Marco Sebastianelli and Marco Fiorani
+    # 4. Test the two Marcos: Marco Sebastianelli and Marco Fiorani (anche con Marco S e Marco F per privacy)
     ok_seb, user_seb, _ = auth.authenticate_strafatti("Marco", "Sebastianelli")
     assert ok_seb
     assert user_seb.last_name == "Sebastianelli"
@@ -50,6 +50,16 @@ def test_strafatti_initial_users():
     assert ok_fio
     assert user_fio.last_name == "Fiorani"
     print("[OK] Marco Fiorani identificato e autenticato")
+
+    # 4b. Test privacy dropdown options: Marco S and Marco F
+    ok_seb_s, user_seb_s, _ = auth.authenticate_strafatti("Marco S", "Sebastianelli")
+    assert ok_seb_s
+    assert user_seb_s.last_name == "Sebastianelli"
+
+    ok_fio_f, user_fio_f, _ = auth.authenticate_strafatti("Marco F", "Fiorani")
+    assert ok_fio_f
+    assert user_fio_f.last_name == "Fiorani"
+    print("[OK] Marco S e Marco F (opzioni privacy menu a tendina) identificati e autenticati")
 
     # 5. Test password change for Stefano
     ok_change, msg_change = auth.change_password(user.user_id, "NuovaPasswordSegreta123")

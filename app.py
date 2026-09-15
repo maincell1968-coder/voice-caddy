@@ -345,7 +345,7 @@ if st.session_state.auth_user is None:
                 <div style="text-align: center; margin-bottom: 20px;">
                     <h3 style="color: #2ECC71; margin-bottom: 4px;">🏌️‍♂️ Login Riservato: Gruppo Strafatti</h3>
                     <p style="color: #94A3B8; font-size: 0.9rem;">
-                        Gli unici autorizzati sono: Stefano, Giorgio, Marco (Sebastianelli/Fiorani), Gianluca, Alessandro, Renzo, Luca.
+                        Gli unici autorizzati sono: Stefano, Giorgio, Marco S, Marco F, Gianluca, Alessandro, Renzo, Luca.
                     </p>
                 </div>
             """, unsafe_allow_html=True)
@@ -355,8 +355,8 @@ if st.session_state.auth_user is None:
                 member_names = [
                     "Stefano",
                     "Giorgio",
-                    "Marco Sebastianelli",
-                    "Marco Fiorani",
+                    "Marco S",
+                    "Marco F",
                     "Gianluca",
                     "Alessandro",
                     "Renzo",

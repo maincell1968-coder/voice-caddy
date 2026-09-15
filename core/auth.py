@@ -49,12 +49,12 @@ STRAFATTI_INITIAL_MEMBERS = [
         "alt_pwd": "Pirani"
     },
     {"first_name": "Giorgio", "last_name": "Marchetti", "username": "Giorgio", "initial_pwd": "Marchetti", "user_id": "strafatti_giorgio_marchetti", "is_admin": False, "role": "user"},
-    {"first_name": "Marco", "last_name": "Sebastianelli", "username": "Marco", "initial_pwd": "Sebastianelli", "user_id": "strafatti_marco_sebastianelli", "is_admin": False, "role": "user"},
+    {"first_name": "Marco", "last_name": "Sebastianelli", "username": "Marco S", "initial_pwd": "Sebastianelli", "user_id": "strafatti_marco_sebastianelli", "is_admin": False, "role": "user"},
     {"first_name": "Gianluca", "last_name": "Basili", "username": "Gianluca", "initial_pwd": "Basili", "user_id": "strafatti_gianluca_basili", "is_admin": False, "role": "user"},
     {"first_name": "Alessandro", "last_name": "Campanelli", "username": "Alessandro", "initial_pwd": "Campanelli", "user_id": "strafatti_alessandro_campanelli", "is_admin": False, "role": "user"},
     {"first_name": "Renzo", "last_name": "Gallina", "username": "Renzo", "initial_pwd": "Gallina", "user_id": "strafatti_renzo_gallina", "is_admin": False, "role": "user"},
     {"first_name": "Luca", "last_name": "Sandroni", "username": "Luca", "initial_pwd": "Sandroni", "user_id": "strafatti_luca_sandroni", "is_admin": False, "role": "user"},
-    {"first_name": "Marco", "last_name": "Fiorani", "username": "Marco", "initial_pwd": "Fiorani", "user_id": "strafatti_marco_fiorani", "is_admin": False, "role": "user"}
+    {"first_name": "Marco", "last_name": "Fiorani", "username": "Marco F", "initial_pwd": "Fiorani", "user_id": "strafatti_marco_fiorani", "is_admin": False, "role": "user"}
 ]
 
 
@@ -172,9 +172,13 @@ class AuthManager:
             if u_data.get("group") == "strafatti":
                 u = UserRecord.model_validate(u_data)
                 full_name = f"{u.first_name} {u.last_name}".lower()
+                short_name = f"{u.first_name} {u.last_name[:1]}".lower()  # "marco s", "marco f"
+                short_name_dot = f"{u.first_name} {u.last_name[:1]}.".lower()  # "marco s.", "marco f."
                 if (q == u.username.lower() or 
                     q == u.first_name.lower() or 
                     q == full_name or 
+                    q == short_name or 
+                    q == short_name_dot or 
                     q == u.last_name.lower()):
                     candidates.append(u)
         return candidates
