@@ -20,7 +20,30 @@ def get_openai_client_for_config(config: AIUserConfig) -> Tuple[OpenAI, str]:
     """
     provider = config.provider.lower()
 
-    if provider == "ollama":
+    if provider == "groq":
+        api_key = config.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+        if not api_key:
+            try:
+                import streamlit as st
+                if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                    api_key = st.secrets["GROQ_API_KEY"]
+            except Exception:
+                pass
+
+        if not api_key:
+            raise AIProviderError(
+                "Nessuna Chiave Groq configurata. "
+                "Groq è 100% GRATUITO (nessuna carta di credito richiesta): ottieni la tua chiave in 10 secondi su https://console.groq.com/keys"
+            )
+
+        client = OpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=api_key
+        )
+        model = config.groq_model or "llama-3.3-70b-versatile"
+        return client, model
+
+    elif provider == "ollama":
         base_url = config.ollama_url.rstrip("/")
         if not base_url.endswith("/v1"):
             base_url = f"{base_url}/v1"
@@ -28,7 +51,7 @@ def get_openai_client_for_config(config: AIUserConfig) -> Tuple[OpenAI, str]:
             base_url=base_url,
             api_key="ollama"  # Ollama does not require an API key, but client requires non-empty string
         )
-        model = config.ollama_model or "llama3.1"
+        model = config.ollama_model or "llama3"
         return client, model
 
     elif provider == "custom":

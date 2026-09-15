@@ -260,23 +260,23 @@ if st.session_state.auth_user is None:
         </div>
         <div class="legal-disclaimer-box" style="border-left: 5px solid #2ECC71; border-color: rgba(46, 204, 113, 0.4); margin-top: -10px;">
             <div class="disclaimer-title" style="color: #2ECC71;">
-                💡 Trasparenza Consumi, Token & Trascrizione Audio Gratuita
+                💡 Trasparenza Totale: Zero Token a Pagamento & Nessun Costo Condiviso
             </div>
             <div class="disclaimer-text">
-                Per la massima serenità e chiarezza di tutti i soci e giocatori, il consumo delle risorse IA è rigorosamente strutturato:
+                Per la massima tutela e serenità di tutti i soci e dell'Amministratore, l'architettura è strutturata a <b>costo zero assoluto</b>:
                 <br><br>
-                • <b>🎙️ Trascrizione Audio a ZERO TOKEN:</b> La conversione da voce a testo (Speech-to-Text per le note vocali inviate da smartphone su Telegram o caricate sul sito) usa il motore <em>Faster-Whisper locale</em> direttamente sul computer. <b>Non consuma gettoni/token dei modelli linguistici</b> ed è completamente gratuita (0,00€).
+                • <b>🎙️ Trascrizione Audio a ZERO TOKEN:</b> La conversione da voce a testo (da Telegram o web) usa il motore <em>Faster-Whisper locale</em>. Non impiega gettoni/token a pagamento ed è gratuita al 100% (0,00€).
                 <br>
-                • <b>💬 Chat di Testo Telegram:</b> Se il giocatore digita direttamente i colpi via messaggio di testo, la conversione audio non serve e si passa direttamente all'analisi.
+                • <b>⚡ Analisi Partita Gratuita con Groq Cloud (Llama 3.3):</b> Il motore cloud predefinito sfrutta il piano gratuito di <b>Groq Cloud</b> con modelli open-source Llama 3.3. È gratuito al 100%, <b>non richiede carta di credito</b> e non genera alcun costo né per l'Amministratore né per i giocatori.
                 <br>
-                • <b>🤖 Opzione Analisi 100% Gratuita (Ollama):</b> Chi desidera giocare a costo zero seleziona <b>Ollama Locale Gratuito</b> nella propria barra laterale (0 token, 0,00€). Chi sceglie OpenAI con modelli ultra-efficienti come <code>gpt-4o-mini</code> consuma frazioni microscopiche (~0,0008$ a partita, ovvero oltre 1.200 gare complete con 1$).
+                • <b>💻 Alternativa Ollama Locale:</b> Chi gioca da PC può utilizzare il proprio Ollama offline senza connessione internet.
                 <br>
-                • <b>🛡️ Isolamento Totale ("Bring Your Own AI"):</b> Nessun credito o token è condiviso tra giocatori. Ciascun utente utilizza esclusivamente la propria configurazione memorizzata nel profilo, impedendo categoricamente a chiunque di consumare i gettoni o le risorse altrui.
+                • <b>🛡️ Nessun Costo Condiviso (L'Amministratore non paga token per nessuno):</b> Nessun conto o carta è condiviso. Se un giocatore desidera utilizzare modelli a pagamento OpenAI, deve inserire la propria chiave personale; nessun utente può consumare le risorse o i crediti di altri.
             </div>
             <div style="margin-top: 14px;">
                 <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🎙️ Trascrizione Vocale = 0 Token</span>
-                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🆓 Opzione Ollama 100% Gratuita</span>
-                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🔒 Nessun Token Condiviso</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">⚡ Groq Cloud 100% Gratuito (No Carta)</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🛡️ Zero Costi Condivisi</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -486,16 +486,16 @@ with header_info:
                 La conversione della voce in testo (Speech-to-Text per note vocali su Telegram o caricate sul sito) usa il motore <b>Faster-Whisper locale</b> direttamente sul computer.
                 <br><b>Non consuma alcun token/credito OpenAI (Costo: 0,00€).</b>
             </p>
-            <h4 style="color:#F1C40F; margin-top:12px;">🧠 Analisi Dati Gara & Opzione Gratuita</h4>
+            <h4 style="color:#F1C40F; margin-top:12px;">⚡ Analisi Partita: 100% Gratuita (Groq Cloud)</h4>
             <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
-                Una volta convertito l'audio in testo (o digitato direttamente in chat Telegram):
-                <br>• <b>Ollama (Locale Gratuito):</b> Consuma <b>0 Token</b>, costo <b>0,00€</b> totale.
-                <br>• <b>OpenAI (gpt-4o-mini):</b> Consuma ~2.500 token, pari a circa <b>0,0008$ a partita</b> (oltre 1.200 gare complete con 1$).
-                <br>• <b>OpenAI (gpt-4o):</b> Circa <b>0,015$ a partita</b> (circa 1,5 centesimi).
+                Per consentire a tutti di giocare senza costi e senza bruciare token:
+                <br>• <b>Groq Cloud (Llama 3.3):</b> Gratuito al 100%, <b>nessuna carta di credito richiesta</b>, velocità ultra-rapida.
+                <br>• <b>Ollama Locale:</b> Gratuito al 100% offline sul proprio PC.
+                <br>• <b>OpenAI Personale:</b> Chi desidera usare GPT-4o inserisce la propria chiave personale.
             </p>
-            <h4 style="color:#3498DB; margin-top:12px;">🛡️ Nessun Rischio di Consumo Altrui</h4>
+            <h4 style="color:#3498DB; margin-top:12px;">🛡️ L'Amministratore non paga token per gli altri</h4>
             <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
-                Grazie all'architettura <b>Bring Your Own AI</b>, i profili sono separati ermeticamente: ciascun giocatore usa solo il proprio motore o i propri gettoni personali. Nessun utente può consumare i token di un altro membro.
+                Grazie all'architettura <b>Bring Your Own AI</b>, i profili sono separati ermeticamente: nessun credito è condiviso e ciascun giocatore gestisce la propria configurazione senza intaccare le risorse di nessun altro.
             </p>
         """, unsafe_allow_html=True)
 
@@ -525,12 +525,19 @@ with st.sidebar:
 
     user_ai = current_user.ai_config
 
-    provider_options = ["Ollama (Locale Gratuito)", "OpenAI (Chiave Personale)", "Custom (Groq, DeepSeek, Together)"]
+    provider_options = [
+        "Groq Cloud (100% Gratuito - Consigliato)",
+        "Ollama (Locale Offline su PC)",
+        "OpenAI (Chiave Personale)",
+        "Custom (DeepSeek, Together)"
+    ]
     current_idx = 0
-    if user_ai.provider == "openai":
+    if user_ai.provider == "ollama":
         current_idx = 1
-    elif user_ai.provider == "custom":
+    elif user_ai.provider == "openai":
         current_idx = 2
+    elif user_ai.provider == "custom":
+        current_idx = 3
 
     chosen_provider_label = st.selectbox(
         "Provider IA Attivo:",
@@ -538,13 +545,57 @@ with st.sidebar:
         index=current_idx
     )
 
-    new_provider = "ollama"
-    if "OpenAI" in chosen_provider_label:
+    new_provider = "groq"
+    if "Ollama" in chosen_provider_label:
+        new_provider = "ollama"
+    elif "OpenAI" in chosen_provider_label:
         new_provider = "openai"
     elif "Custom" in chosen_provider_label:
         new_provider = "custom"
 
-    if new_provider == "ollama":
+    if new_provider == "groq":
+        club_groq_key = os.environ.get("GROQ_API_KEY", "")
+        if not club_groq_key:
+            try:
+                if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                    club_groq_key = st.secrets["GROQ_API_KEY"]
+            except Exception:
+                pass
+
+        groq_key_val = user_ai.groq_api_key or club_groq_key
+        groq_api_key = st.text_input(
+            "Chiave API Groq Gratuita:",
+            type="password",
+            value=groq_key_val,
+            help="100% gratuita senza carta di credito. Generala su https://console.groq.com/keys"
+        )
+        groq_model = st.selectbox(
+            "Modello Groq Llama:",
+            options=["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+            index=0 if user_ai.groq_model == "llama-3.3-70b-versatile" else 1
+        )
+        st.caption("💡 *Groq Cloud è 100% gratuito per sempre: non richiede carta di credito e non costa nulla.*")
+        st.markdown("[👉 **Ottieni la tua chiave gratuita Groq in 10 secondi su console.groq.com**](https://console.groq.com/keys)")
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            if st.button("🔌 Test Groq Cloud", use_container_width=True):
+                test_cfg = AIUserConfig(provider="groq", groq_api_key=groq_api_key, groq_model=groq_model)
+                ok, msg = test_ai_connection(test_cfg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        with col_t2:
+            if st.button("💾 Salva IA", key="save_groq_btn", use_container_width=True):
+                user_ai.provider = "groq"
+                user_ai.groq_api_key = groq_api_key
+                user_ai.groq_model = groq_model
+                auth_manager.update_user_ai_config(current_user.user_id, user_ai)
+                st.success("Configurazione salvata con successo!")
+                st.rerun()
+
+    elif new_provider == "ollama":
         ollama_url = st.text_input("URL Server Ollama:", value=user_ai.ollama_url or "http://localhost:11434")
 
         # Rileva automaticamente i modelli installati localmente su Ollama
