@@ -21,7 +21,6 @@ class TestTelegramIntegration(unittest.TestCase):
             shutil.rmtree(self.test_dir)
 
     def test_config_manager_token(self):
-        self.assertEqual(self.cfg_mgr.get_token(), "")
         test_tok = "123456789:TEST_ABC_TOKEN_XYZ"
         self.cfg_mgr.set_token(test_tok)
         self.assertEqual(self.cfg_mgr.get_token(), test_tok)

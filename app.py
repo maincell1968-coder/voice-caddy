@@ -256,6 +256,27 @@ if st.session_state.auth_user is None:
                 <span class="disclaimer-pill">🛡️ Esonero Totale da Responsabilità Legale</span>
             </div>
         </div>
+        <div class="legal-disclaimer-box" style="border-left: 5px solid #2ECC71; border-color: rgba(46, 204, 113, 0.4); margin-top: -10px;">
+            <div class="disclaimer-title" style="color: #2ECC71;">
+                💡 Trasparenza Consumi, Token & Trascrizione Audio Gratuita
+            </div>
+            <div class="disclaimer-text">
+                Per la massima serenità e chiarezza di tutti i soci e giocatori, il consumo delle risorse IA è rigorosamente strutturato:
+                <br><br>
+                • <b>🎙️ Trascrizione Audio a ZERO TOKEN:</b> La conversione da voce a testo (Speech-to-Text per le note vocali inviate da smartphone su Telegram o caricate sul sito) usa il motore <em>Faster-Whisper locale</em> direttamente sul computer. <b>Non consuma gettoni/token dei modelli linguistici</b> ed è completamente gratuita (0,00€).
+                <br>
+                • <b>💬 Chat di Testo Telegram:</b> Se il giocatore digita direttamente i colpi via messaggio di testo, la conversione audio non serve e si passa direttamente all'analisi.
+                <br>
+                • <b>🤖 Opzione Analisi 100% Gratuita (Ollama):</b> Chi desidera giocare a costo zero seleziona <b>Ollama Locale Gratuito</b> nella propria barra laterale (0 token, 0,00€). Chi sceglie OpenAI con modelli ultra-efficienti come <code>gpt-4o-mini</code> consuma frazioni microscopiche (~0,0008$ a partita, ovvero oltre 1.200 gare complete con 1$).
+                <br>
+                • <b>🛡️ Isolamento Totale ("Bring Your Own AI"):</b> Nessun credito o token è condiviso tra giocatori. Ciascun utente utilizza esclusivamente la propria configurazione memorizzata nel profilo, impedendo categoricamente a chiunque di consumare i gettoni o le risorse altrui.
+            </div>
+            <div style="margin-top: 14px;">
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🎙️ Trascrizione Vocale = 0 Token</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🆓 Opzione Ollama 100% Gratuita</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🔒 Nessun Token Condiviso</span>
+            </div>
+        </div>
     """, unsafe_allow_html=True)
 
     # Sub-flow: Mandatory Password Change Modal
@@ -442,8 +463,8 @@ if "user_profile" not in st.session_state or st.session_state.user_profile.playe
         default_name=f"{current_user.first_name} {current_user.last_name}"
     )
 
-# Header Bar with User Badge & Logout
-header_left, header_right = st.columns([4, 1])
+# Header Bar with User Badge, Info Popover & Logout
+header_left, header_info, header_right = st.columns([3, 1.3, 1])
 with header_left:
     group_label = "🏆 Gruppo Strafatti" if current_user.group == "strafatti" else "🤝 Gruppo Amici"
     group_color = "#2ECC71" if current_user.group == "strafatti" else "#3498DB"
@@ -454,6 +475,27 @@ with header_left:
             {admin_badge}
         </div>
     """, unsafe_allow_html=True)
+
+with header_info:
+    with st.popover("💡 Info Consumi & Token", use_container_width=True):
+        st.markdown("""
+            <h4 style="color:#2ECC71; margin-top:0;">🎙️ Trascrizione Vocale: ZERO TOKEN</h4>
+            <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
+                La conversione della voce in testo (Speech-to-Text per note vocali su Telegram o caricate sul sito) usa il motore <b>Faster-Whisper locale</b> direttamente sul computer.
+                <br><b>Non consuma alcun token/credito OpenAI (Costo: 0,00€).</b>
+            </p>
+            <h4 style="color:#F1C40F; margin-top:12px;">🧠 Analisi Dati Gara & Opzione Gratuita</h4>
+            <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
+                Una volta convertito l'audio in testo (o digitato direttamente in chat Telegram):
+                <br>• <b>Ollama (Locale Gratuito):</b> Consuma <b>0 Token</b>, costo <b>0,00€</b> totale.
+                <br>• <b>OpenAI (gpt-4o-mini):</b> Consuma ~2.500 token, pari a circa <b>0,0008$ a partita</b> (oltre 1.200 gare complete con 1$).
+                <br>• <b>OpenAI (gpt-4o):</b> Circa <b>0,015$ a partita</b> (circa 1,5 centesimi).
+            </p>
+            <h4 style="color:#3498DB; margin-top:12px;">🛡️ Nessun Rischio di Consumo Altrui</h4>
+            <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
+                Grazie all'architettura <b>Bring Your Own AI</b>, i profili sono separati ermeticamente: ciascun giocatore usa solo il proprio motore o i propri gettoni personali. Nessun utente può consumare i token di un altro membro.
+            </p>
+        """, unsafe_allow_html=True)
 
 with header_right:
     if st.button("🚪 Esci (Logout)", use_container_width=True):
