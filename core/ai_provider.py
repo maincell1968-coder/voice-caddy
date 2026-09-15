@@ -21,7 +21,7 @@ def get_openai_client_for_config(config: AIUserConfig) -> Tuple[OpenAI, str]:
     provider = config.provider.lower()
 
     if provider == "groq":
-        api_key = config.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+        api_key = getattr(config, "groq_api_key", "") or os.environ.get("GROQ_API_KEY", "")
         if not api_key:
             try:
                 import streamlit as st
@@ -40,7 +40,7 @@ def get_openai_client_for_config(config: AIUserConfig) -> Tuple[OpenAI, str]:
             base_url="https://api.groq.com/openai/v1",
             api_key=api_key
         )
-        model = config.groq_model or "llama-3.3-70b-versatile"
+        model = getattr(config, "groq_model", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
         return client, model
 
     elif provider == "ollama":

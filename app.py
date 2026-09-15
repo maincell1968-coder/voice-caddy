@@ -453,10 +453,16 @@ if st.session_state.auth_user is None:
     st.stop()
 
 
-# =========================================================
-# SCREEN 2: AUTHENTICATED USER DASHBOARD
-# =========================================================
 current_user: UserRecord = st.session_state.auth_user
+
+# Assicura retrocompatibilità totale con oggetti session_state precedenti
+if not hasattr(current_user, "ai_config") or current_user.ai_config is None:
+    current_user.ai_config = AIUserConfig()
+else:
+    if not hasattr(current_user.ai_config, "groq_api_key"):
+        setattr(current_user.ai_config, "groq_api_key", "")
+    if not hasattr(current_user.ai_config, "groq_model"):
+        setattr(current_user.ai_config, "groq_model", "llama-3.3-70b-versatile")
 
 # Load Per-User Golf Profile (handicap, bag, ball)
 if "user_profile" not in st.session_state or st.session_state.user_profile.player_name != f"{current_user.first_name} {current_user.last_name}":
@@ -524,6 +530,10 @@ with st.sidebar:
     st.caption("Ciascun giocatore utilizza esclusivamente la propria IA (Ollama locale gratuito o token personali).")
 
     user_ai = current_user.ai_config
+    if not hasattr(user_ai, "groq_api_key"):
+        setattr(user_ai, "groq_api_key", "")
+    if not hasattr(user_ai, "groq_model"):
+        setattr(user_ai, "groq_model", "llama-3.3-70b-versatile")
 
     provider_options = [
         "Groq Cloud (100% Gratuito - Consigliato)",
@@ -531,13 +541,16 @@ with st.sidebar:
         "OpenAI (Chiave Personale)",
         "Custom (DeepSeek, Together)"
     ]
+    curr_prov = getattr(user_ai, "provider", "groq")
     current_idx = 0
-    if user_ai.provider == "ollama":
-        current_idx = 1
-    elif user_ai.provider == "openai":
+    if curr_prov == "openai":
         current_idx = 2
-    elif user_ai.provider == "custom":
+    elif curr_prov == "custom":
         current_idx = 3
+    elif curr_prov == "ollama" and st.session_state.get("explicit_ollama_choice"):
+        current_idx = 1
+    else:
+        current_idx = 0  # Groq Cloud è sempre il default a indice 0!
 
     chosen_provider_label = st.selectbox(
         "Provider IA Attivo:",
@@ -548,6 +561,7 @@ with st.sidebar:
     new_provider = "groq"
     if "Ollama" in chosen_provider_label:
         new_provider = "ollama"
+        st.session_state["explicit_ollama_choice"] = True
     elif "OpenAI" in chosen_provider_label:
         new_provider = "openai"
     elif "Custom" in chosen_provider_label:
@@ -562,17 +576,18 @@ with st.sidebar:
             except Exception:
                 pass
 
-        groq_key_val = user_ai.groq_api_key or club_groq_key
+        groq_key_val = getattr(user_ai, "groq_api_key", "") or club_groq_key
         groq_api_key = st.text_input(
             "Chiave API Groq Gratuita:",
             type="password",
             value=groq_key_val,
             help="100% gratuita senza carta di credito. Generala su https://console.groq.com/keys"
         )
+        cur_groq_model = getattr(user_ai, "groq_model", "llama-3.3-70b-versatile")
         groq_model = st.selectbox(
             "Modello Groq Llama:",
             options=["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
-            index=0 if user_ai.groq_model == "llama-3.3-70b-versatile" else 1
+            index=0 if cur_groq_model == "llama-3.3-70b-versatile" else 1
         )
         st.caption("💡 *Groq Cloud è 100% gratuito per sempre: non richiede carta di credito e non costa nulla.*")
         st.markdown("[👉 **Ottieni la tua chiave gratuita Groq in 10 secondi su console.groq.com**](https://console.groq.com/keys)")
@@ -589,8 +604,8 @@ with st.sidebar:
         with col_t2:
             if st.button("💾 Salva IA", key="save_groq_btn", use_container_width=True):
                 user_ai.provider = "groq"
-                user_ai.groq_api_key = groq_api_key
-                user_ai.groq_model = groq_model
+                setattr(user_ai, "groq_api_key", groq_api_key)
+                setattr(user_ai, "groq_model", groq_model)
                 auth_manager.update_user_ai_config(current_user.user_id, user_ai)
                 st.success("Configurazione salvata con successo!")
                 st.rerun()
