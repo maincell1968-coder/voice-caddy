@@ -160,6 +160,44 @@ st.markdown("""
             border-radius: 8px;
             border: 1px solid #292F3D;
         }
+        .legal-disclaimer-box {
+            background: linear-gradient(145deg, #101622 0%, #162234 100%);
+            border: 1px solid rgba(241, 196, 15, 0.4);
+            border-left: 5px solid #F1C40F;
+            border-radius: 12px;
+            padding: 22px 24px;
+            margin: 0 auto 30px auto;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        .disclaimer-title {
+            color: #F1C40F;
+            font-size: 1.05rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .disclaimer-text {
+            color: #CBD5E1;
+            font-size: 0.92rem;
+            line-height: 1.65;
+            margin-bottom: 0;
+        }
+        .disclaimer-pill {
+            display: inline-block;
+            background: rgba(241, 196, 15, 0.12);
+            color: #F1C40F;
+            border: 1px solid rgba(241, 196, 15, 0.35);
+            border-radius: 16px;
+            padding: 3px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-right: 6px;
+            margin-top: 6px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -197,6 +235,24 @@ if st.session_state.auth_user is None:
         <div class="landing-hero">
             <div class="landing-title">⛳ VOICE CADDY PRO</div>
             <div class="landing-subtitle">PGA Tour Performance Analytics & Club Portal • Accesso Riservato</div>
+        </div>
+        <div class="legal-disclaimer-box">
+            <div class="disclaimer-title">
+                ⚖️ Note Legali, Origine del Software & Esonero di Responsabilità
+            </div>
+            <div class="disclaimer-text">
+                Il presente applicativo <b>Voice Caddy Pro</b> nasce da un'idea originale e dal concept funzionale ideato dall'<b>Amministratore di Sistema</b>, ed è stato interamente sviluppato, strutturato e codificato tramite l'ausilio di tecnologie di <b>Intelligenza Artificiale (IA)</b>.
+                <br><br>
+                Il programma <b>non persegue alcuna finalità commerciale o di lucro</b>, essendo destinato a scopi <b>esclusivamente ludici, amatoriali, ricreativi e sportivi</b> per la condivisione e l'analisi non agonistica delle sessioni di golf tra amici e compagni di circolo.
+                <br><br>
+                Tutti i contenuti, i calcoli, le metriche statistiche e i suggerimenti tattici generati sono forniti nello stato di fatto e di diritto in cui si trovano (<em>"as-is"</em>), a puro titolo di intrattenimento personale. <b>L'Amministratore di Sistema e l'ideatore del software sono espressamente e totalmente sollevati da qualsiasi conseguenza legale</b>, responsabilità civile, penale o onere risarcitorio diretto o indiretto derivante dall'uso o dal mancato funzionamento dell'applicazione.
+            </div>
+            <div style="margin-top: 14px;">
+                <span class="disclaimer-pill">💡 Ideato dall'Amministratore</span>
+                <span class="disclaimer-pill">🤖 Sviluppato da Intelligenza Artificiale</span>
+                <span class="disclaimer-pill">🎯 Scopo Esclusivamente Ludico e Ricreativo</span>
+                <span class="disclaimer-pill">🛡️ Esonero Totale da Responsabilità Legale</span>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
