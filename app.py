@@ -478,9 +478,9 @@ if st.session_state.auth_user is None:
                 inject_autofill_cleaner(strafatti_user_input)
 
                 strafatti_pw_input = st.text_input(
-                    "Password (al primo accesso per Stefano: Amministratore1968, per gli altri: Cognome):",
+                    "Password (al primo accesso inserisci il tuo Cognome):",
                     type="password",
-                    help="Per Stefano inserisci Amministratore1968 al primo accesso, per gli altri il proprio Cognome."
+                    placeholder="Inserisci la tua password..."
                 )
                 st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate (es. 'groq/compound-mini' o 'base'), clicca su <b>Gestisci password...</b> nel menu del browser per eliminarle.</i></div>", unsafe_allow_html=True)
                 submit_strafatti = st.form_submit_button("🚀 Entra nel Club Strafatti", type="primary", use_container_width=True)
