@@ -130,6 +130,21 @@ class UserProfile(BaseModel):
         """Ordina i bastoni in sacca dal Driver più lungo fino al Putter."""
         self.clubs_in_bag = sort_clubs_by_distance(self.clubs_in_bag)
 
+    def recommend_club_for_distance(self, distance_meters: float) -> Optional[ClubDetail]:
+        """
+        Consiglia il bastone ottimale dalla sacca in base alla distanza richiesta (in metri),
+        escludendo il Putter e selezionando il bastone con carry più vicino.
+        """
+        if not self.clubs_in_bag:
+            return None
+        eligible_clubs = [
+            c for c in self.clubs_in_bag
+            if "putt" not in c.club_name.lower() and c.carry_meters and c.carry_meters > 0
+        ]
+        if not eligible_clubs:
+            return None
+        return min(eligible_clubs, key=lambda c: abs(c.carry_meters - distance_meters))
+
     @classmethod
     def determine_category(cls, hcp: float) -> PlayerCategory:
         if hcp <= 9.4:

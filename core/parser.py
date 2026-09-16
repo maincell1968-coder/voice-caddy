@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+import re
+from typing import Optional, Dict, Any
 from core.schemas import GolfRoundData
 from core.user_profile import UserProfile
 from core.course import GolfCourse, CONERO_GOLF_CLUB
@@ -98,3 +99,99 @@ Per OGNI buca analizzata, compila obbligatoriamente l'oggetto `target_landing_an
         parsed_data.round_info.course_name = active_course.name
 
     return parsed_data
+
+
+def parse_quick_shot_update(text: str) -> Dict[str, Any]:
+    """
+    Parser rapido euristico/regex per note vocali o messaggi brevi durante il gioco di una buca:
+    Estrae:
+    - shot_index: int (es. 1, 2, 3...)
+    - club: str (es. Driver, Legno 3, Ibrido, Ferro 7, Pitching Wedge, Sand Wedge, Putter)
+    - lie: str (fairway, rough, bunker, tee, green)
+    - manual_distance: float (es. 135.0 metri da paletto)
+    - is_quick_shot: bool (True se il messaggio descrive un singolo colpo di gioco)
+    """
+    cleaned = text.strip().lower()
+
+    # 1. Riconoscimento numero colpo
+    shot_index = None
+    num_match = re.search(r"\b(?:colpo|tiro)\s*(\d+)\b", cleaned)
+    if num_match:
+        shot_index = int(num_match.group(1))
+    else:
+        ordinal_match = re.search(r"\b(\d+)[°ºª]?\s*(?:colpo|tiro)\b", cleaned)
+        if ordinal_match:
+            shot_index = int(ordinal_match.group(1))
+        elif re.search(r"\b(?:primo|1°)\s*(?:colpo|tiro)\b", cleaned):
+            shot_index = 1
+        elif re.search(r"\b(?:secondo|2°)\s*(?:colpo|tiro)\b", cleaned):
+            shot_index = 2
+        elif re.search(r"\b(?:terzo|3°)\s*(?:colpo|tiro)\b", cleaned):
+            shot_index = 3
+        elif re.search(r"\b(?:quarto|4°)\s*(?:colpo|tiro)\b", cleaned):
+            shot_index = 4
+
+    # 2. Riconoscimento bastone
+    club = None
+    club_rules = [
+        (r"\b(driver)\b", "Driver"),
+        (r"\b(legno\s*3|3\s*wood)\b", "Legno 3"),
+        (r"\b(legno\s*5|5\s*wood)\b", "Legno 5"),
+        (r"\b(legno\s*([2-9]))\b", lambda m: f"Legno {m.group(2)}"),
+        (r"\b(ibrido\s*([2-6]))\b", lambda m: f"Ibrido {m.group(2)}"),
+        (r"\b(ibrido)\b", "Ibrido"),
+        (r"\b(ferro\s*([3-9]))\b", lambda m: f"Ferro {m.group(2)}"),
+        (r"\bf([3-9])\b", lambda m: f"Ferro {m.group(1)}"),
+        (r"\b(pitching\s*wedge|pw|pitch)\b", "Pitching Wedge"),
+        (r"\b(gap\s*wedge|gw)\b", "Gap Wedge"),
+        (r"\b(approach\s*wedge|aw)\b", "Approach Wedge"),
+        (r"\b(sand\s*wedge|sw|sand)\b", "Sand Wedge"),
+        (r"\b(lob\s*wedge|lw|lob)\b", "Lob Wedge"),
+        (r"\b(wedge)\b", "Wedge"),
+        (r"\b(putter|putt)\b", "Putter"),
+    ]
+    for pattern, name in club_rules:
+        m = re.search(pattern, cleaned)
+        if m:
+            club = name(m) if callable(name) else name
+            break
+
+    # 3. Riconoscimento lie
+    lie = None
+    lie_rules = [
+        (r"\b(fairway|fway)\b", "fairway"),
+        (r"\b(rough|erba\s*alta)\b", "rough"),
+        (r"\b(bunker|sabbia)\b", "bunker"),
+        (r"\b(tee(\s*box)?|partenza)\b", "tee"),
+        (r"\b(green)\b", "green"),
+        (r"\b(ostacolo|acqua|hazard)\b", "hazard"),
+        (r"\b(fuori\s*limite|ob)\b", "out_of_bounds"),
+    ]
+    for pattern, name in lie_rules:
+        if re.search(pattern, cleaned):
+            lie = name
+            break
+
+    # 4. Riconoscimento distanza manuale (es. "135 metri", "paletto 150")
+    manual_distance = None
+    dist_match = re.search(r"\b(?:paletto|distanza|da)?\s*(\d{2,3})\s*(?:metri|metro|mt|m)?\b", cleaned)
+    if dist_match:
+        val = float(dist_match.group(1))
+        if 20 <= val <= 550:
+            manual_distance = val
+
+    # Determina se è un update rapido di colpo singolo
+    has_signals = any([club is not None, lie is not None, shot_index is not None, manual_distance is not None])
+    # Se il testo è troppo lungo o parla di "buca 1... buca 2... score totale", allora è un giro intero
+    is_multi_hole = len(re.findall(r"\bbuca\s*\d+\b", cleaned)) > 1 or "score totale" in cleaned
+
+    is_quick_shot = has_signals and not is_multi_hole
+
+    return {
+        "is_quick_shot": is_quick_shot,
+        "shot_index": shot_index,
+        "club": club,
+        "lie": lie or ("tee" if shot_index == 1 else "fairway"),
+        "manual_distance": manual_distance,
+        "raw_text": text
+    }

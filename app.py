@@ -23,8 +23,11 @@ from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
 from core.ai_provider import test_ai_connection, AIProviderError
 from core.telegram_config import TelegramConfigManager
+from core.elevation_service import elevation_service, haversine_distance, calculate_plays_like
+from core.live_session import LiveSessionManager
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+live_session_mgr = LiveSessionManager()
 
 st.set_page_config(
     page_title="Voice Caddy Pro | Club & Performance Portal",
@@ -295,6 +298,22 @@ def inject_autofill_cleaner(username_val: str = ""):
     """, height=0, width=0)
 
 
+def render_footer():
+    st.markdown("""
+        <div style="margin-top: 55px; padding: 25px 15px; border-top: 1px solid rgba(255, 255, 255, 0.08); text-align: center;">
+            <div style="font-size: 0.95rem; font-weight: 700; color: #E2E8F0; letter-spacing: 0.5px; margin-bottom: 6px;">
+                ⛳ VOICE CADDY PRO &bull; PGA Performance Analytics & Live GPS Caddie
+            </div>
+            <div style="font-size: 0.85rem; color: #CBD5E1; margin-bottom: 6px;">
+                Concept, Architettura e Proprietà Intellettuale &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Tutti i diritti riservati
+            </div>
+            <div style="font-size: 0.78rem; color: #64748B;">
+                Ideato e sviluppato per finalità sportive e ricreative &bull; Conero Golf Club &bull; Torrenova Golf
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+
 # =========================================================
 # SCREEN 1: ACCESS GATE & LOGIN / PASSWORD CHANGE FLOW
 # =========================================================
@@ -517,6 +536,9 @@ if st.session_state.auth_user is None:
                                 st.rerun()
                         else:
                             st.error(f"⛔ {msg}")
+
+    # Visualizza footer di copyright anche sulla schermata di accesso
+    render_footer()
 
     # Stop rendering remainder of the app until authenticated
     st.stop()
@@ -1069,6 +1091,7 @@ def render_strokes_lost_radar(strokes_lost):
 # =========================================================
 tab_titles = [
     "📊 Live Dashboard & Diagnosi PGA",
+    "📍 Pin Position & Plays Like GPS",
     "🏌️‍♂️ Profilo Personale & Sacca Mazze",
     "📈 Storico Partite & Trend",
     "🎯 Benchmark & Strokes Gained"
@@ -1077,8 +1100,12 @@ if current_user.is_admin:
     tab_titles.append("👑 Amministrazione & Utenti")
 
 all_tabs = st.tabs(tab_titles)
-nav_tab1, nav_tab2, nav_tab3, nav_tab4 = all_tabs[0], all_tabs[1], all_tabs[2], all_tabs[3]
-nav_admin = all_tabs[4] if current_user.is_admin else None
+nav_tab1 = all_tabs[0]
+nav_pin_gps = all_tabs[1]
+nav_tab2 = all_tabs[2]
+nav_tab3 = all_tabs[3]
+nav_tab4 = all_tabs[4]
+nav_admin = all_tabs[5] if current_user.is_admin else None
 
 
 # ---------------------------------------------------------
@@ -1229,6 +1256,173 @@ with nav_tab1:
 
     else:
         st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
+
+
+# ---------------------------------------------------------
+# TAB: PIN POSITION & PLAYS LIKE GPS
+# ---------------------------------------------------------
+with nav_pin_gps:
+    st.subheader("📍 Pin Position, Altimetria & Balistica Plays Like (Live GPS)")
+    st.caption("Tracciamento delle distanze cieche, dislivello altimetrico con Open-Meteo & Open-Elevation, e calcolo balistico Plays Like con suggerimento bastone.")
+
+    col_pin_l, col_pin_r = st.columns([1.5, 2.5])
+
+    with col_pin_l:
+        st.markdown(f"### ⛳ {active_course.name}")
+        st.caption(f"Città: {active_course.city} | Buche: {active_course.holes_count} | Par: {active_course.total_par}")
+        if hasattr(active_course, "terrain_description") and active_course.terrain_description:
+            st.info(f"⛰️ **Orografia del campo:** {active_course.terrain_description}")
+
+        hole_nums = [h.hole_number for h in active_course.holes]
+        selected_h_num = st.selectbox(
+            "Seleziona la Buca da visualizzare/calcolare:",
+            options=hole_nums,
+            index=0,
+            format_func=lambda n: f"Buca {n} (Par {active_course.get_hole(n).par if active_course.get_hole(n) else 4} — {active_course.get_hole(n).distance_meters if active_course.get_hole(n) else 'N/D'}m)"
+        )
+        h_info = active_course.get_hole(selected_h_num)
+
+        if h_info:
+            h_coords = h_info.coordinates
+            slope_color = "#E67E22" if "salita" in h_info.slope_elevation_profile.lower() else ("#3498DB" if "discesa" in h_info.slope_elevation_profile.lower() else "#2ECC71")
+
+            st.markdown(f"""
+                <div style="background-color: #141d2b; border: 1px solid #28374f; border-radius: 10px; padding: 16px; margin-top: 10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:1.1rem; font-weight:bold; color:#FFFFFF;">Buca {h_info.hole_number}</span>
+                        <span style="background-color:rgba(46,204,113,0.15); color:#2ECC71; padding:2px 8px; border-radius:12px; font-weight:bold;">Par {h_info.par}</span>
+                    </div>
+                    <div style="color:#94A3B8; font-size:0.85rem; margin-top:4px;">
+                        • Distanza Scorecard: <b>{h_info.distance_meters}m</b><br>
+                        • Indice di Difficoltà (HCP): <b>{h_info.handicap_index or 'N/D'}</b><br>
+                        • Pendenza dichiarata: <b style="color:{slope_color};">{h_info.slope_elevation_profile}</b>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            if h_coords:
+                st.markdown("#### 🌐 Coordinate GPS & Quote Altimetriche")
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    st.markdown(f"""
+                        <div style="background:#0e1622; border:1px solid #1f2d42; border-radius:8px; padding:10px; font-size:0.82rem;">
+                            <b style="color:#38BDF8;">🏌️‍♂️ Tee di Partenza:</b><br>
+                            Lat: <code>{h_coords.tee_lat:.4f}</code><br>
+                            Lon: <code>{h_coords.tee_lon:.4f}</code><br>
+                            Quota: <b>{int(h_coords.tee_altitude) if h_coords.tee_altitude else 'N/D'}m s.l.m.</b>
+                        </div>
+                    """, unsafe_allow_html=True)
+                with col_c2:
+                    st.markdown(f"""
+                        <div style="background:#0e1622; border:1px solid #1f2d42; border-radius:8px; padding:10px; font-size:0.82rem;">
+                            <b style="color:#2ECC71;">🎯 Centro Green / Pin:</b><br>
+                            Lat: <code>{h_coords.target_lat:.4f}</code><br>
+                            Lon: <code>{h_coords.target_lon:.4f}</code><br>
+                            Quota: <b>{int(h_coords.target_altitude) if h_coords.target_altitude else 'N/D'}m s.l.m.</b>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+    with col_pin_r:
+        st.markdown("### 🧮 Calcolatore Balistico Plays Like Distance")
+        st.caption("Simula la posizione della palla dal tee o dal fairway e calcola l'effetto reale della pendenza.")
+
+        calc_mode = st.radio(
+            "Modalità di calcolo:",
+            options=["Distanza Metrica & Dislivello Altimetrico", "Coordinate GPS Reali (Lat/Lon)"],
+            horizontal=True
+        )
+
+        target_coords = h_info.coordinates if (h_info and h_info.coordinates) else None
+
+        if calc_mode == "Distanza Metrica & Dislivello Altimetrico":
+            default_dist = float(h_info.distance_meters if h_info and h_info.distance_meters else 150)
+            sim_dist = st.slider("Distanza orizzontale in linea d'aria verso la bandiera (metri):", min_value=20.0, max_value=500.0, value=min(default_dist, 140.0), step=1.0)
+
+            default_elev = 0.0
+            if target_coords and target_coords.tee_altitude and target_coords.green_altitude:
+                default_elev = float(target_coords.green_altitude - target_coords.tee_altitude)
+
+            sim_elev = st.slider("Dislivello altimetrico Δh (metri tra palla e green):", min_value=-40.0, max_value=40.0, value=default_elev, step=1.0, help="Positivo (+) per salita, negativo (-) per discesa.")
+
+            c_factor = st.slider("Coefficiente balistico c (standard golf ~1.0):", min_value=0.8, max_value=1.2, value=1.0, step=0.05, help="10m di salita equivalgono solitamente a ~10m in più di bastone.")
+
+            plays_like_val = calculate_plays_like(sim_dist, sim_elev, c_factor)
+            rec_club = st.session_state.user_profile.recommend_club_for_distance(plays_like_val)
+            rec_str = f"{rec_club.club_name} ({int(rec_club.carry_meters)}m)" if rec_club else "N/D"
+
+            sign_s = "+" if sim_elev > 0 else ""
+            status_text = "In salita" if sim_elev > 1 else ("In discesa" if sim_elev < -1 else "In pianura")
+
+            col_res1, col_res2, col_res3 = st.columns(3)
+            col_res1.metric("📏 Distanza Reale (Laser)", f"{int(sim_dist)}m")
+            col_res2.metric(f"⛰️ Dislivello ({status_text})", f"{sign_s}{int(sim_elev)}m")
+            col_res3.metric("🎯 Plays Like Distance", f"~{int(plays_like_val)}m", delta=f"{sign_s}{int(plays_like_val - sim_dist)}m")
+
+            st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #13271d 0%, #0d1a14 100%); border: 2px solid #2ECC71; border-radius: 12px; padding: 18px; margin-top: 15px; text-align: center;">
+                    <span style="font-size: 0.95rem; color: #A7F3D0; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">🏌️ Raccomandazione Caddie PGA per {st.session_state.user_profile.player_name}:</span>
+                    <div style="font-size: 1.8rem; font-weight: 800; color: #FFFFFF; margin: 8px 0;">
+                        Bastone Consigliato: <span style="color: #F1C40F;">{rec_str}</span>
+                    </div>
+                    <div style="font-size: 0.88rem; color: #CBD5E1;">
+                        Un colpo di <b>{int(sim_dist)}m</b> con <b>{sign_s}{int(sim_elev)}m</b> di pendenza richiede la stessa potenza e traiettoria di un colpo in piano da <b>~{int(plays_like_val)}m</b>.
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        else:
+            default_lat = target_coords.tee_lat if target_coords else 43.5228
+            default_lon = target_coords.tee_lon if target_coords else 13.6060
+            c_lat1, c_lat2 = st.columns(2)
+            with c_lat1:
+                b_lat = st.number_input("Latitudine Palla:", value=float(default_lat), format="%.5f")
+            with c_lat2:
+                b_lon = st.number_input("Longitudine Palla:", value=float(default_lon), format="%.5f")
+
+            if st.button("📡 Calcola con API Open-Meteo & Open-Elevation", type="primary", use_container_width=True):
+                with st.spinner("Interrogazione modelli di elevazione digitale..."):
+                    t_lat = target_coords.target_lat if target_coords else 43.5199
+                    t_lon = target_coords.target_lon if target_coords else 13.6072
+                    t_alt = target_coords.target_altitude if target_coords else 110.0
+
+                    approach = elevation_service.calculate_hole_approach(
+                        ball_lat=b_lat, ball_lon=b_lon,
+                        target_lat=t_lat, target_lon=t_lon,
+                        target_altitude=t_alt
+                    )
+
+                    rec_club = st.session_state.user_profile.recommend_club_for_distance(approach["plays_like_distance"])
+                    rec_str = f"{rec_club.club_name} ({int(rec_club.carry_meters)}m)" if rec_club else "N/D"
+
+                    col_r1, col_r2, col_r3 = st.columns(3)
+                    col_r1.metric("📏 Distanza Haversine", f"{int(approach['raw_distance'])}m")
+                    col_r2.metric(f"⛰️ Dislivello ({approach['slope_label']})", f"{int(approach['elevation_diff'])}m")
+                    col_r3.metric("🎯 Plays Like Distance", f"~{int(approach['plays_like_distance'])}m")
+
+                    st.success(f"🏌️ **Bastone Suggerito dalla tua sacca:** {rec_str}")
+                    st.caption(f"Quota Palla: {approach['ball_altitude']}m s.l.m. | Quota Green: {approach['target_altitude']}m s.l.m.")
+
+        st.markdown("---")
+        st.markdown("### 📱 Guida in 3 Passaggi: Come giocare in campo senza rallentare il gioco")
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #111e30 0%, #0d1522 100%); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 18px; margin-bottom: 15px;">
+                <div style="font-size: 1rem; font-weight: bold; color: #38BDF8; margin-bottom: 12px;">
+                    ⚡ 3 Semplici Passaggi: Zero Distrazioni, Zero Rallentamenti per il Team
+                </div>
+                <div style="font-size: 0.88rem; line-height: 1.6; color: #E2E8F0;">
+                    <b>1️⃣ SUL TEE DI PARTENZA:</b><br>
+                    Tocca il pulsante rapido <code>⏩ Prossima Buca</code> sulla tastiera Telegram (o digita <code>/buca 1</code>). Tira il tuo colpo dal tee.<br><br>
+                    <b>2️⃣ QUANDO ARRIVI SULLA PALLA (1 Solo Tocco):</b><br>
+                    Tira fuori lo smartphone e tocca l'unico grande pulsante in basso:<br>
+                    <span style="display:inline-block; background:#0284C7; color:#FFFFFF; padding:4px 10px; border-radius:6px; font-weight:bold; margin: 4px 0;">📍 Calcola Distanza & Plays Like</span><br>
+                    <i>In meno di 1 secondo ricevi: Distanza reale al green, Dislivello altimetrico (+/- metri), Plays Like effettivo e Bastone consigliato dalla tua sacca!</i><br><br>
+                    <b>3️⃣ DOPO IL COLPO (Mentre cammini):</b><br>
+                    Mentre cammini verso il green o verso la palla successiva, tieni premuto il microfono di Telegram per 2 secondi: <i>'Ferro 7 dal fairway'</i>.<br>
+                    Il bot archivia il colpo nel database senza che tu debba fermarti o digitare nulla.<br><br>
+                    <span style="color:#94A3B8; font-size:0.8rem;">💡 <b>Giocatore collegato al Bot:</b> {current_user.first_name} {current_user.last_name} &bull; <b>Campo attivo:</b> {active_course.name}</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------
@@ -1520,3 +1714,9 @@ if current_user.is_admin and nav_admin:
             else:
                 for cid, data in users_map.items():
                     st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)
+
+
+# =========================================================
+# GLOBAL FOOTER & INTELLECTUAL PROPERTY
+# =========================================================
+render_footer()

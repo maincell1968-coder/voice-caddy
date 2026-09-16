@@ -49,6 +49,13 @@ class Shot(BaseModel):
     lie: LieType = Field(..., description="Superficie da cui si esegue il colpo")
     result: ShotResult = Field(..., description="Esito balistico o destinazione del colpo")
     notes: Optional[str] = Field(default="", description="Sensazioni o dettagli tecnici specifici del colpo")
+    latitude: Optional[float] = Field(default=None, description="Latitudine GPS del punto di esecuzione del colpo")
+    longitude: Optional[float] = Field(default=None, description="Longitudine GPS del punto di esecuzione del colpo")
+    altitude: Optional[float] = Field(default=None, description="Quota altimetrica in metri s.l.m. del punto del colpo")
+    raw_distance: Optional[float] = Field(default=None, description="Distanza orizzontale in linea d'aria verso il green/pin in metri")
+    plays_like_distance: Optional[float] = Field(default=None, description="Distanza effettiva balistica corretta per la pendenza (Plays Like) in metri")
+    elevation_diff: Optional[float] = Field(default=None, description="Dislivello tra la palla e il green (+ salita, - discesa) in metri")
+
 
 
 class HoleData(BaseModel):

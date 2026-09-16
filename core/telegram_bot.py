@@ -8,10 +8,10 @@ import urllib.request
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from core.audio import VoiceCaddyAudioEngine
-from core.parser import parse_golf_audio_transcript
+from core.parser import parse_golf_audio_transcript, parse_quick_shot_update
 from core.metrics import GolfMetricsCalculator
 from core.db import DatabaseManager
 from core.auth import AuthManager, AIUserConfig, UserRecord
@@ -19,6 +19,8 @@ from core.user_profile import UserProfile
 from core.course import CourseRegistry, CONERO_GOLF_CLUB, GolfCourse
 from core.demo_data import get_demo_golf_round
 from core.telegram_config import TelegramConfigManager
+from core.elevation_service import elevation_service, haversine_distance
+from core.live_session import LiveSessionManager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,8 +30,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 class VoiceCaddyTelegramBot:
     """
     Motore Telegram Bot per Voice Caddy Pro.
-    Permette ai golfisti di inviare note vocali o messaggi di testo direttamente dal campo,
-    ricevendo una scorecard ufficiale istantanea, statistiche balistiche e consigli tattici del Caddie PGA.
+    Supporta:
+    1. Tracciamento GPS in tempo reale (singolo e Live Location).
+    2. Calcolo orografico del dislivello e balistica 'Plays Like Distance' (Open-Meteo & Open-Elevation).
+    3. Raccomandazione bastone basata sulla sacca personale del giocatore.
+    4. Parser vocale e testuale per singoli colpi o scorecard completa.
+    5. Fallback trasparente su distanze piane se GPS o elevazione sono disattivati.
     """
 
     def __init__(self, bot_token: Optional[str] = None):
@@ -43,6 +49,7 @@ class VoiceCaddyTelegramBot:
         self.db = DatabaseManager()
         self.auth_mgr = AuthManager()
         self.course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
+        self.session_mgr = LiveSessionManager()
         self.is_running = False
 
     def _api_request(self, method: str, data: Optional[dict] = None) -> dict:
@@ -58,11 +65,25 @@ class VoiceCaddyTelegramBot:
             logging.error(f"Errore chiamata Telegram API ({method}): {e}")
             return {"ok": False, "error": str(e)}
 
-    def send_message(self, chat_id: int | str, text: str, parse_mode: str = "HTML") -> dict:
+    def get_on_course_keyboard(self) -> dict:
+        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e azioni di gioco."""
+        return {
+            "keyboard": [
+                [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
+                [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
+                [{"text": "🎒 Profilo & Sacca"}, {"text": "🔄 Nuovo Giro"}]
+            ],
+            "resize_keyboard": True,
+            "is_persistent": True
+        }
+
+    def send_message(self, chat_id: int | str, text: str, parse_mode: str = "HTML", reply_markup: Optional[dict] = None) -> dict:
+        markup = reply_markup if reply_markup is not None else self.get_on_course_keyboard()
         return self._api_request("sendMessage", {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": parse_mode
+            "parse_mode": parse_mode,
+            "reply_markup": markup
         })
 
     def get_file_path(self, file_id: str) -> Optional[str]:
@@ -112,6 +133,153 @@ class VoiceCaddyTelegramBot:
         ai_cfg = user_rec.ai_config if user_rec else AIUserConfig()
 
         return user_rec, user_profile, course, ai_cfg
+
+    # ---------------------------------------------------------
+    # GPS Location & Plays Like Ballistic Handler
+    # ---------------------------------------------------------
+    def handle_location_update(
+        self,
+        chat_id: int | str,
+        lat: float,
+        lon: float,
+        altitude: Optional[float] = None
+    ) -> dict:
+        """
+        Gestisce la posizione GPS inviata dal giocatore (singola o Live Location).
+        1. Recupera la buca corrente della sessione utente.
+        2. Calcola la distanza percorsa dal colpo precedente.
+        3. Calcola la distanza orizzontale e la quota della palla.
+        4. Calcola il dislivello rispetto al green (Delta h = h_green - h_palla) e la Plays Like Distance.
+        5. Suggerisce il bastone ideale dalla sacca personale del giocatore.
+        6. Invia una risposta sintetica ed immediata.
+        """
+        user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
+        session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id)
+
+        # Aggiorna posizione e recupera metratura percorsa dal colpo precedente
+        distance_covered, current_hole, current_shot = self.session_mgr.update_position(chat_id, lat, lon, altitude)
+
+        # Risolvi target pin per la buca attiva
+        pin_override = self.session_mgr.get_pin_override(chat_id, current_hole)
+        hole_info = active_course.get_hole(current_hole)
+
+        if pin_override:
+            target_lat, target_lon, target_alt = pin_override
+        elif hole_info and hole_info.coordinates:
+            target_lat = hole_info.coordinates.target_lat
+            target_lon = hole_info.coordinates.target_lon
+            target_alt = hole_info.coordinates.target_altitude
+        else:
+            # Fallback coordinate generiche Sirolo
+            target_lat, target_lon, target_alt = (43.5199, 13.6072, 110.0)
+
+        # Fallback stima dislivello se API offline
+        fallback_elev = 0.0
+        if hole_info:
+            prof = hole_info.slope_elevation_profile.lower()
+            if "salita" in prof:
+                fallback_elev = 8.0
+            elif "discesa" in prof:
+                fallback_elev = -8.0
+
+        # Calcola approccio tramite elevation_service
+        approach = elevation_service.calculate_hole_approach(
+            ball_lat=lat,
+            ball_lon=lon,
+            target_lat=target_lat,
+            target_lon=target_lon,
+            ball_altitude=altitude,
+            target_altitude=target_alt,
+            slope_factor=1.0,
+            fallback_elevation_diff=fallback_elev
+        )
+
+        # Suggerisci il bastone dalla sacca personale
+        recommended_club = user_profile.recommend_club_for_distance(approach["plays_like_distance"])
+        rec_club_str = f"{recommended_club.club_name} ({int(recommended_club.carry_meters)}m)" if recommended_club else "N/D"
+
+        # Registra il colpo live nel database
+        self.session_mgr.record_live_shot(
+            chat_id=chat_id,
+            hole_number=current_hole,
+            shot_index=current_shot,
+            club=recommended_club.club_name if recommended_club else None,
+            lie="tee" if current_shot == 1 else "fairway",
+            latitude=lat,
+            longitude=lon,
+            altitude=approach["ball_altitude"],
+            distance_covered=distance_covered,
+            raw_distance_to_green=approach["raw_distance"],
+            plays_like_distance=approach["plays_like_distance"],
+            elevation_diff=approach["elevation_diff"],
+            notes=f"Plays Like: {approach['plays_like_distance']}m"
+        )
+
+        # Formatta l'output sintetico
+        elev_val = int(round(approach["elevation_diff"]))
+        sign = "+" if elev_val > 0 else ""
+        if elev_val == 0:
+            elev_str = "0m (Pianura)"
+        else:
+            elev_str = f"{sign}{elev_val}m ({approach['slope_label']})"
+
+        raw_dist = int(round(approach["raw_distance"]))
+        pl_dist = int(round(approach["plays_like_distance"]))
+        par_val = hole_info.par if hole_info else 4
+
+        reply_msg = (
+            f"⛳ <b>Buca {current_hole}</b> (Par {par_val}) — <b>Colpo {current_shot}</b>\n\n"
+            f"📏 <b>Distanza reale:</b> {raw_dist}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
+            f"🎯 <b>Plays Like:</b> ~{pl_dist}m (Consigliato: <b>{rec_club_str}</b>)\n"
+        )
+
+        if distance_covered is not None and distance_covered >= 10:
+            prev_shot = max(1, current_shot - 1)
+            reply_msg += f"\n🚀 <i>Distanza percorsa dal Colpo {prev_shot}: <b>{int(round(distance_covered))}m</b></i>\n"
+
+        reply_msg += (
+            f"\n💡 <i>Dopo il colpo, detta/scrivi il bastone (es. 'Ferro 7 in green') "
+            f"oppure usa <code>/prossima</code> per passare alla buca successiva.</i>"
+        )
+
+        return self.send_message(chat_id, reply_msg)
+
+    def handle_manual_distance(self, chat_id: int | str, manual_distance: float) -> dict:
+        """
+        Fallback di resilienza quando il GPS è assente o il giocatore inserisce
+        la distanza rilevata da paletti/irrigatori (es. /distanza 138).
+        """
+        user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+        session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id)
+        current_hole = session.get("current_hole", 1)
+        current_shot = session.get("current_shot_index", 1)
+        hole_info = active_course.get_hole(current_hole)
+
+        elev_diff = 0.0
+        slope_label = "Pianura"
+        if hole_info:
+            prof = hole_info.slope_elevation_profile.lower()
+            if "salita" in prof:
+                elev_diff = 8.0
+                slope_label = "Salita (Stima orografica)"
+            elif "discesa" in prof:
+                elev_diff = -8.0
+                slope_label = "Discesa (Stima orografica)"
+
+        plays_like = round(manual_distance + elev_diff, 1)
+        rec_club = user_profile.recommend_club_for_distance(plays_like)
+        rec_club_str = f"{rec_club.club_name} ({int(rec_club.carry_meters)}m)" if rec_club else "N/D"
+
+        sign = "+" if elev_diff > 0 else ""
+        elev_str = f"{sign}{int(elev_diff)}m ({slope_label})" if elev_diff != 0 else "0m (In pianura)"
+
+        reply_msg = (
+            f"📍 <b>Distanza Manuale (Paletto/Scorecard) — Buca {current_hole}</b>\n\n"
+            f"📏 <b>Distanza indicata:</b> {int(manual_distance)}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
+            f"🎯 <b>Plays Like stimato:</b> ~{int(plays_like)}m (Consigliato: <b>{rec_club_str}</b>)\n\n"
+            f"💡 <i>Per inviare la posizione GPS esatta, usa l'icona graffetta 📎 ➔ Posizione su Telegram.</i>"
+        )
+        return self.send_message(chat_id, reply_msg)
 
     # ---------------------------------------------------------
     # Response Formatter
@@ -186,12 +354,41 @@ class VoiceCaddyTelegramBot:
                 groq_api_key=groq_key
             )
 
+            # Controllo se è un update rapido di un singolo colpo durante la buca
+            quick = parse_quick_shot_update(transcript)
+            if quick["is_quick_shot"]:
+                session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+                h_num = session.get("current_hole", 1)
+                s_idx = quick["shot_index"] or session.get("current_shot_index", 1)
+                club = quick["club"]
+                lie = quick["lie"]
+
+                self.session_mgr.record_live_shot(
+                    chat_id=chat_id,
+                    hole_number=h_num,
+                    shot_index=s_idx,
+                    club=club,
+                    lie=lie,
+                    notes=transcript
+                )
+                next_shot = self.session_mgr.advance_shot(chat_id)
+
+                self.send_message(
+                    chat_id,
+                    f"🏌️‍♂️ <b>Buca {h_num} — Colpo {s_idx} Registrato!</b>\n"
+                    f"• <b>Bastone:</b> {club or 'Non specificato'}\n"
+                    f"• <b>Lie:</b> {lie.title()}\n"
+                    f"• <i>Trascrizione:</i> «{transcript}»\n\n"
+                    f"📍 <i>Raggiungi la palla e invia la posizione GPS per preparare il <b>Colpo {next_shot}</b>!</i>"
+                )
+                return
+
+            # Altrimenti è un resoconto completo della partita
             self.send_message(
                 chat_id,
-                f"🧠 <i>Trascrizione completata:</i>\n«<i>{transcript[:180]}...</i>»\n\n<i>Analisi colpi con l'IA personale in corso...</i>"
+                f"🧠 <i>Trascrizione completata:</i>\n«<i>{transcript[:180]}...</i>»\n\n<i>Analisi giro completo con l'IA in corso...</i>"
             )
 
-            # Parse with user AI
             raw_data = parse_golf_audio_transcript(
                 transcript_text=transcript,
                 user_profile=user_profile,
@@ -199,10 +396,8 @@ class VoiceCaddyTelegramBot:
                 ai_config=ai_cfg
             )
 
-            # Reconcile metrics deterministically
             validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
 
-            # Save to SQLite with linked user & group
             round_id = self.db.save_round(
                 round_data=validated_data,
                 user_id=user_rec.user_id,
@@ -224,9 +419,46 @@ class VoiceCaddyTelegramBot:
 
     def process_text_message(self, chat_id: int | str, text: str):
         """Elabora il resoconto testuale dei colpi digitato dal golfista."""
+        clean = text.strip()
+        if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"]:
+            return self.handle_command(chat_id, clean)
+
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         player_name = f"{user_rec.first_name} {user_rec.last_name}"
 
+        # Controllo se è un update rapido di un singolo colpo durante la buca
+        quick = parse_quick_shot_update(text)
+        if quick["is_quick_shot"]:
+            session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+            h_num = session.get("current_hole", 1)
+            s_idx = quick["shot_index"] or session.get("current_shot_index", 1)
+            club = quick["club"]
+            lie = quick["lie"]
+
+            self.session_mgr.record_live_shot(
+                chat_id=chat_id,
+                hole_number=h_num,
+                shot_index=s_idx,
+                club=club,
+                lie=lie,
+                notes=text
+            )
+            next_shot = self.session_mgr.advance_shot(chat_id)
+
+            msg = (
+                f"🏌️‍♂️ <b>Buca {h_num} — Colpo {s_idx} Registrato!</b>\n"
+                f"• <b>Bastone:</b> {club or 'Non specificato'}\n"
+                f"• <b>Lie:</b> {lie.title()}\n\n"
+            )
+            if quick["manual_distance"]:
+                self.send_message(chat_id, msg)
+                self.handle_manual_distance(chat_id, quick["manual_distance"])
+            else:
+                msg += f"📍 <i>Raggiungi la palla e tocca <b>[📍 Calcola Distanza & Plays Like]</b> per preparare il <b>Colpo {next_shot}</b>!</i>"
+                self.send_message(chat_id, msg)
+            return
+
+        # Altrimenti è un resoconto completo della partita
         self.send_message(
             chat_id,
             f"📝 <i>Resoconto testuale ricevuto per <b>{player_name}</b> su <b>{active_course.name}</b>.\nAnalisi colpi con l'IA in corso...</i>"
@@ -259,12 +491,23 @@ class VoiceCaddyTelegramBot:
     # Telegram Commands Handler
     # ---------------------------------------------------------
     def handle_command(self, chat_id: int | str, text: str):
-        parts = text.strip().split()
+        clean_text = text.strip()
+        parts = clean_text.split()
         cmd = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
 
+        # Intercettazione pulsanti rapidi da tastiera Telegram
+        if "prossima" in clean_text.lower() and not clean_text.startswith("/"):
+            cmd = "/prossima"
+        elif "stato" in clean_text.lower() and not clean_text.startswith("/"):
+            cmd = "/stato"
+        elif "profilo" in clean_text.lower() and not clean_text.startswith("/"):
+            cmd = "/profilo"
+        elif "nuovo giro" in clean_text.lower() and not clean_text.startswith("/"):
+            cmd = "/nuovogiro"
+
         # Support commands typed without space, e.g. /giocatoreStefano
-        for prefix in ["/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo"]:
+        for prefix in ["/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo", "/buca", "/h", "/distanza", "/paletto"]:
             if cmd.startswith(prefix) and cmd != prefix and not args:
                 args = [text.strip()[len(prefix):].strip()]
                 cmd = prefix
@@ -273,7 +516,6 @@ class VoiceCaddyTelegramBot:
         if cmd in ["/start", "/help", "/guida"]:
             all_users = self.auth_mgr.get_all_users()
 
-            # Format names clearly, disambiguating homonyms
             def format_roster(users_list):
                 counts = {}
                 for u in users_list:
@@ -292,24 +534,128 @@ class VoiceCaddyTelegramBot:
             amici_names = format_roster(amici_list)
 
             help_msg = (
-                "⛳ <b>BENVENUTO IN VOICE CADDY PRO BOT!</b>\n\n"
-                "Usa questo bot durante la partita per registrare i tuoi colpi via voce o testo e ricevere la scorecard immediata.\n\n"
-                "<b>📱 COME INVIARE I DATI IN GIOCO:</b>\n"
-                "• <b>Nota Vocale:</b> Tieni premuto il microfono di Telegram e descrivi i colpi (buca per buca o a fine giro).\n"
-                "• <b>Messaggio di Testo:</b> Scrivi il resoconto (es. <i>'Buca 1: Par 4. Driver 215m in fairway, ferro 7 sul green a 3m, 2 putt, Par'</i>).\n\n"
-                "<b>⚙️ COMANDI DISPONIBILI:</b>\n"
-                "• <code>/giocatore [Nome]</code>: Collega la chat al tuo profilo (es. <code>/giocatore Stefano</code>)\n"
-                "• <code>/profilo</code>: Visualizza il giocatore collegato, handicap e sacca\n"
-                "• <code>/campo [Nome]</code>: Imposta il campo di gioco (es. <code>/campo Conero</code>)\n"
-                "• <code>/demo</code>: Invia subito una partita PGA di prova per testare il bot\n"
-                "• <code>/chi</code>: Mostra chi è il giocatore attualmente attivo\n\n"
+                "⛳ <b>VOICE CADDY PRO — BOT GPS & PLAYS LIKE CADDIE</b>\n\n"
+                "Risolve il problema delle distanze cieche, calcola il dislivello orografico "
+                "e suggerisce il bastone ideale dalla tua sacca in base alla <b>Plays Like Distance</b>.\n\n"
+                "<b>📱 COME GIOCARE IN CAMPO IN 3 SEMPLICI PASSAGGI:</b>\n\n"
+                "1️⃣ <b>SUL TEE DI PARTENZA:</b>\n"
+                "Tocca <code>⏩ Prossima Buca</code> (o <code>/buca 1</code>). Tira il tuo colpo di partenza.\n\n"
+                "2️⃣ <b>QUANDO ARRIVI SULLA PALLA:</b>\n"
+                "Sblocca lo smartphone e tocca il grande pulsante in basso:\n"
+                "👉 <b>[ 📍 Calcola Distanza & Plays Like ]</b>\n"
+                "<i>Con 1 solo tocco, Telegram invia il tuo GPS esatto. In meno di 1 secondo ricevi:</i>\n"
+                "• <b>Distanza reale al green</b> (metri laser in piano)\n"
+                "• <b>Dislivello altimetrico</b> (es. +8m in Salita o -10m in Discesa)\n"
+                "• <b>Plays Like Distance</b> (es. 138m ➔ gioca come 146m)\n"
+                "• <b>Bastone consigliato</b> (dalla tua sacca reale)\n\n"
+                "3️⃣ <b>DOPO IL COLPO:</b>\n"
+                "Mentre cammini verso la palla successiva o verso il green, tieni premuto il microfono per 2 secondi e detta il colpo eseguito (es. <i>'Ferro 7 dal fairway'</i>).\n"
+                "<i>Zero attese, zero rallentamenti per i compagni di gioco!</i>\n\n"
+                "<b>⚙️ ALTRI COMANDI RAPIDI:</b>\n"
+                "• <code>/distanza [metri]</code>: Fallback manuale se leggi un paletto (es. <code>/distanza 138</code>)\n"
+                "• <code>/pin [offset o coords]</code>: Personalizza la profondità della bandiera\n"
+                "• <code>/stato</code>: Verifica buca e colpo attuale\n"
+                "• <code>/giocatore [Nome]</code>: Collega la chat al tuo profilo\n"
+                "• <code>/campo [Nome]</code>: Imposta il percorso (es. Conero Golf Club)\n\n"
                 f"<b>👥 Giocatori Registrati:</b>\n"
                 f"• <b>Strafatti:</b> {', '.join(strafatti_names)}\n"
             )
             if amici_names:
                 help_msg += f"• <b>Amici:</b> {', '.join(amici_names)}\n"
 
+            help_msg += "\n⚖️ <i>Voice Caddy Pro &bull; Concept, Architettura e Sviluppo: <b>Stefano Pirani</b></i>\n"
+
             self.send_message(chat_id, help_msg)
+
+        elif cmd in ["/buca", "/h"]:
+            if not args or not args[0].isdigit():
+                self.send_message(chat_id, "⚠️ Specifica il numero della buca. Esempio: <code>/buca 4</code>")
+                return
+            h_val = int(args[0])
+            self.session_mgr.set_current_hole(chat_id, h_val)
+            self.send_message(
+                chat_id,
+                f"⛳ <b>Impostata Buca {h_val}!</b>\n"
+                f"Invia la tua posizione GPS (📎 ➔ Posizione) per calcolare la distanza e il Plays Like al green."
+            )
+
+        elif cmd in ["/prossima", "/next"]:
+            next_h = self.session_mgr.next_hole(chat_id)
+            self.send_message(
+                chat_id,
+                f"⛳ <b>Avanzato a Buca {next_h}!</b>\n"
+                f"Sei sul tee di partenza. Invia la posizione quando hai effettuato il tiro!"
+            )
+
+        elif cmd in ["/distanza", "/paletto"]:
+            if not args:
+                self.send_message(chat_id, "⚠️ Inserisci la metratura (es. <code>/distanza 138</code> oppure <code>/paletto 150</code>)")
+                return
+            try:
+                d_val = float(args[0])
+                self.handle_manual_distance(chat_id, d_val)
+            except ValueError:
+                self.send_message(chat_id, "⚠️ Distanza non valida. Inserisci un numero in metri.")
+
+        elif cmd in ["/pin", "/bandiera"]:
+            if not args:
+                self.send_message(
+                    chat_id,
+                    "⛳ <b>Personalizzazione Posizione Bandiera (Pin):</b>\n"
+                    "Puoi specificare coordinate precise o scostamenti:\n"
+                    "• <code>/pin 43.5199 13.6072</code>\n"
+                    "• <code>/pin centro</code> (ripristina centro green)"
+                )
+                return
+            if args[0].lower() in ["centro", "reset", "default"]:
+                user_rec, _, active_course, _ = self._resolve_context(chat_id)
+                session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+                h_num = session.get("current_hole", 1)
+                hole_info = active_course.get_hole(h_num)
+                if hole_info and hole_info.coordinates:
+                    hole_info.coordinates.pin_lat = None
+                    hole_info.coordinates.pin_lon = None
+                self.send_message(chat_id, f"✅ Ripristinato pin sul centro green per la Buca {h_num}.")
+            elif len(args) >= 2:
+                try:
+                    p_lat = float(args[0])
+                    p_lon = float(args[1])
+                    p_alt = float(args[2]) if len(args) > 2 else None
+                    user_rec, _, active_course, _ = self._resolve_context(chat_id)
+                    session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+                    h_num = session.get("current_hole", 1)
+                    self.session_mgr.set_pin_override(chat_id, h_num, p_lat, p_lon, p_alt)
+                    self.send_message(chat_id, f"✅ Posizione bandiera aggiornata per Buca {h_num} ({p_lat}, {p_lon})!")
+                except ValueError:
+                    self.send_message(chat_id, "⚠️ Coordinate non valide. Usa: <code>/pin lat lon</code>")
+
+        elif cmd in ["/stato", "/dove"]:
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+            h_num = session.get("current_hole", 1)
+            s_idx = session.get("current_shot_index", 1)
+            last_lat = session.get("last_latitude")
+            last_lon = session.get("last_longitude")
+            pos_str = f"{last_lat:.5f}, {last_lon:.5f}" if (last_lat and last_lon) else "Nessuna posizione registrata"
+
+            self.send_message(
+                chat_id,
+                f"📍 <b>STATO SESSIONE IN CAMPO:</b>\n"
+                f"• <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name}\n"
+                f"• <b>Campo:</b> {active_course.name}\n"
+                f"• <b>Buca Attiva:</b> {h_num}\n"
+                f"• <b>Colpo Corrente:</b> {s_idx}\n"
+                f"• <b>Ultima Posizione GPS:</b> {pos_str}\n\n"
+                f"<i>Invia la posizione per calcolare la distanza e il bastone consigliato!</i>"
+            )
+
+        elif cmd in ["/nuovogiro", "/reset"]:
+            self.session_mgr.reset_session(chat_id)
+            self.send_message(
+                chat_id,
+                "🔄 <b>Nuovo giro iniziato!</b>\n"
+                "Sessione azzerata alla Buca 1, Colpo 1. Buon gioco!"
+            )
 
         elif cmd in ["/giocatore", "/utente", "/login", "/collega"]:
             if not args:
@@ -319,7 +665,6 @@ class VoiceCaddyTelegramBot:
             search_name = " ".join(args).strip().lower()
             all_users = self.auth_mgr.get_all_users()
 
-            # 1. Exact matches (username, full name, surname, short name like 'marco s')
             exact_matches = []
             for u in all_users:
                 full_name = f"{u.first_name} {u.last_name}".lower()
@@ -339,7 +684,6 @@ class VoiceCaddyTelegramBot:
                 )
                 return
             else:
-                # 2. Check first name or partial matches
                 partial_matches = []
                 for u in all_users:
                     full_name = f"{u.first_name} {u.last_name}".lower()
@@ -375,7 +719,7 @@ class VoiceCaddyTelegramBot:
                     f"• <b>Handicap Registrato:</b> {prof.handicap}\n"
                     f"• <b>Categoria & Tono Caddie:</b> {prof.category.value}\n"
                     f"• <b>Mazza più lunga:</b> {prof.clubs_in_bag[0].club_name if prof.clubs_in_bag else 'Driver'}\n\n"
-                    f"🏌️ Ora puoi inviare le tue note vocali o messaggi durante il gioco: saranno registrati nel tuo archivio!"
+                    f"🏌️ Ora puoi inviare le coordinate GPS o note vocali durante il gioco!"
                 )
             else:
                 self.send_message(
@@ -384,7 +728,7 @@ class VoiceCaddyTelegramBot:
                     f"Usa <code>/start</code> per vedere la lista dei giocatori registrati."
                 )
 
-        elif cmd in ["/profilo", "/chi", "/status"]:
+        elif cmd in ["/profilo", "/chi"]:
             user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
             bag_summary = "\n".join([f"• <b>{c.club_name}:</b> {c.carry_meters}m ({c.shaft_flex.value})" for c in user_profile.clubs_in_bag[:8]])
 
@@ -422,7 +766,7 @@ class VoiceCaddyTelegramBot:
             self.send_message(chat_id, reply_msg)
 
         else:
-            # Not a recognized command -> treat as golf shots text description!
+            # Non è un comando riconosciuto -> gestisci come testo dei colpi
             self.process_text_message(chat_id, text)
 
     # ---------------------------------------------------------
@@ -442,7 +786,7 @@ class VoiceCaddyTelegramBot:
             print(f"  VOICE CADDY PRO — BOT TELEGRAM ATTIVO!")
             print(f"  Bot Username: @{bot_uname}")
             print(f"  Link diretto: https://t.me/{bot_uname}")
-            print(f"  In ascolto di note vocali e messaggi da smartphone...")
+            print(f"  In ascolto di posizioni GPS, note vocali e messaggi...")
             print(f"=======================================================\n")
         else:
             logging.warning(f"Avviso verifica token Telegram: {msg}")
@@ -453,14 +797,25 @@ class VoiceCaddyTelegramBot:
                 if res.get("ok"):
                     for update in res.get("result", []):
                         offset = update["update_id"] + 1
-                        message = update.get("message", {})
+
+                        # Supporta sia nuovi messaggi che aggiornamenti Live Location (edited_message)
+                        message = update.get("message") or update.get("edited_message")
                         if not message:
                             continue
 
                         chat_id = message.get("chat", {}).get("id")
                         text = message.get("text", "")
 
-                        if "voice" in message:
+                        # 1. Location GPS o Live Location
+                        if "location" in message:
+                            loc = message["location"]
+                            lat = float(loc.get("latitude"))
+                            lon = float(loc.get("longitude"))
+                            alt = loc.get("altitude")
+                            self.handle_location_update(chat_id, lat, lon, alt)
+
+                        # 2. Note Vocali o Audio
+                        elif "voice" in message:
                             file_id = message["voice"]["file_id"]
                             self.process_voice_message(chat_id, file_id)
                         elif "audio" in message:
@@ -472,11 +827,12 @@ class VoiceCaddyTelegramBot:
                         elif "video" in message:
                             file_id = message["video"]["file_id"]
                             self.process_voice_message(chat_id, file_id)
+
+                        # 3. Testo o Comandi
                         elif text:
                             if text.startswith("/"):
                                 self.handle_command(chat_id, text)
                             else:
-                                # Normal text description of golf round
                                 self.process_text_message(chat_id, text)
 
                 time.sleep(0.5)

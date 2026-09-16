@@ -134,8 +134,8 @@ class PDFReportGenerator:
     <div class="section-title">🎯 Piano di Allenamento Personalizzato</div>
     {drills_html}
 
-    <div style="margin-top:30px; text-align:center; font-size:10px; color:#bdc3c7;">
-        Generato automaticamente da Voice Caddy AI Performance Engine
+    <div style="margin-top:35px; padding-top:15px; border-top:1px solid #e2e8f0; text-align:center; font-size:11px; color:#718096;">
+        <b>Voice Caddy Pro</b> &bull; Concept, Architettura &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Generato da Voice Caddy AI Performance Engine
     </div>
 </body>
 </html>
