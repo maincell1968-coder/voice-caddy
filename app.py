@@ -4,6 +4,7 @@ import json
 import urllib.request
 from pathlib import Path
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
@@ -231,6 +232,69 @@ if "selected_course_id" not in st.session_state:
     st.session_state.selected_course_id = CONERO_GOLF_CLUB.course_id
 
 
+def inject_autofill_cleaner(username_val: str = ""):
+    """
+    Prevents browser password managers from erroneously associating API keys
+    or model parameters (e.g. groq/compound-mini, base) with login passwords,
+    and explicitly binds the selected username to the login password input.
+    """
+    escaped_user = (username_val or "").replace('"', '\\"')
+    components.html(f"""
+        <script>
+            (function() {{
+                try {{
+                    const parentDoc = window.parent.document;
+                    let userField = parentDoc.getElementById('vc_autofill_username');
+                    if (!userField) {{
+                        userField = parentDoc.createElement('input');
+                        userField.type = 'text';
+                        userField.id = 'vc_autofill_username';
+                        userField.name = 'username';
+                        userField.autocomplete = 'username';
+                        userField.style.position = 'absolute';
+                        userField.style.opacity = '0';
+                        userField.style.pointerEvents = 'none';
+                        userField.style.left = '-9999px';
+                        userField.tabIndex = -1;
+                        parentDoc.body.appendChild(userField);
+                    }}
+                    if ("{escaped_user}") {{
+                        userField.value = "{escaped_user}";
+                    }}
+
+                    function sanitizeInputs() {{
+                        const pwInputs = parentDoc.querySelectorAll('input[type="password"]');
+                        pwInputs.forEach(input => {{
+                            const label = (input.getAttribute('aria-label') || '').toLowerCase();
+                            const placeholder = (input.getAttribute('placeholder') || '').toLowerCase();
+                            const isApiKey = label.includes('api') || label.includes('token') || label.includes('chiave') ||
+                                             placeholder.includes('token') || placeholder.includes('api');
+                            if (isApiKey) {{
+                                input.setAttribute('autocomplete', 'new-password');
+                                input.setAttribute('data-lpignore', 'true');
+                                input.setAttribute('data-1p-ignore', 'true');
+                                input.setAttribute('data-form-type', 'other');
+                            }} else {{
+                                input.setAttribute('autocomplete', 'current-password');
+                            }}
+                        }});
+                    }}
+                    sanitizeInputs();
+                    setTimeout(sanitizeInputs, 400);
+                    setTimeout(sanitizeInputs, 1200);
+
+                    // Observe DOM changes in Streamlit containers
+                    if (!window._vc_observer_attached) {{
+                        window._vc_observer_attached = true;
+                        const observer = new MutationObserver(() => sanitizeInputs());
+                        observer.observe(parentDoc.body, {{ childList: true, subtree: true }});
+                    }}
+                }} catch (e) {{}}
+            }})();
+        </script>
+    """, height=0, width=0)
+
+
 # =========================================================
 # SCREEN 1: ACCESS GATE & LOGIN / PASSWORD CHANGE FLOW
 # =========================================================
@@ -392,11 +456,14 @@ if st.session_state.auth_user is None:
                     options=member_names,
                     index=0
                 )
+                inject_autofill_cleaner(strafatti_user_input)
+
                 strafatti_pw_input = st.text_input(
                     "Password (al primo accesso per Stefano: Amministratore1968, per gli altri: Cognome):",
                     type="password",
                     help="Per Stefano inserisci Amministratore1968 al primo accesso, per gli altri il proprio Cognome."
                 )
+                st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate (es. 'groq/compound-mini' o 'base'), clicca su <b>Gestisci password...</b> nel menu del browser per eliminarle.</i></div>", unsafe_allow_html=True)
                 submit_strafatti = st.form_submit_button("🚀 Entra nel Club Strafatti", type="primary", use_container_width=True)
 
                 if submit_strafatti:
@@ -425,11 +492,13 @@ if st.session_state.auth_user is None:
 
             with st.form("form_login_amici"):
                 amici_name_input = st.text_input("Il tuo Nome:", placeholder="es. Mario")
+                inject_autofill_cleaner(amici_name_input)
                 amici_pw_input = st.text_input(
                     "Password (al primo accesso inserisci il tuo Cognome):",
                     type="password",
                     placeholder="es. Rossi"
                 )
+                st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate, puoi eliminarle da <b>Gestisci password...</b></i></div>", unsafe_allow_html=True)
                 submit_amici = st.form_submit_button("🚀 Accedi come Amico", type="primary", use_container_width=True)
 
                 if submit_amici:
@@ -454,6 +523,7 @@ if st.session_state.auth_user is None:
 
 
 current_user: UserRecord = st.session_state.auth_user
+inject_autofill_cleaner(current_user.first_name)
 
 # Assicura retrocompatibilità totale con oggetti session_state precedenti
 if not hasattr(current_user, "ai_config") or current_user.ai_config is None:
