@@ -53,7 +53,7 @@ class GolfHoleVisualizer:
             x=[0], y=[92],
             mode="markers+text",
             marker=dict(symbol="triangle-up", size=14, color="#E74C3C"),
-            text=["🚩 Buca"],
+            text=["⛳ Buca"],
             textposition="top center",
             name="Bandiera",
             hoverinfo="skip"
@@ -64,7 +64,7 @@ class GolfHoleVisualizer:
             x=[0], y=[0],
             mode="markers+text",
             marker=dict(symbol="square", size=12, color="#F1C40F"),
-            text=["🟨 Tee"],
+            text=["🏌️ Tee"],
             textposition="bottom center",
             name="Partenza",
             hoverinfo="skip"
@@ -132,8 +132,9 @@ class GolfHoleVisualizer:
             ))
 
         # 4. Styling Layout
+        h_num = hole.hole_number if hasattr(hole, 'hole_number') else getattr(hole, 'number', 1)
         fig.update_layout(
-            title=dict(text=f"Mappa Tattica Vettoriale — Buca {hole.number if hasattr(hole, 'number') else hole.hole_number} (Par {hole.par})", font=dict(size=14)),
+            title=dict(text=f"Mappa Tattica Vettoriale — Buca {h_num} (Par {hole.par})", font=dict(size=14)),
             xaxis=dict(visible=False, range=[-35, 35]),
             yaxis=dict(visible=False, range=[-10, 110]),
             height=380,

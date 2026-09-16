@@ -1,11 +1,14 @@
 import os
 import tempfile
+import json
+import urllib.request
+from pathlib import Path
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
-from core.audio import VoiceCaddyAudioEngine
+from core.audio import VoiceCaddyAudioEngine, AudioProcessingError
 from core.parser import parse_golf_audio_transcript
 from core.metrics import GolfMetricsCalculator
 from core.schemas import GolfRoundData
@@ -13,20 +16,118 @@ from core.db import DatabaseManager
 from core.strokes_gained import StrokesGainedBenchmarkEngine
 from core.pdf_export import PDFReportGenerator
 from core.course import CourseRegistry, CONERO_GOLF_CLUB, GolfCourse
-from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex
+from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex, get_default_bag, sort_clubs_by_distance
 from core.visualizer import GolfHoleVisualizer
+from core.demo_data import get_demo_golf_round
+from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
+from core.ai_provider import test_ai_connection, AIProviderError
+from core.telegram_config import TelegramConfigManager
 
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 st.set_page_config(
-    page_title="Voice Caddy | Golf Performance Analyzer",
+    page_title="Voice Caddy Pro | Club & Performance Portal",
     page_icon="⛳",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling
+# Custom Premium Styling & Luxury Aesthetics
 st.markdown("""
     <style>
+        /* Modern Dark & Gold/Emerald Accents */
+        .landing-hero {
+            background: linear-gradient(135deg, #0d131f 0%, #172338 50%, #0c1724 100%);
+            border: 1px solid rgba(46, 204, 113, 0.25);
+            border-radius: 16px;
+            padding: 35px 25px;
+            text-align: center;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        }
+        .landing-title {
+            font-size: 2.6rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(90deg, #FFFFFF, #2ECC71, #F1C40F);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        .landing-subtitle {
+            font-size: 1.15rem;
+            color: #A0AEC0;
+            margin-bottom: 0;
+        }
+        .group-card-strafatti {
+            background: linear-gradient(160deg, #13241b 0%, #0e1713 100%);
+            border: 2px solid #27ae60;
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 24px rgba(39, 174, 96, 0.2);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .group-card-strafatti:hover {
+            border-color: #2ecc71;
+            transform: translateY(-2px);
+        }
+        .group-card-amici {
+            background: linear-gradient(160deg, #121e33 0%, #0b1424 100%);
+            border: 2px solid #2980b9;
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 24px rgba(41, 128, 185, 0.2);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .group-card-amici:hover {
+            border-color: #3498db;
+            transform: translateY(-2px);
+        }
+        .badge-strafatti {
+            display: inline-block;
+            background-color: rgba(46, 204, 113, 0.2);
+            color: #2ECC71;
+            border: 1px solid #2ECC71;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+        .badge-amici {
+            display: inline-block;
+            background-color: rgba(52, 152, 219, 0.2);
+            color: #3498DB;
+            border: 1px solid #3498DB;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+        .user-header-pill {
+            background-color: #141c2a;
+            border: 1px solid #2b3952;
+            padding: 8px 16px;
+            border-radius: 25px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.95rem;
+        }
+        .ai-status-card {
+            background-color: #151a24;
+            border: 1px solid #2d3748;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 15px;
+        }
         .drill-box {
             background-color: #1E222B;
             border-radius: 10px;
@@ -62,43 +163,790 @@ st.markdown("""
             border-radius: 8px;
             border: 1px solid #292F3D;
         }
+        .legal-disclaimer-box {
+            background: linear-gradient(145deg, #101622 0%, #162234 100%);
+            border: 1px solid rgba(241, 196, 15, 0.4);
+            border-left: 5px solid #F1C40F;
+            border-radius: 12px;
+            padding: 22px 24px;
+            margin: 0 auto 30px auto;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        .disclaimer-title {
+            color: #F1C40F;
+            font-size: 1.05rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .disclaimer-text {
+            color: #CBD5E1;
+            font-size: 0.92rem;
+            line-height: 1.65;
+            margin-bottom: 0;
+        }
+        .disclaimer-pill {
+            display: inline-block;
+            background: rgba(241, 196, 15, 0.12);
+            color: #F1C40F;
+            border: 1px solid rgba(241, 196, 15, 0.35);
+            border-radius: 16px;
+            padding: 3px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-right: 6px;
+            margin-top: 6px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-# Registries and DB
+# ---------------------------------------------------------
+# Core Services & Session State Initialization
+# ---------------------------------------------------------
+auth_manager = AuthManager()
 db = DatabaseManager()
-course_registry = CourseRegistry()
+course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
+tg_manager = TelegramConfigManager()
 
-# Default initial equipment setup
-DEFAULT_BAG = [
-    ClubDetail(club_name="Driver", brand="TaylorMade", model_type="Qi10 / Stealth 2", shaft_flex=ShaftFlex.STIFF, carry_meters=220),
-    ClubDetail(club_name="Legno 3", brand="Callaway", model_type="Paradym Ai Smoke", shaft_flex=ShaftFlex.STIFF, carry_meters=195),
-    ClubDetail(club_name="Ibrido 4", brand="Ping", model_type="G430", shaft_flex=ShaftFlex.REGULAR, carry_meters=175),
-    ClubDetail(club_name="Ferro 5", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=160),
-    ClubDetail(club_name="Ferro 7", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=145),
-    ClubDetail(club_name="Ferro 9", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=125),
-    ClubDetail(club_name="Pitching Wedge", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=110),
-    ClubDetail(club_name="Sand Wedge (56°)", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=85),
-    ClubDetail(club_name="Putter", brand="Scotty Cameron", model_type="Phantom X", shaft_flex=ShaftFlex.REGULAR, carry_meters=0)
-]
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
 
-# Session State Initialization
+if "selected_group" not in st.session_state:
+    st.session_state.selected_group = "strafatti"
+
+if "changing_pw_user_id" not in st.session_state:
+    st.session_state.changing_pw_user_id = None
+
 if "round_data" not in st.session_state:
     st.session_state.round_data = None
+
 if "transcript" not in st.session_state:
     st.session_state.transcript = None
-if "user_profile" not in st.session_state:
-    st.session_state.user_profile = UserProfile(
-        player_name="Giocatore Conero",
-        handicap=14.0,
-        category=PlayerCategory.CATEGORY_2,
-        preferred_ball="Titleist Pro V1",
-        clubs_in_bag=DEFAULT_BAG
-    )
+
 if "selected_course_id" not in st.session_state:
     st.session_state.selected_course_id = CONERO_GOLF_CLUB.course_id
 
 
+# =========================================================
+# SCREEN 1: ACCESS GATE & LOGIN / PASSWORD CHANGE FLOW
+# =========================================================
+if st.session_state.auth_user is None:
+    st.markdown("""
+        <div class="landing-hero">
+            <div class="landing-title">⛳ VOICE CADDY PRO</div>
+            <div class="landing-subtitle">PGA Tour Performance Analytics & Club Portal • Accesso Riservato</div>
+        </div>
+        <div class="legal-disclaimer-box">
+            <div class="disclaimer-title">
+                ⚖️ Note Legali, Origine del Software & Esonero di Responsabilità
+            </div>
+            <div class="disclaimer-text">
+                Il presente applicativo <b>Voice Caddy Pro</b> nasce da un'idea originale e dal concept funzionale ideato dall'<b>Amministratore di Sistema</b>, ed è stato interamente sviluppato, strutturato e codificato tramite l'ausilio di tecnologie di <b>Intelligenza Artificiale (IA)</b>.
+                <br><br>
+                Il programma <b>non persegue alcuna finalità commerciale o di lucro</b>, essendo destinato a scopi <b>esclusivamente ludici, amatoriali, ricreativi e sportivi</b> per la condivisione e l'analisi non agonistica delle sessioni di golf tra amici e compagni di circolo.
+                <br><br>
+                Tutti i contenuti, i calcoli, le metriche statistiche e i suggerimenti tattici generati sono forniti nello stato di fatto e di diritto in cui si trovano (<em>"as-is"</em>), a puro titolo di intrattenimento personale. <b>L'Amministratore di Sistema e l'ideatore del software sono espressamente e totalmente sollevati da qualsiasi conseguenza legale</b>, responsabilità civile, penale o onere risarcitorio diretto o indiretto derivante dall'uso o dal mancato funzionamento dell'applicazione.
+            </div>
+            <div style="margin-top: 14px;">
+                <span class="disclaimer-pill">💡 Ideato dall'Amministratore</span>
+                <span class="disclaimer-pill">🤖 Sviluppato da Intelligenza Artificiale</span>
+                <span class="disclaimer-pill">🎯 Scopo Esclusivamente Ludico e Ricreativo</span>
+                <span class="disclaimer-pill">🛡️ Esonero Totale da Responsabilità Legale</span>
+            </div>
+        </div>
+        <div class="legal-disclaimer-box" style="border-left: 5px solid #2ECC71; border-color: rgba(46, 204, 113, 0.4); margin-top: -10px;">
+            <div class="disclaimer-title" style="color: #2ECC71;">
+                💡 Trasparenza Totale: Zero Token a Pagamento & Nessun Costo Condiviso
+            </div>
+            <div class="disclaimer-text">
+                Per la massima tutela e serenità di tutti i soci e dell'Amministratore, l'architettura è strutturata a <b>costo zero assoluto</b>:
+                <br><br>
+                • <b>🎙️ Trascrizione Audio a ZERO TOKEN:</b> La conversione da voce a testo (da Telegram o web) usa il motore <em>Faster-Whisper locale</em>. Non impiega gettoni/token a pagamento ed è gratuita al 100% (0,00€).
+                <br>
+                • <b>⚡ Analisi Partita Gratuita con Groq Cloud (Llama 3.3):</b> Il motore cloud predefinito sfrutta il piano gratuito di <b>Groq Cloud</b> con modelli open-source Llama 3.3. È gratuito al 100%, <b>non richiede carta di credito</b> e non genera alcun costo né per l'Amministratore né per i giocatori.
+                <br>
+                • <b>💻 Alternativa Ollama Locale:</b> Chi gioca da PC può utilizzare il proprio Ollama offline senza connessione internet.
+                <br>
+                • <b>🛡️ Nessun Costo Condiviso (L'Amministratore non paga token per nessuno):</b> Nessun conto o carta è condiviso. Se un giocatore desidera utilizzare modelli a pagamento OpenAI, deve inserire la propria chiave personale; nessun utente può consumare le risorse o i crediti di altri.
+            </div>
+            <div style="margin-top: 14px;">
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🎙️ Trascrizione Vocale = 0 Token</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">⚡ Groq Cloud 100% Gratuito (No Carta)</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🛡️ Zero Costi Condivisi</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Sub-flow: Mandatory Password Change Modal
+    if st.session_state.changing_pw_user_id:
+        u_temp = auth_manager.get_user_by_id(st.session_state.changing_pw_user_id)
+        st.markdown(f"""
+            <div style="background-color: #1a2233; border: 2px solid #f39c12; border-radius: 12px; padding: 24px; max-width: 650px; margin: 0 auto 30px auto;">
+                <h3 style="color: #f39c12; margin-top: 0;">🔒 Primo Accesso — Imposta la tua Nuova Password Personale</h3>
+                <p style="color: #e2e8f0; font-size: 1rem;">
+                    Benvenuto <b>{u_temp.first_name} {u_temp.last_name}</b>! Per garantire la massima privacy e riservatezza,
+                    al primo accesso è obbligatorio sostituire la password iniziale temporanea (<b>{u_temp.last_name}</b>)
+                    con una tua nuova password segreta e personale.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        col_pw1, col_pw2, col_pw3 = st.columns([1, 2, 1])
+        with col_pw2:
+            with st.form("form_change_initial_pw"):
+                new_pw = st.text_input("Nuova Password Personale", type="password", help="Almeno 4 caratteri")
+                new_pw_confirm = st.text_input("Conferma Nuova Password", type="password")
+                submit_pw = st.form_submit_button("💾 Salva Nuova Password ed Entra nel Dashboard", type="primary", use_container_width=True)
+
+                if submit_pw:
+                    if not new_pw or len(new_pw) < 4:
+                        st.error("La password deve contenere almeno 4 caratteri.")
+                    elif new_pw != new_pw_confirm:
+                        st.error("Le due password inserite non coincidono.")
+                    elif new_pw.lower() == u_temp.last_name.lower():
+                        st.error("La nuova password non può essere uguale al tuo cognome!")
+                    else:
+                        ok, msg = auth_manager.change_password(u_temp.user_id, new_pw)
+                        if ok:
+                            # Re-fetch updated user and authenticate session
+                            updated_user = auth_manager.get_user_by_id(u_temp.user_id)
+                            st.session_state.auth_user = updated_user
+                            st.session_state.changing_pw_user_id = None
+                            st.success("✅ Password aggiornata con successo! Accesso completato.")
+                            st.rerun()
+                        else:
+                            st.error(f"Errore cambio password: {msg}")
+
+            if st.button("⬅️ Annulla e Torna alla Selezione Ingressi"):
+                st.session_state.changing_pw_user_id = None
+                st.rerun()
+
+        st.stop()
+
+    # Main Entrance Choice
+    st.markdown("### 🔑 Scegli il tuo Portale d'Ingresso")
+    col_strafatti, col_amici = st.columns(2, gap="large")
+
+    with col_strafatti:
+        st.markdown("""
+            <div class="group-card-strafatti">
+                <div class="badge-strafatti">🏆 Membri Fondatori Esclusivi</div>
+                <h2 style="color: #2ECC71; margin-top: 5px;">Gruppo Strafatti</h2>
+                <p style="color: #cbd5e0; font-size: 0.95rem;">
+                    Ingresso riservato ai membri ufficiali del team. Solo per gli 8 giocatori designati con password iniziale pari al proprio cognome.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("👉 Accedi come Strafatti", key="btn_sel_strafatti", use_container_width=True, type="primary" if st.session_state.selected_group == "strafatti" else "secondary"):
+            st.session_state.selected_group = "strafatti"
+            st.rerun()
+
+    with col_amici:
+        st.markdown("""
+            <div class="group-card-amici">
+                <div class="badge-amici">🤝 Compagni di Circolo & Ospiti</div>
+                <h2 style="color: #3498DB; margin-top: 5px;">Gruppo Amici</h2>
+                <p style="color: #cbd5e0; font-size: 0.95rem;">
+                    Ingresso per compagni di gioco, amici del club e ospiti. Primo accesso con Nome e Cognome, con immediata richiesta di password privata.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("👉 Accedi come Amico", key="btn_sel_amici", use_container_width=True, type="primary" if st.session_state.selected_group == "amici" else "secondary"):
+            st.session_state.selected_group = "amici"
+            st.rerun()
+
+    st.markdown("---")
+
+    # Login Form based on selected group
+    col_form_l, col_form_c, col_form_r = st.columns([1, 2, 1])
+
+    with col_form_c:
+        if st.session_state.selected_group == "strafatti":
+            st.markdown("""
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <h3 style="color: #2ECC71; margin-bottom: 4px;">🏌️‍♂️ Login Riservato: Gruppo Strafatti</h3>
+                    <p style="color: #94A3B8; font-size: 0.9rem;">
+                        Gli unici autorizzati sono: Stefano, Giorgio, Marco S, Marco F, Gianluca, Alessandro, Renzo, Luca.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            with st.form("form_login_strafatti"):
+                # Autocomplete / Selector or custom text
+                member_names = [
+                    "Stefano",
+                    "Giorgio",
+                    "Marco S",
+                    "Marco F",
+                    "Gianluca",
+                    "Alessandro",
+                    "Renzo",
+                    "Luca"
+                ]
+                strafatti_user_input = st.selectbox(
+                    "Seleziona il tuo Profilo Utente:",
+                    options=member_names,
+                    index=0
+                )
+                strafatti_pw_input = st.text_input(
+                    "Password (al primo accesso per Stefano: Amministratore1968, per gli altri: Cognome):",
+                    type="password",
+                    help="Per Stefano inserisci Amministratore1968 al primo accesso, per gli altri il proprio Cognome."
+                )
+                submit_strafatti = st.form_submit_button("🚀 Entra nel Club Strafatti", type="primary", use_container_width=True)
+
+                if submit_strafatti:
+                    ok, user, msg = auth_manager.authenticate_strafatti(strafatti_user_input, strafatti_pw_input)
+                    if ok:
+                        if user.must_change_password:
+                            st.session_state.changing_pw_user_id = user.user_id
+                            st.info("🔒 Rilevato primo accesso! Imposta ora la tua nuova password personale.")
+                            st.rerun()
+                        else:
+                            st.session_state.auth_user = user
+                            st.success(f"Bentornato {user.first_name}!")
+                            st.rerun()
+                    else:
+                        st.error(f"⛔ {msg}")
+
+        else:
+            st.markdown("""
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <h3 style="color: #3498DB; margin-bottom: 4px;">🤝 Login Riservato: Gruppo Amici</h3>
+                    <p style="color: #94A3B8; font-size: 0.9rem;">
+                        Inserisci il tuo Nome di battesimo e la Password (se è la prima volta, scrivi il tuo Cognome).
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            with st.form("form_login_amici"):
+                amici_name_input = st.text_input("Il tuo Nome:", placeholder="es. Mario")
+                amici_pw_input = st.text_input(
+                    "Password (al primo accesso inserisci il tuo Cognome):",
+                    type="password",
+                    placeholder="es. Rossi"
+                )
+                submit_amici = st.form_submit_button("🚀 Accedi come Amico", type="primary", use_container_width=True)
+
+                if submit_amici:
+                    if not amici_name_input or not amici_pw_input:
+                        st.error("Compila sia il Nome che la Password.")
+                    else:
+                        ok, user, msg = auth_manager.authenticate_amici(amici_name_input, amici_pw_input)
+                        if ok:
+                            if user.must_change_password:
+                                st.session_state.changing_pw_user_id = user.user_id
+                                st.info("🔒 Rilevato primo accesso! Imposta ora la tua password personale.")
+                                st.rerun()
+                            else:
+                                st.session_state.auth_user = user
+                                st.success(f"Bentornato {user.first_name}!")
+                                st.rerun()
+                        else:
+                            st.error(f"⛔ {msg}")
+
+    # Stop rendering remainder of the app until authenticated
+    st.stop()
+
+
+current_user: UserRecord = st.session_state.auth_user
+
+# Assicura retrocompatibilità totale con oggetti session_state precedenti
+if not hasattr(current_user, "ai_config") or current_user.ai_config is None:
+    current_user.ai_config = AIUserConfig()
+else:
+    if not hasattr(current_user.ai_config, "groq_api_key"):
+        setattr(current_user.ai_config, "groq_api_key", "")
+    if not hasattr(current_user.ai_config, "groq_model"):
+        setattr(current_user.ai_config, "groq_model", "llama-3.3-70b-versatile")
+
+# Load Per-User Golf Profile (handicap, bag, ball)
+if "user_profile" not in st.session_state or st.session_state.user_profile.player_name != f"{current_user.first_name} {current_user.last_name}":
+    st.session_state.user_profile = UserProfile.load_for_user(
+        user_id=current_user.user_id,
+        default_name=f"{current_user.first_name} {current_user.last_name}"
+    )
+
+# Header Bar with User Badge, Info Popover & Logout
+header_left, header_info, header_right = st.columns([3, 1.3, 1])
+with header_left:
+    group_label = "🏆 Gruppo Strafatti" if current_user.group == "strafatti" else "🤝 Gruppo Amici"
+    group_color = "#2ECC71" if current_user.group == "strafatti" else "#3498DB"
+    admin_badge = '<span style="color: #F1C40F; font-weight: bold; border-left: 1px solid #3b4963; padding-left: 10px;">👑 Amministratore di Sistema</span>' if current_user.is_admin else f'<span style="color: {group_color}; font-weight: bold; border-left: 1px solid #3b4963; padding-left: 10px;">{group_label}</span>'
+    st.markdown(f"""
+        <div class="user-header-pill">
+            <span>🏌️‍♂️ Connesso: <b>{current_user.first_name} {current_user.last_name}</b></span>
+            {admin_badge}
+        </div>
+    """, unsafe_allow_html=True)
+
+with header_info:
+    with st.popover("💡 Info Consumi & Token", use_container_width=True):
+        st.markdown("""
+            <h4 style="color:#2ECC71; margin-top:0;">🎙️ Trascrizione Vocale: ZERO TOKEN</h4>
+            <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
+                La conversione della voce in testo (Speech-to-Text per note vocali su Telegram o caricate sul sito) usa il motore <b>Faster-Whisper locale</b> direttamente sul computer.
+                <br><b>Non consuma alcun token/credito OpenAI (Costo: 0,00€).</b>
+            </p>
+            <h4 style="color:#F1C40F; margin-top:12px;">⚡ Analisi Partita: 100% Gratuita (Groq Cloud)</h4>
+            <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
+                Per consentire a tutti di giocare senza costi e senza bruciare token:
+                <br>• <b>Groq Cloud (Llama 3.3):</b> Gratuito al 100%, <b>nessuna carta di credito richiesta</b>, velocità ultra-rapida.
+                <br>• <b>Ollama Locale:</b> Gratuito al 100% offline sul proprio PC.
+                <br>• <b>OpenAI Personale:</b> Chi desidera usare GPT-4o inserisce la propria chiave personale.
+            </p>
+            <h4 style="color:#3498DB; margin-top:12px;">🛡️ L'Amministratore non paga token per gli altri</h4>
+            <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
+                Grazie all'architettura <b>Bring Your Own AI</b>, i profili sono separati ermeticamente: nessun credito è condiviso e ciascun giocatore gestisce la propria configurazione senza intaccare le risorse di nessun altro.
+            </p>
+        """, unsafe_allow_html=True)
+
+with header_right:
+    if st.button("🚪 Esci (Logout)", use_container_width=True):
+        st.session_state.auth_user = None
+        st.session_state.round_data = None
+        st.session_state.transcript = None
+        st.rerun()
+
+st.markdown("---")
+
+
+# =========================================================
+# SIDEBAR SETUP (BYO-AI & Analysis Controls)
+# =========================================================
+with st.sidebar:
+    st.title("⛳ Voice Caddy Pro")
+    st.caption("AI Caddie & PGA Performance Analytics Engine")
+
+    # ---------------------------------------------------------
+    # BRING YOUR OWN AI (Zero Shared Tokens Architecture)
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🤖 Il Tuo Motore IA Personale")
+    st.caption("Ciascun giocatore utilizza esclusivamente la propria IA (Ollama locale gratuito o token personali).")
+
+    user_ai = current_user.ai_config
+    if not hasattr(user_ai, "groq_api_key"):
+        setattr(user_ai, "groq_api_key", "")
+    if not hasattr(user_ai, "groq_model") or getattr(user_ai, "groq_model") == "llama-3.3-70b-versatile":
+        setattr(user_ai, "groq_model", "groq/compound-mini")
+
+    provider_options = [
+        "Groq Cloud (100% Gratuito - Consigliato)",
+        "Ollama (Locale Offline su PC)",
+        "OpenAI (Chiave Personale)",
+        "Custom (DeepSeek, Together)"
+    ]
+    curr_prov = getattr(user_ai, "provider", "groq")
+    current_idx = 0
+    if curr_prov == "openai":
+        current_idx = 2
+    elif curr_prov == "custom":
+        current_idx = 3
+    elif curr_prov == "ollama" and st.session_state.get("explicit_ollama_choice"):
+        current_idx = 1
+    else:
+        current_idx = 0  # Groq Cloud è sempre il default a indice 0!
+
+    chosen_provider_label = st.selectbox(
+        "Provider IA Attivo:",
+        options=provider_options,
+        index=current_idx
+    )
+
+    new_provider = "groq"
+    if "Ollama" in chosen_provider_label:
+        new_provider = "ollama"
+        st.session_state["explicit_ollama_choice"] = True
+    elif "OpenAI" in chosen_provider_label:
+        new_provider = "openai"
+    elif "Custom" in chosen_provider_label:
+        new_provider = "custom"
+
+    if new_provider == "groq":
+        from core.ai_provider import get_default_groq_key
+        club_groq_key = os.environ.get("GROQ_API_KEY", "")
+        if not club_groq_key:
+            try:
+                if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                    club_groq_key = st.secrets["GROQ_API_KEY"]
+            except Exception:
+                pass
+        if not club_groq_key:
+            club_groq_key = get_default_groq_key()
+
+        groq_key_val = getattr(user_ai, "groq_api_key", "") or club_groq_key
+        groq_api_key = st.text_input(
+            "Chiave API Groq Gratuita:",
+            type="password",
+            value=groq_key_val,
+            help="100% gratuita senza carta di credito. Generala su https://console.groq.com/keys"
+        )
+        groq_model_options = [
+            "groq/compound-mini",
+            "qwen/qwen3.8-27b",
+            "groq/compound",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
+        ]
+        cur_groq_model = getattr(user_ai, "groq_model", "groq/compound-mini")
+        if cur_groq_model not in groq_model_options:
+            cur_groq_model = "groq/compound-mini"
+        model_idx = groq_model_options.index(cur_groq_model)
+        groq_model = st.selectbox(
+            "Modello Groq Gratuito:",
+            options=groq_model_options,
+            index=model_idx
+        )
+        st.caption("💡 *Groq Cloud è 100% gratuito per sempre: non richiede carta di credito e non costa nulla.*")
+        st.markdown("[👉 **Ottieni la tua chiave gratuita Groq in 10 secondi su console.groq.com**](https://console.groq.com/keys)")
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            if st.button("🔌 Test Groq Cloud", use_container_width=True):
+                effective_key = groq_api_key or club_groq_key or get_default_groq_key()
+                test_cfg = AIUserConfig(provider="groq", groq_api_key=effective_key, groq_model=groq_model)
+                ok, msg = test_ai_connection(test_cfg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        with col_t2:
+            if st.button("💾 Salva IA", key="save_groq_btn", use_container_width=True):
+                effective_key = groq_api_key or club_groq_key or get_default_groq_key()
+                user_ai.provider = "groq"
+                setattr(user_ai, "groq_api_key", effective_key)
+                setattr(user_ai, "groq_model", groq_model)
+                auth_manager.update_user_ai_config(current_user.user_id, user_ai)
+                st.success("Configurazione salvata con successo!")
+                st.rerun()
+
+    elif new_provider == "ollama":
+        ollama_url = st.text_input("URL Server Ollama:", value=user_ai.ollama_url or "http://localhost:11434")
+
+        # Rileva automaticamente i modelli installati localmente su Ollama
+        installed_models = []
+        try:
+            req_models = urllib.request.Request(f"{ollama_url.rstrip('/')}/api/tags", headers={"User-Agent": "VoiceCaddy/1.0"})
+            with urllib.request.urlopen(req_models, timeout=2) as resp_m:
+                m_data = json.loads(resp_m.read().decode("utf-8"))
+                installed_models = [m.get("name", "") for m in m_data.get("models", []) if m.get("name")]
+        except Exception:
+            pass
+
+        if installed_models:
+            preferred = user_ai.ollama_model if user_ai.ollama_model in installed_models else (
+                "llama3:latest" if "llama3:latest" in installed_models else installed_models[0]
+            )
+            idx_m = installed_models.index(preferred) if preferred in installed_models else 0
+            ollama_model = st.selectbox(
+                "Modello Ollama Rilevato sul tuo PC:",
+                options=installed_models,
+                index=idx_m,
+                help="Modelli già scaricati e pronti all'uso sul tuo computer."
+            )
+        else:
+            ollama_model = st.text_input(
+                "Nome Modello Ollama:",
+                value=user_ai.ollama_model or "llama3",
+                help="es. llama3, mistral, qwen2.5, phi4"
+            )
+        st.caption("💡 *Ollama è 100% gratuito, offline e non consuma alcun gettone.*")
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            if st.button("🔌 Test Ollama", use_container_width=True):
+                test_cfg = AIUserConfig(provider="ollama", ollama_url=ollama_url, ollama_model=ollama_model)
+                ok, msg = test_ai_connection(test_cfg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        with col_t2:
+            if st.button("💾 Salva IA", key="save_ollama_btn", use_container_width=True):
+                user_ai.provider = "ollama"
+                user_ai.ollama_url = ollama_url
+                user_ai.ollama_model = ollama_model
+                auth_manager.update_user_ai_config(current_user.user_id, user_ai)
+                st.success("Configurazione salvata!")
+                st.rerun()
+
+    elif new_provider == "openai":
+        openai_key = st.text_input("La tua OpenAI API Key:", type="password", value=user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", ""))
+        openai_model = st.selectbox("Modello OpenAI:", options=["gpt-4o", "gpt-4o-mini", "o3-mini", "o1"], index=0 if user_ai.openai_model == "gpt-4o" else 1)
+        st.caption("🔒 *La tua chiave viene memorizzata in sicurezza solo per il tuo account.*")
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            if st.button("🔌 Test OpenAI", use_container_width=True):
+                test_cfg = AIUserConfig(provider="openai", openai_api_key=openai_key, openai_model=openai_model)
+                ok, msg = test_ai_connection(test_cfg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        with col_t2:
+            if st.button("💾 Salva IA", key="save_openai_btn", use_container_width=True):
+                user_ai.provider = "openai"
+                user_ai.openai_api_key = openai_key
+                user_ai.openai_model = openai_model
+                auth_manager.update_user_ai_config(current_user.user_id, user_ai)
+                st.success("Configurazione salvata!")
+                st.rerun()
+
+    else:
+        custom_base = st.text_input("Base URL:", value=user_ai.custom_base_url or "https://api.groq.com/openai/v1")
+        custom_key = st.text_input("Chiave API Custom:", type="password", value=user_ai.custom_api_key or "")
+        custom_model = st.text_input("Nome Modello Custom:", value=user_ai.custom_model or "llama-3.3-70b-versatile")
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            if st.button("🔌 Test Endpoint", use_container_width=True):
+                test_cfg = AIUserConfig(provider="custom", custom_base_url=custom_base, custom_api_key=custom_key, custom_model=custom_model)
+                ok, msg = test_ai_connection(test_cfg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+        with col_t2:
+            if st.button("💾 Salva IA", key="save_custom_btn", use_container_width=True):
+                user_ai.provider = "custom"
+                user_ai.custom_base_url = custom_base
+                user_ai.custom_api_key = custom_key
+                user_ai.custom_model = custom_model
+                auth_manager.update_user_ai_config(current_user.user_id, user_ai)
+                st.success("Configurazione salvata!")
+                st.rerun()
+
+    st.markdown("---")
+    st.subheader("⛳ Campo da Gioco")
+    all_courses = course_registry.list_courses()
+    course_options = {c.name: c.course_id for c in all_courses}
+
+    selected_course_name = st.selectbox(
+        "Campo attivo:",
+        options=list(course_options.keys()),
+        index=0,
+        help="Conero Golf Club pre-impostato per la fase di test."
+    )
+    st.session_state.selected_course_id = course_options[selected_course_name]
+    active_course = course_registry.get_course(st.session_state.selected_course_id) or CONERO_GOLF_CLUB
+
+    st.caption(f"📍 **{active_course.name}** ({active_course.city}) — Par Totale {active_course.total_par}")
+    terrain_desc = getattr(active_course, "terrain_description", "")
+    if terrain_desc:
+        st.markdown(f"<div style='font-size:0.8rem; color:#94A3B8; margin-top:-6px; margin-bottom:10px;'>⛰️ <i>{terrain_desc}</i></div>", unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.subheader("🎮 Prova Rapida (Giro Demo)")
+    if st.button("Carica Giro Demo PGA (18 Buche)", use_container_width=True):
+        demo_round = get_demo_golf_round()
+        st.session_state.round_data = demo_round
+        st.session_state.transcript = "Trascrizione generata per il Giro Dimostrativo PGA a 18 buche al Conero Golf Club."
+        db.save_round(demo_round, user_id=current_user.user_id, group_name=current_user.group)
+        st.success("✅ Giro Demo caricato nel tuo profilo con successo!")
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("🎙️ Carica Note Vocali Partita")
+    uploaded_files = st.file_uploader(
+        "Seleziona file audio (.m4a, .mp3, .wav, .opus)",
+        type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr"],
+        accept_multiple_files=True
+    )
+
+    whisper_engine = st.radio(
+        "Motore Speech-to-Text:",
+        options=["Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)", "OpenAI Whisper Cloud (Usa tua API Key)", "Faster-Whisper Locale"],
+        index=0
+    )
+
+    whisper_model_local = "base"
+    if "Faster-Whisper" in whisper_engine:
+        whisper_model_local = st.selectbox(
+            "Modello Whisper Locale:",
+            options=["base", "small", "medium"],
+            index=0
+        )
+
+    process_btn = st.button("🚀 Analizza Partita con la Tua IA", type="primary", use_container_width=True, disabled=not uploaded_files)
+
+    # ---------------------------------------------------------
+    # TELEGRAM BOT LIVE IN CAMPO
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("📱 Bot Telegram (Live in Campo)")
+    st.caption("Registra o scrivi i colpi buca per buca durante la partita dallo smartphone.")
+
+    curr_token = tg_manager.get_token()
+    bot_username = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+
+    token_status_color = "#2ECC71" if curr_token else "#E74C3C"
+    token_status_text = "✅ Configurato & Pronto" if curr_token else "⚠️ Da Configurare"
+
+    # Box informativo principale con Nome Bot, link diretto e utenza
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">🤖 Bot Telegram:</span>
+                <span style="font-size:0.75rem; font-weight:bold; color:{token_status_color}; background:rgba(46,204,113,0.1); padding:2px 8px; border-radius:4px;">{token_status_text}</span>
+            </div>
+            <div style="font-size:1.15rem; font-weight:bold; color:#38BDF8; margin-bottom: 8px;">
+                @{bot_username}
+            </div>
+            <div style="font-size:0.82rem; color:#94A3B8; line-height:1.5; margin-bottom: 12px; background:#0b0f19; padding:8px; border-radius:6px;">
+                👤 <b>Tua utenza:</b> <span style="color:#F1F5F9;">{current_user.first_name} {current_user.last_name}</span><br>
+                💬 <b>Comando di collegamento:</b><br>
+                <code style="color:#FBBF24; font-weight:bold; font-size:0.88rem;">/giocatore {current_user.first_name}</code>
+            </div>
+            <a href="https://t.me/{bot_username}" target="_blank" style="display:block; text-align:center; background:#0284C7; color:#FFFFFF; padding:9px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem; text-decoration:none; box-shadow: 0 2px 8px rgba(2,132,199,0.3);">
+                👉 Apri Chat con @{bot_username}
+            </a>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Guida passo-passo chiara
+    with st.expander("ℹ️ Come funziona il salvataggio automatico sul sito", expanded=False):
+        st.markdown(f"""
+            <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
+                <b>1. Avvia il Bot sul PC:</b><br>
+                Fai doppio clic sul file <code>avvia_telegram_bot.bat</code> sul PC. Rimarrà aperta la finestra nera di ascolto.<br><br>
+                <b>2. Collega la chat Telegram:</b><br>
+                Sul cellulare apri <b>@{bot_username}</b> e scrivi:<br>
+                <code>/giocatore {current_user.first_name}</code><br>
+                <i>(Basta farlo la prima volta per associare la chat al tuo profilo e alla tua sacca)</i>.<br><br>
+                <b>3. Invia note vocali o testo durante il gioco:</b><br>
+                Manda note vocali o messaggi descrivendo i colpi buca per buca.<br><br>
+                <b>4. Come si trasferiscono sul sito:</b><br>
+                <b>Il trasferimento è 100% automatico!</b> Il Bot e questo sito condividono lo stesso database SQLite locale. Non devi esportare nulla a mano: appena invii il vocale, il bot calcola lo score e salva il giro. Ti basta aprire la scheda <b>'📈 Storico Partite & Trend'</b> qui sopra per ritrovare la partita e aprirla con un clic!
+            </div>
+        """, unsafe_allow_html=True)
+
+    with st.expander("⚙️ Gestione Avanzata Token Telegram", expanded=not bool(curr_token)):
+        tb_input = st.text_input(
+            "Token Telegram (@BotFather):",
+            value=curr_token,
+            type="password",
+            key="sidebar_tg_token",
+            help="Incolla qui il token rilasciato da @BotFather su Telegram"
+        )
+        col_tb1, col_tb2 = st.columns(2)
+        with col_tb1:
+            if st.button("💾 Salva Token", key="save_tg_tok_btn", use_container_width=True):
+                tg_manager.set_token(tb_input)
+                st.success("Token salvato con successo!")
+                st.rerun()
+        with col_tb2:
+            if st.button("🔌 Verifica Bot", key="test_tg_tok_btn", use_container_width=True):
+                ok_t, msg_t, b_uname = tg_manager.test_token(tb_input)
+                if ok_t:
+                    st.session_state["tg_status_info"] = (True, f"✅ Bot attivo: @{b_uname}", b_uname)
+                else:
+                    st.session_state["tg_status_info"] = (False, f"❌ {msg_t}", None)
+
+        if "tg_status_info" in st.session_state:
+            ok_si, msg_si, u_si = st.session_state["tg_status_info"]
+            if ok_si:
+                st.success(msg_si)
+                st.markdown(f"[👉 **Apri la chat del Bot su Telegram**](https://t.me/{u_si})")
+            else:
+                st.error(msg_si)
+
+
+# ---------------------------------------------------------
+# PROCESS AUDIO PIPELINE (Using User's Configured AI)
+# ---------------------------------------------------------
+if process_btn and uploaded_files:
+    # Validate user AI configuration before consuming
+    if user_ai.provider == "openai" and not user_ai.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
+        st.error("⚠️ Inserisci la tua OpenAI API Key personale nella barra laterale prima di avviare l'analisi.")
+        st.stop()
+
+    temp_paths = []
+    try:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        status_text.info("⚙️ Preparazione e caricamento note vocali...")
+        progress_bar.progress(15)
+
+        for file in uploaded_files:
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.name}")
+            temp_file.write(file.read())
+            temp_file.close()
+            temp_paths.append(temp_file.name)
+
+        status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
+        progress_bar.progress(40)
+
+        if "Groq" in whisper_engine:
+            engine_mode = "groq"
+        elif "Cloud" in whisper_engine or "OpenAI" in whisper_engine:
+            engine_mode = "cloud"
+        else:
+            engine_mode = "local"
+
+        audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
+        whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+        groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+
+        if len(temp_paths) == 1:
+            transcript_text, meta = audio_engine.transcribe(
+                temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+            )
+        else:
+            transcript_text, meta = audio_engine.transcribe_multiple(
+                temp_paths, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+            )
+
+        st.session_state.transcript = transcript_text
+
+        ai_desc = f"Ollama ({user_ai.ollama_model})" if user_ai.provider == "ollama" else f"OpenAI ({user_ai.openai_model})"
+        status_text.info(f"🧠 Analisi semantica NLU tramite la tua IA ({ai_desc}) per {st.session_state.user_profile.category.value} su {active_course.name}...")
+        progress_bar.progress(70)
+
+        raw_round_data = parse_golf_audio_transcript(
+            transcript_text=transcript_text,
+            user_profile=st.session_state.user_profile,
+            course=active_course,
+            ai_config=user_ai
+        )
+
+        status_text.info("📊 Riconciliazione matematica e calcolo metriche balistiche...")
+        progress_bar.progress(90)
+
+        validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_round_data)
+        st.session_state.round_data = validated_data
+
+        # Save round tagged with current user ID and group
+        db.save_round(validated_data, user_id=current_user.user_id, group_name=current_user.group)
+
+        progress_bar.progress(100)
+        status_text.success("✅ Partita analizzata e salvata nel tuo archivio personale con successo!")
+        st.rerun()
+
+    except AudioProcessingError as ape:
+        st.error(f"Errore Audio: {ape}")
+    except AIProviderError as aie:
+        st.error(f"Errore IA Personale: {aie}")
+    except Exception as e:
+        st.error(f"Si è verificato un errore durante l'elaborazione: {e}")
+    finally:
+        for p in temp_paths:
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+
+# =========================================================
+# HELPER FUNCTIONS FOR RENDERING
+# =========================================================
 def render_scorecard_table(holes_data: list):
     matrix = GolfMetricsCalculator.get_scorecard_matrix(holes_data)
     df = pd.DataFrame(matrix)
@@ -113,7 +961,7 @@ def render_scorecard_table(holes_data: list):
         }
         return colors.get(val, "")
 
-    styled_df = df.style.applymap(color_status, subset=["Status"])
+    styled_df = df.style.map(color_status, subset=["Status"]) if hasattr(df.style, "map") else df.style.applymap(color_status, subset=["Status"])
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 
@@ -146,123 +994,33 @@ def render_strokes_lost_radar(strokes_lost):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# Sidebar Setup
-with st.sidebar:
-    st.title("⛳ Voice Caddy")
-    st.caption("AI Caddie & PGA Performance Analytics Engine")
-
-    api_key = st.text_input("OpenAI API Key", type="password", value=os.environ.get("OPENAI_API_KEY", ""))
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-
-    st.markdown("---")
-    st.subheader("⛳ Selezione Campo da Gioco")
-    all_courses = course_registry.list_courses()
-    course_options = {c.name: c.course_id for c in all_courses}
-
-    selected_course_name = st.selectbox(
-        "Campo attivo:",
-        options=list(course_options.keys()),
-        index=0,
-        help="Conero Golf Club pre-impostato per la fase di test."
-    )
-    st.session_state.selected_course_id = course_options[selected_course_name]
-    active_course = course_registry.get_course(st.session_state.selected_course_id) or CONERO_GOLF_CLUB
-
-    st.caption(f"📌 **{active_course.name}** ({active_course.city}) — Par Totale {active_course.total_par}")
-
-    st.markdown("---")
-    st.subheader("📁 Carica Note Vocali Partita")
-    uploaded_files = st.file_uploader(
-        "Seleziona file audio (.m4a, .mp3, .wav, .opus)",
-        type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr"],
-        accept_multiple_files=True
-    )
-
-    whisper_model = st.selectbox(
-        "Modello Whisper",
-        options=["medium", "small", "base", "large-v3"],
-        index=0
-    )
-
-    process_btn = st.button("⚡ Analizza Partita Ora", type="primary", use_container_width=True, disabled=not uploaded_files)
-
-
-# Process Audio Pipeline
-if process_btn and uploaded_files:
-    if not os.environ.get("OPENAI_API_KEY"):
-        st.error("Inserisci la tua OpenAI API Key nella barra laterale.")
-        st.stop()
-
-    temp_paths = []
-    try:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        status_text.info("🎙️ Conversione audio ed eliminazione rumori di fondo (ffmpeg)...")
-        progress_bar.progress(20)
-
-        for file in uploaded_files:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.name}")
-            temp_file.write(file.read())
-            temp_file.close()
-            temp_paths.append(temp_file.name)
-
-        status_text.info(f"🧠 Trascrizione speech-to-text in corso ({whisper_model})...")
-        progress_bar.progress(45)
-
-        audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model)
-        if len(temp_paths) == 1:
-            transcript_text, meta = audio_engine.transcribe(temp_paths[0])
-        else:
-            transcript_text, meta = audio_engine.transcribe_multiple(temp_paths)
-
-        st.session_state.transcript = transcript_text
-
-        status_text.info(f"🧩 Analisi semantica NLU adattata a {st.session_state.user_profile.category.value} su {active_course.name}...")
-        progress_bar.progress(70)
-
-        raw_round_data = parse_golf_audio_transcript(
-            transcript_text=transcript_text,
-            user_profile=st.session_state.user_profile,
-            course=active_course
-        )
-
-        status_text.info("📊 Riconciliazione matematica deterministica...")
-        progress_bar.progress(90)
-
-        validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_round_data)
-        st.session_state.round_data = validated_data
-
-        # Auto-save to SQLite DB
-        db.save_round(validated_data)
-
-        progress_bar.progress(100)
-        status_text.success("✅ Partita analizzata e salvata!")
-
-    except Exception as e:
-        st.error(f"Errore durante l'elaborazione: {str(e)}")
-    finally:
-        for p in temp_paths:
-            if os.path.exists(p):
-                os.remove(p)
-
-
-# Navigation Tabs
-nav_tab1, nav_tab2, nav_tab3, nav_tab4 = st.tabs([
-    "⛳ Dashboard & Diagnosi PGA",
-    "👤 Scheda Profilo & Attrezzatura Sacca",
-    "📈 Storico Giri & Trend",
+# =========================================================
+# MAIN DASHBOARD TABS
+# =========================================================
+tab_titles = [
+    "📊 Live Dashboard & Diagnosi PGA",
+    "🏌️‍♂️ Profilo Personale & Sacca Mazze",
+    "📈 Storico Partite & Trend",
     "🎯 Benchmark & Strokes Gained"
-])
+]
+if current_user.is_admin:
+    tab_titles.append("👑 Amministrazione & Utenti")
+
+all_tabs = st.tabs(tab_titles)
+nav_tab1, nav_tab2, nav_tab3, nav_tab4 = all_tabs[0], all_tabs[1], all_tabs[2], all_tabs[3]
+nav_admin = all_tabs[4] if current_user.is_admin else None
 
 
+# ---------------------------------------------------------
 # TAB 1: LIVE DASHBOARD & PGA DIAGNOSIS
+# ---------------------------------------------------------
 with nav_tab1:
-    if st.session_state.round_data:
-        data: GolfRoundData = st.session_state.round_data
+    data = st.session_state.round_data
+
+    if data:
         summary = data.performance_summary
         diag = summary.professional_diagnosis
+
         rel_par = GolfMetricsCalculator.calculate_score_relation_to_par(data.holes)
         rel_par_str = f"+{rel_par}" if rel_par > 0 else ("Par" if rel_par == 0 else f"{rel_par}")
 
@@ -270,15 +1028,15 @@ with nav_tab1:
         with col_head:
             st.title(f"⛳ {data.round_info.course_name or active_course.name}")
             cat_val = st.session_state.user_profile.category.value
-            cat_badge = f"🔥 Tono IA: {cat_val}"
-            st.caption(f"Partita di {data.round_info.holes_played} Buche • Data: {data.round_info.date or 'Oggi'} • {cat_badge}")
+            cat_badge = f"🎭 Tono IA: {cat_val}"
+            st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {data.round_info.holes_played} Buche • Data: {data.round_info.date or 'Oggi'} • {cat_badge}")
 
         with col_btn:
             html_rep = PDFReportGenerator.generate_html_report(data)
             st.download_button(
-                label="📄 Scarica Report PDF / HTML",
+                label="📥 Scarica Report PDF / HTML",
                 data=html_rep,
-                file_name=f"VoiceCaddy_Report_{data.round_info.date or 'Round'}.html",
+                file_name=f"VoiceCaddy_{current_user.first_name}_{data.round_info.date or 'Round'}.html",
                 mime="text/html",
                 use_container_width=True
             )
@@ -293,11 +1051,12 @@ with nav_tab1:
 
         st.markdown("---")
 
-        # Professional Diagnosis Box
+        # PGA Coach Executive Diagnosis Box
         st.markdown(f"""
             <div class="diag-card">
-                <h3 style="margin-top: 0; color: #2ECC71;">🧠 Diagnosi Caddie PGA — ({st.session_state.user_profile.category.value})</h3>
-                <p><b>Sintesi Giro:</b> {diag.executive_narrative}</p>
+                <h3 style="margin-top:0; color:#2ECC71;">🧠 Diagnosi Strategica del Caddie PGA</h3>
+                <p style="font-size: 1.05rem; line-height: 1.6;">{diag.executive_narrative}</p>
+                <hr style="border-color:#2C354A;">
                 <p><b>Dispersion Leak Principale:</b> {diag.biggest_stroke_leak}</p>
                 <p><b>Analisi Esecuzione Tecnica vs Tattica:</b> {diag.technical_vs_tactical_split}</p>
             </div>
@@ -305,7 +1064,7 @@ with nav_tab1:
 
         sub_tab_overview, sub_tab_holes, sub_tab_drills, sub_tab_transcript = st.tabs([
             "📋 Scorecard Ufficiale",
-            "🗺️ Mappa Vettoriale & Target Landing",
+            "🎯 Mappa Vettoriale & Target Landing",
             "🏋️ Piano di Allenamento Mirato",
             "🎙️ Trascrizione Vocale"
         ])
@@ -319,16 +1078,18 @@ with nav_tab1:
                     st.warning(f"⚠️ 3-Putt riscontrati alle buche: {', '.join(map(str, summary.three_putt_holes))}")
 
             with right_col:
-                st.markdown("### 🎯 Ripartizione Colpi Persi (Strokes Lost)")
+                st.markdown("### 📊 Ripartizione Colpi Persi (Strokes Lost)")
                 render_strokes_lost_radar(summary.strokes_lost_breakdown)
                 st.info(f"**Tendenza errore principale:** {summary.primary_miss_tendency}")
 
         with sub_tab_holes:
             st.markdown("### 🎯 Target Landing Area & Analisi Tattica per Buca")
-            st.caption(f"Valutazione strategica tarata sull'Handicap del giocatore ({st.session_state.user_profile.handicap}): Target Ideale vs Atterraggio Reale.")
+            st.caption(f"Valutazione strategica tarata sull'Handicap personale ({st.session_state.user_profile.handicap}): Target Ideale vs Atterraggio Reale.")
 
             for h in data.holes:
-                with st.expander(f"Buca {h.hole_number} — Par {h.par} | Score: {h.score} | Putt: {h.putts}"):
+                c_hole = next((ch for ch in active_course.holes if ch.hole_number == h.hole_number), None)
+                slope_label = f" — ⛰️ {c_hole.slope_elevation_profile}" if (c_hole and hasattr(c_hole, 'slope_elevation_profile') and c_hole.slope_elevation_profile != "In pianura") else ""
+                with st.expander(f"Buca {h.hole_number} — Par {h.par} | Score: {h.score} | Putt: {h.putts}{slope_label}"):
                     map_col, table_col = st.columns([2, 3])
 
                     with map_col:
@@ -336,9 +1097,16 @@ with nav_tab1:
                         st.plotly_chart(fig_map, use_container_width=True)
 
                     with table_col:
+                        if c_hole and hasattr(c_hole, 'slope_elevation_profile'):
+                            slope_badge_bg = "#1e293b" if c_hole.slope_elevation_profile == "In pianura" else "#1e3a5f"
+                            st.markdown(f"""
+                                <div style="background:{slope_badge_bg}; border:1px solid #3b82f6; border-radius:6px; padding:6px 10px; margin-bottom:10px; font-size:0.83rem; color:#93C5FD;">
+                                    ⛰️ <b>Profilo Altimetrico:</b> {c_hole.slope_elevation_profile}
+                                </div>
+                            """, unsafe_allow_html=True)
                         t_an = h.target_landing_analysis
                         if t_an:
-                            verdict_color = "#2ECC71" if "Bravo" in t_an.tactical_verdict or "Ottimo" in t_an.tactical_verdict or "Vincente" in t_an.tactical_verdict else "#E67E22"
+                            verdict_color = "#2ECC71" if any(w in t_an.tactical_verdict for w in ["Bravo", "Ottimo", "Vincente", "Perfetto"]) else "#E67E22"
                             st.markdown(f"""
                                 <div class="target-box" style="border-left: 4px solid {verdict_color};">
                                     <span style="color: {verdict_color}; font-weight: bold; font-size: 0.95rem;">
@@ -346,11 +1114,13 @@ with nav_tab1:
                                     </span>
                                     <p style="margin-top: 5px; margin-bottom: 3px; font-size: 0.9rem;">🎯 <b>Target Ideale per HCP {st.session_state.user_profile.handicap}:</b> {t_an.ideal_target_zone}</p>
                                     <p style="margin-bottom: 3px; font-size: 0.9rem;">📍 <b>Atterraggio Reale Palla:</b> {t_an.actual_landing_zone}</p>
-                                    <p style="color: #B0B3B8; font-size: 0.85rem; margin-top: 5px;"><i>💡 Note Caddie: {t_an.caddie_tactical_note}</i></p>
+                                    <p style="color: #B0B3B8; font-size: 0.85rem; margin-top: 5px;"><i>🗣️ Note Caddie: {t_an.caddie_tactical_note}</i></p>
                                 </div>
                             """, unsafe_allow_html=True)
 
-                        st.write(f"**GIR:** {'Sì' if h.gir else 'No'} | **Fairway Hit:** {'Sì' if h.fairway_hit else ('No' if h.fairway_hit is False else 'N/A')}")
+                        gir_str = "Sì" if h.gir else "No"
+                        fir_str = "Sì" if h.fairway_hit is True else ("No" if h.fairway_hit is False else "N/A")
+                        st.write(f"**GIR:** {gir_str} | **Fairway Hit:** {fir_str}")
                         if h.root_cause_error:
                             st.caption(f"**Causa errore:** {h.root_cause_error}")
 
@@ -368,40 +1138,42 @@ with nav_tab1:
 
         with sub_tab_drills:
             st.markdown("### 🏋️ Esercizi Prescritti dal Caddie PGA")
-            drill_cols = st.columns(len(summary.training_drills_recommended))
-            for idx, drill in enumerate(summary.training_drills_recommended):
-                with drill_cols[idx]:
-                    st.markdown(f"""
-                        <div class="drill-box">
-                            <div class="drill-target">{drill.target_area}</div>
-                            <h4 style="margin-top: 5px; margin-bottom: 8px;">{drill.drill_name}</h4>
-                            <p style="color: #48C9B0; font-size: 0.85rem; margin-bottom: 8px;"><b>Obiettivo:</b> {drill.objective}</p>
-                            <p style="color: #B0B3B8; font-size: 0.9rem; line-height: 1.4;">{drill.setup_and_execution}</p>
-                            <div style="background: #262B36; padding: 8px; border-radius: 5px; margin-top: 10px; color: #E67E22; font-size: 0.85rem; font-weight: bold;">
-                                🎯 Target: {drill.success_benchmark}
-                            </div>
+            st.caption("Drill biomeccanici e di course management con benchmark misurabili per il campo di pratica.")
+
+            for drill in summary.training_drills_recommended:
+                st.markdown(f"""
+                    <div class="drill-box">
+                        <div class="drill-target">AREA FOCUS: {drill.target_area}</div>
+                        <h4 style="margin-top: 5px; color: #FFFFFF;">{drill.drill_name}</h4>
+                        <p><b>🎯 Obiettivo:</b> {drill.objective}</p>
+                        <p style="line-height: 1.5; color: #D1D5DB;"><b>📋 Istruzioni sul campo pratica:</b><br>{drill.setup_and_execution}</p>
+                        <div style="background-color: #12151C; padding: 10px; border-radius: 6px; border-left: 3px solid #2ECC71;">
+                            <b>🎯 Benchmark di Successo:</b> {drill.success_benchmark}
                         </div>
-                    """, unsafe_allow_html=True)
+                    </div>
+                """, unsafe_allow_html=True)
 
         with sub_tab_transcript:
-            st.markdown("### 🎙️ Trascrizione Vocale Estratta")
-            st.text_area("Testo completo generato da Whisper:", value=st.session_state.transcript, height=250)
+            st.markdown("### 🎙️ Trascrizione Integrale Note Vocali")
+            st.text_area("Testo completo trascritto:", value=st.session_state.transcript or "Nessuna trascrizione disponibile.", height=250)
 
     else:
-        st.info("👈 Carica una nota vocale dal pannello laterale per iniziare l'analisi del tuo giro.")
+        st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
 
 
-# TAB 2: USER PROFILE & MANUAL EQUIPMENT FORM
+# ---------------------------------------------------------
+# TAB 2: USER PROFILE & PERSONAL EQUIPMENT
+# ---------------------------------------------------------
 with nav_tab2:
-    st.subheader("👤 Scheda Profilo Giocatore & Attrezzatura Sacca")
-    st.caption("Compila o modifica i tuoi dati anagrafici, l'Handicap e la composizione completa della tua sacca da golf (Marca, Modello, Shaft e Distanze).")
+    st.subheader(f"🏌️‍♂️ Scheda Profilo di {current_user.first_name} & Attrezzatura Sacca")
+    st.caption("I dati del tuo profilo e la composizione della tua sacca sono memorizzati in modo permanente e isolato per il tuo account.")
 
     prof = st.session_state.user_profile
 
     col_prof_l, col_prof_r = st.columns([2, 3])
 
     with col_prof_l:
-        st.markdown("### 📝 Dati Giocatore & Handicap")
+        st.markdown("### 👤 Dati Giocatore & Handicap")
         m_name = st.text_input("Nome & Cognome Giocatore", value=prof.player_name)
         m_hcp = st.number_input("Handicap Ufficiale (HCP)", min_value=0.0, max_value=54.0, value=float(prof.handicap), step=0.1)
         m_ball = st.text_input("Palla Preferita / In Uso", value=prof.preferred_ball or "Titleist Pro V1")
@@ -412,34 +1184,38 @@ with nav_tab2:
         st.markdown("---")
         st.markdown("### 🎙️ In alternativa: Importa Profilo da Nota Vocale")
         setup_audio_file = st.file_uploader("Carica Audio Presentazione Sacca", type=["m4a", "mp3", "wav", "opus", "aac"])
-        if st.button("🧠 Estrarre Profilo da Audio", type="primary", disabled=not setup_audio_file):
-            if not os.environ.get("OPENAI_API_KEY"):
-                st.error("Inserisci la tua OpenAI API Key nella barra laterale.")
-                st.stop()
-
+        if st.button("🪄 Estrai Profilo da Audio", type="primary", disabled=not setup_audio_file):
             with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{setup_audio_file.name}") as tmp_s:
                 tmp_s.write(setup_audio_file.read())
                 tmp_s_path = tmp_s.name
 
             try:
-                audio_eng = VoiceCaddyAudioEngine(model_size="medium")
-                setup_transcript, _ = audio_eng.transcribe(tmp_s_path)
-                parsed_profile = parse_user_setup_transcript(setup_transcript)
+                audio_eng = VoiceCaddyAudioEngine()
+                setup_transcript, _ = audio_eng.transcribe(tmp_s_path, engine_mode="local")
+                parsed_profile = parse_user_setup_transcript(setup_transcript, ai_config=user_ai)
+                parsed_profile.save_for_user(current_user.user_id)
                 st.session_state.user_profile = parsed_profile
-                st.success(f"✅ Profilo estratto con successo! Handicap: {parsed_profile.handicap}")
+                st.success(f"✅ Profilo estratto e salvato nel tuo account! Handicap: {parsed_profile.handicap}")
                 st.rerun()
             except Exception as e:
                 st.error(f"Errore estrazione profilo: {e}")
             finally:
                 if os.path.exists(tmp_s_path):
-                    os.remove(tmp_s_path)
+                    try:
+                        os.remove(tmp_s_path)
+                    except OSError:
+                        pass
 
     with col_prof_r:
-        st.markdown("### 🏌️ Composizione Sacca Bastoni (Modifica Manuale)")
+        st.markdown("### 🎒 Composizione Sacca Bastoni Personale")
+        st.caption("⚡ I bastoni salvati si allineano automaticamente in base alla distanza: dal Driver più lungo fino al Putter.")
 
-        # Display Editable Form for Bag
+        if "bag_save_success" in st.session_state:
+            st.success(st.session_state.pop("bag_save_success"))
+
+        sorted_bag = sort_clubs_by_distance(prof.clubs_in_bag)
         clubs_data = []
-        for idx, c in enumerate(prof.clubs_in_bag):
+        for idx, c in enumerate(sorted_bag):
             clubs_data.append({
                 "Mazza": c.club_name,
                 "Marca": c.brand or "Generica",
@@ -466,7 +1242,6 @@ with nav_tab2:
             updated_clubs = []
             for _, row in edited_df.iterrows():
                 if pd.notna(row["Mazza"]):
-                    # Match ShaftFlex enum
                     s_flex = ShaftFlex.REGULAR
                     for sf in ShaftFlex:
                         if sf.value == row["Shaft"]:
@@ -481,24 +1256,37 @@ with nav_tab2:
                         carry_meters=float(row["Distanza Carry (m)"]) if pd.notna(row["Distanza Carry (m)"]) else 0.0
                     ))
 
+            # Allinea automaticamente le voci inserite in base alla distanza: dal driver più lungo fino al putt
+            updated_clubs = sort_clubs_by_distance(updated_clubs)
+
             st.session_state.user_profile.player_name = m_name
             st.session_state.user_profile.handicap = m_hcp
             st.session_state.user_profile.category = new_cat
             st.session_state.user_profile.preferred_ball = m_ball
             st.session_state.user_profile.clubs_in_bag = updated_clubs
 
-            st.success("✅ Scheda Profilo e Sacca aggiornate con successo! L'IA utilizzerà queste impostazioni precise per le prossime analisi.")
+            st.session_state.user_profile.save_for_user(current_user.user_id)
+            st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
+            st.rerun()
 
 
-# TAB 3: HISTORICAL ROUNDS & TRENDS
+# ---------------------------------------------------------
+# TAB 3: HISTORICAL ROUNDS & TRENDS (PER-USER ISOLATION)
+# ---------------------------------------------------------
 with nav_tab3:
-    st.subheader("📈 Storico Parti & Progressioni nel Tempo")
-    rounds_list = db.get_all_rounds()
+    col_hist_title, col_hist_filter = st.columns([3, 2])
+    with col_hist_title:
+        st.subheader(f"📈 Storico Partite di {current_user.first_name}")
+    with col_hist_filter:
+        show_all_club = st.checkbox("Mostra partite di tutti i membri del circolo", value=False)
+
+    filter_user_id = None if show_all_club else current_user.user_id
+    rounds_list = db.get_all_rounds(user_id=filter_user_id)
 
     if not rounds_list:
-        st.info("Nessuna partita ancora registrata nel database. Carica e analizza la tua prima partita!")
+        st.info("Nessuna partita ancora registrata per questo account. Carica una nota vocale o clicca su 'Carica Giro Demo PGA'!")
     else:
-        hist_stats = db.get_historical_stats()
+        hist_stats = db.get_historical_stats(user_id=filter_user_id)
 
         stat1, stat2, stat3, stat4, stat5 = st.columns(5)
         stat1.metric("Giri Registrati", hist_stats["total_rounds"])
@@ -517,8 +1305,32 @@ with nav_tab3:
         )
         st.plotly_chart(fig_score, use_container_width=True)
 
+        st.markdown("### 📂 Gestione Giri Registrati")
+        selected_round_id = st.selectbox(
+            "Seleziona un giro per visualizzarlo o gestirlo:",
+            options=[r["id"] for r in rounds_list],
+            format_func=lambda x: next(f"ID #{r['id']} — {r['course_name']} ({r['date_played']}) — Score: {r['total_score']} [{r.get('group_name', 'strafatti').upper()}]" for r in rounds_list if r["id"] == x)
+        )
 
+        col_load, col_del = st.columns(2)
+        with col_load:
+            if st.button("📂 Carica nel Dashboard Attivo", use_container_width=True):
+                loaded_round = db.get_round_by_id(selected_round_id)
+                if loaded_round:
+                    st.session_state.round_data = loaded_round
+                    st.success(f"✅ Giro #{selected_round_id} caricato nel Dashboard!")
+                    st.rerun()
+
+        with col_del:
+            if st.button("🗑️ Elimina Giro dal Database", type="secondary", use_container_width=True):
+                if db.delete_round(selected_round_id):
+                    st.success(f"Giro #{selected_round_id} eliminato con successo.")
+                    st.rerun()
+
+
+# ---------------------------------------------------------
 # TAB 4: BENCHMARK & STROKES GAINED
+# ---------------------------------------------------------
 with nav_tab4:
     st.subheader("🎯 Confronto Benchmark Strokes Gained vs Handicap Target")
 
@@ -542,4 +1354,99 @@ with nav_tab4:
         b1.metric("GIR %", f"{player_m['gir_pct']}%", delta=f"{diffs['gir_diff']}% vs Target")
         b2.metric("Fairway Hit %", f"{player_m['fairway_pct']}%", delta=f"{diffs['fairway_diff']}% vs Target")
         b3.metric("Media Putt (18b eq)", f"{player_m['putts_18h_equivalent']}", delta=f"{diffs['putts_diff']} putt", delta_color="normal")
-        b4.metric("Scrambling %", f"{player_m['scrambling_pct']}%", delta=f"{diffs['scrambling_diff']}% vs Target")
+        st.markdown("---")
+        st.markdown(f"**Dispersione Maggiore Identificata:** `{comparison['biggest_bottleneck']}` (+{comparison['max_strokes_lost']} colpi persi stimati)")
+
+
+# ---------------------------------------------------------
+# TAB 5: ADMIN & USERS MANAGEMENT (EXCLUSIVE FOR STEFANO)
+# ---------------------------------------------------------
+if current_user.is_admin and nav_admin:
+    with nav_admin:
+        st.subheader("👑 Pannello di Controllo Amministratore (Stefano)")
+        st.caption("Pannello riservato all'Amministratore di Sistema per visualizzare tutti i membri, reimpostare password e monitorare il circolo.")
+
+        all_users = auth_manager.get_all_users()
+
+        col_a1, col_a2, col_a3 = st.columns(3)
+        col_a1.metric("Membri Totali Iscritti", len(all_users))
+        strafatti_count = sum(1 for u in all_users if u.group == "strafatti")
+        amici_count = sum(1 for u in all_users if u.group == "amici")
+        col_a2.metric("Membri Gruppo Strafatti", strafatti_count)
+        col_a3.metric("Membri Gruppo Amici", amici_count)
+
+        st.markdown("---")
+        st.markdown("### 📋 Registro Membri & Credenziali")
+
+        users_table_data = []
+        for u in all_users:
+            role_tag = "👑 Admin" if u.is_admin else "Membro"
+            status_tag = "⚠️ Primo Accesso (In Attesa)" if u.must_change_password else "✅ Password Attiva"
+            users_table_data.append({
+                "User ID": u.user_id,
+                "Nome": u.first_name,
+                "Cognome": u.last_name,
+                "Gruppo": "Strafatti" if u.group == "strafatti" else "Amici",
+                "Ruolo": role_tag,
+                "Stato Password": status_tag,
+                "Provider IA": u.ai_config.provider.upper()
+            })
+
+        st.dataframe(pd.DataFrame(users_table_data), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.markdown("### 🔧 Gestione Credenziali & Azioni Rapide")
+
+        target_user_id = st.selectbox(
+            "Seleziona l'utente su cui intervenire:",
+            options=[u.user_id for u in all_users],
+            format_func=lambda uid: next(f"{u.first_name} {u.last_name} ({u.group}) — ID: {u.user_id}" for u in all_users if u.user_id == uid)
+        )
+
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            if st.button("🔄 Reimposta Password Utente", use_container_width=True, help="Reimposta la password al valore iniziale del Cognome"):
+                ok_rst, msg_rst = auth_manager.admin_reset_user_password(target_user_id)
+                if ok_rst:
+                    st.success(msg_rst)
+                    st.rerun()
+                else:
+                    st.error(msg_rst)
+
+        with col_act2:
+            if st.button("🗑️ Elimina Utente (Non Amministratore)", type="secondary", use_container_width=True):
+                ok_del, msg_del = auth_manager.admin_delete_user(target_user_id)
+                if ok_del:
+                    st.success(msg_del)
+                    st.rerun()
+                else:
+                    st.error(msg_del)
+
+        st.markdown("---")
+        st.markdown("### 🤖 Configurazione & Chat Telegram del Circolo")
+        st.caption("Stato globale del server Telegram e associazioni chat dei membri.")
+
+        col_tadmin1, col_tadmin2 = st.columns([3, 2])
+        with col_tadmin1:
+            admin_tok = tg_manager.get_token()
+            new_admin_tok = st.text_input("TELEGRAM_BOT_TOKEN globale:", value=admin_tok, type="password", key="admin_tg_tok_input")
+            if st.button("💾 Salva Token Globale", key="admin_save_tg_btn"):
+                tg_manager.set_token(new_admin_tok)
+                st.success("Token salvato nel sistema!")
+                st.rerun()
+
+            ok_adm, msg_adm, adm_uname = tg_manager.test_token(new_admin_tok)
+            if ok_adm:
+                st.success(f"✅ Bot Telegram Operativo: **@{adm_uname}**")
+                st.markdown(f"[👉 **Apri Bot su Telegram (@{adm_uname})**](https://t.me/{adm_uname})")
+            elif new_admin_tok:
+                st.warning(f"Verifica connessione: {msg_adm}")
+
+        with col_tadmin2:
+            st.markdown("<b>Chat Collegate:</b>", unsafe_allow_html=True)
+            users_map = tg_manager.load_users_map()
+            if not users_map:
+                st.info("Nessun membro ha ancora collegato la propria chat Telegram. Digiteranno `/giocatore [Nome]` in chat.")
+            else:
+                for cid, data in users_map.items():
+                    st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)

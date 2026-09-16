@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import os
+import json
+from pathlib import Path
 from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from openai import OpenAI
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROFILES_DIR = PROJECT_ROOT / "data" / "profiles"
 
 
 class PlayerCategory(str, Enum):
@@ -29,13 +34,101 @@ class ClubDetail(BaseModel):
     carry_meters: float = Field(..., description="Distanza media di volo/totale in metri")
 
 
+CLUB_HIERARCHY_RANK = {
+    "driver": 1,
+    "legno 2": 2,
+    "legno 3": 3,
+    "legno 4": 4,
+    "legno 5": 5,
+    "legno 7": 6,
+    "legno 9": 7,
+    "legno": 8,
+    "ibrido 2": 9,
+    "ibrido 3": 10,
+    "ibrido 4": 11,
+    "ibrido 5": 12,
+    "ibrido 6": 13,
+    "ibrido": 14,
+    "driving iron": 15,
+    "ferro 1": 16,
+    "ferro 2": 17,
+    "ferro 3": 18,
+    "ferro 4": 19,
+    "ferro 5": 20,
+    "ferro 6": 21,
+    "ferro 7": 22,
+    "ferro 8": 23,
+    "ferro 9": 24,
+    "pitching wedge": 25,
+    "pw": 25,
+    "gap wedge": 26,
+    "gw": 26,
+    "approach wedge": 27,
+    "aw": 27,
+    "sand wedge": 28,
+    "sw": 28,
+    "lob wedge": 29,
+    "lw": 29,
+    "wedge": 30,
+    "chipper": 31,
+    "putter": 999,
+    "putt": 999,
+}
+
+
+def sort_clubs_by_distance(clubs: List[ClubDetail]) -> List[ClubDetail]:
+    """
+    Allinea e ordina i bastoni della sacca in base alla distanza:
+    dal Driver più lungo fino al Putter.
+    
+    Regole di ordinamento:
+    1. Tutti i bastoni di distanza sono ordinati in ordine decrescente di carry_meters.
+    2. A parità di distanza, viene rispettata la gerarchia canonica dei bastoni da golf.
+    3. Il Putter è posizionato sempre come ultimo bastone della sacca.
+    """
+    def _rank(name: str) -> int:
+        n = name.lower().strip()
+        for key, r in CLUB_HIERARCHY_RANK.items():
+            if key in n:
+                return r
+        return 50
+
+    def _sort_key(c: ClubDetail):
+        n = c.club_name.lower().strip()
+        is_putt = 1 if ("putt" in n) else 0
+        dist = float(c.carry_meters) if c.carry_meters is not None else 0.0
+        rank = _rank(c.club_name)
+        return (is_putt, -dist, rank, n)
+
+    return sorted(clubs, key=_sort_key)
+
+
+def get_default_bag() -> List[ClubDetail]:
+    raw_bag = [
+        ClubDetail(club_name="Driver", brand="TaylorMade", model_type="Qi10 / Stealth 2", shaft_flex=ShaftFlex.STIFF, carry_meters=220),
+        ClubDetail(club_name="Legno 3", brand="Callaway", model_type="Paradym Ai Smoke", shaft_flex=ShaftFlex.STIFF, carry_meters=195),
+        ClubDetail(club_name="Ibrido 4", brand="Ping", model_type="G430", shaft_flex=ShaftFlex.REGULAR, carry_meters=175),
+        ClubDetail(club_name="Ferro 5", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=160),
+        ClubDetail(club_name="Ferro 7", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=145),
+        ClubDetail(club_name="Ferro 9", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=125),
+        ClubDetail(club_name="Pitching Wedge", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=110),
+        ClubDetail(club_name="Sand Wedge (56°)", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=85),
+        ClubDetail(club_name="Putter", brand="Scotty Cameron", model_type="Phantom X", shaft_flex=ShaftFlex.REGULAR, carry_meters=0)
+    ]
+    return sort_clubs_by_distance(raw_bag)
+
+
 class UserProfile(BaseModel):
     player_name: str = Field(default="Giocatore Conero", description="Nome o identificativo del giocatore")
     handicap: float = Field(default=14.0, ge=0.0, le=54.0, description="Handicap ufficiale di gioco")
     category: PlayerCategory = Field(default=PlayerCategory.CATEGORY_2, description="Categoria del giocatore")
     preferred_ball: Optional[str] = Field(default="Titleist Pro V1", description="Marca/modello di palla preferita")
-    clubs_in_bag: List[ClubDetail] = Field(default_factory=list, description="Lista completa delle mazze presenti in sacca con dettagli e distanze")
+    clubs_in_bag: List[ClubDetail] = Field(default_factory=get_default_bag, description="Lista completa delle mazze presenti in sacca con dettagli e distanze")
     notes: Optional[str] = Field(default="", description="Note tattiche personali o obiettivi di stagione")
+
+    def sort_clubs(self) -> None:
+        """Ordina i bastoni in sacca dal Driver più lungo fino al Putter."""
+        self.clubs_in_bag = sort_clubs_by_distance(self.clubs_in_bag)
 
     @classmethod
     def determine_category(cls, hcp: float) -> PlayerCategory:
@@ -78,16 +171,67 @@ class UserProfile(BaseModel):
             lines.append(f"- {c.club_name}{brand_str}: ~{int(c.carry_meters)} metri (Shaft: {c.shaft_flex.value if hasattr(c.shaft_flex, 'value') else c.shaft_flex})")
         return "Dettaglio Sacca e Distanze del Giocatore:\n" + "\n".join(lines)
 
+    def save_to_file(self, file_path: str | Path = "user_profile.json") -> bool:
+        self.sort_clubs()
+        try:
+            p = Path(file_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(self.model_dump_json(indent=2), encoding="utf-8")
+            return True
+        except Exception:
+            return False
 
-def parse_user_setup_transcript(setup_transcript_text: str, api_key: Optional[str] = None) -> UserProfile:
+    @classmethod
+    def load_from_file(cls, file_path: str | Path = "user_profile.json") -> Optional[UserProfile]:
+        p = Path(file_path)
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                profile = cls.model_validate(data)
+                profile.sort_clubs()
+                return profile
+            except Exception:
+                return None
+        return None
+
+    def save_for_user(self, user_id: str) -> bool:
+        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = PROFILES_DIR / f"{user_id}.json"
+        return self.save_to_file(file_path)
+
+    @classmethod
+    def load_for_user(cls, user_id: str, default_name: str = "Giocatore") -> UserProfile:
+        PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = PROFILES_DIR / f"{user_id}.json"
+        profile = cls.load_from_file(file_path)
+        if profile is None:
+            profile = cls(
+                player_name=default_name,
+                handicap=14.0,
+                category=PlayerCategory.CATEGORY_2,
+                preferred_ball="Titleist Pro V1",
+                clubs_in_bag=get_default_bag()
+            )
+            profile.save_for_user(user_id)
+        return profile
+
+
+def parse_user_setup_transcript(setup_transcript_text: str, ai_config: Optional[Any] = None, api_key: Optional[str] = None) -> UserProfile:
     """
     Parses a short audio voice setup memo into a structured UserProfile Pydantic object.
     """
-    key = api_key or os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise ValueError("OpenAI API Key non trovata.")
+    from core.ai_provider import get_openai_client_for_config, extract_json_from_llm_response
+    from core.auth import AIUserConfig
 
-    client = OpenAI(api_key=key)
+    if ai_config is None:
+        key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not key:
+            raise ValueError("Configurazione IA non trovata. Configura la tua IA personale.")
+        config = AIUserConfig(provider="openai", openai_api_key=key)
+    else:
+        config = ai_config
+
+    client, model = get_openai_client_for_config(config)
 
     system_prompt = (
         "Sei un assistente specializzato per Voice Caddy. "
@@ -98,14 +242,38 @@ def parse_user_setup_transcript(setup_transcript_text: str, api_key: Optional[st
         "Assegna la PlayerCategory corretta."
     )
 
-    completion = client.beta.chat.completions.parse(
-        model="gpt-4o",
+    if config.provider.lower() == "openai":
+        try:
+            completion = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Audio di presentazione e setup dell'utente:\n\n{setup_transcript_text}"}
+                ],
+                response_format=UserProfile
+            )
+            profile = completion.choices[0].message.parsed
+            profile.category = UserProfile.determine_category(profile.handicap)
+            profile.sort_clubs()
+            return profile
+        except Exception:
+            pass
+
+    # Ollama / Custom fallback
+    schema_json = json.dumps(UserProfile.model_json_schema(), ensure_ascii=False)
+    extended_prompt = f"{system_prompt}\n\nRispondi solo con un JSON conforme al seguente schema:\n{schema_json}"
+
+    response = client.chat.completions.create(
+        model=model,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": extended_prompt},
             {"role": "user", "content": f"Audio di presentazione e setup dell'utente:\n\n{setup_transcript_text}"}
         ],
-        response_format=UserProfile
+        temperature=0.1
     )
-    profile: UserProfile = completion.choices[0].message.parsed
+    raw = response.choices[0].message.content
+    data_dict = extract_json_from_llm_response(raw)
+    profile = UserProfile.model_validate(data_dict)
     profile.category = UserProfile.determine_category(profile.handicap)
+    profile.sort_clubs()
     return profile

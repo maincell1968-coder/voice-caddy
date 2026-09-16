@@ -70,7 +70,7 @@ class GolfMetricsCalculator:
         # 7. Extract primary miss tendency
         miss_summary = cls._extract_miss_tendencies(holes)
 
-        # Re-build validated PerformanceSummary
+        # Re-build validated PerformanceSummary (with professional_diagnosis preserved)
         updated_summary = PerformanceSummary(
             total_score=total_score,
             total_putts=total_putts,
@@ -80,6 +80,7 @@ class GolfMetricsCalculator:
             three_putt_holes=three_putt_holes,
             penalty_strokes_total=total_penalties,
             primary_miss_tendency=miss_summary or round_data.performance_summary.primary_miss_tendency,
+            professional_diagnosis=round_data.performance_summary.professional_diagnosis,
             strokes_lost_breakdown=round_data.performance_summary.strokes_lost_breakdown,
             training_drills_recommended=round_data.performance_summary.training_drills_recommended
         )
@@ -119,7 +120,7 @@ class GolfMetricsCalculator:
             "miss_left": "Errore a sinistra del green/fairway",
             "miss_right": "Errore a destra del green/fairway"
         }
-        return f"{labels_it.get(most_frequent_miss, most_frequent_miss)} ({error_counts[most_frequent_miss]} volte)"
+        return labels_it.get(most_frequent_miss, f"Errore ricorrente: {most_frequent_miss}")
 
     @staticmethod
     def get_scorecard_matrix(holes: List[HoleData]) -> List[Dict[str, Any]]:

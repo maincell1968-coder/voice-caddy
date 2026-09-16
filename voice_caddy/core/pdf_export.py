@@ -55,90 +55,89 @@ class PDFReportGenerator:
             </div>
             """
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Voice Caddy - Report Partita PGA</title>
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; color: #333; margin: 30px; background: #fff; }}
-                .header {{ border-bottom: 3px solid #2ecc71; padding-bottom: 15px; margin-bottom: 20px; }}
-                .header h1 {{ margin: 0; color: #1e2b37; font-size: 24px; }}
-                .header p {{ margin: 5px 0 0 0; color: #7f8c8d; font-size: 13px; }}
-                .kpi-container {{ display: flex; justify-content: space-between; margin-bottom: 20px; background: #f4f6f7; padding: 12px; border-radius: 8px; }}
-                .kpi-card {{ text-align: center; flex: 1; border-right: 1px solid #ddd; }}
-                .kpi-card:last-child {{ border-right: none; }}
-                .kpi-val {{ font-size: 20px; font-weight: bold; color: #2c3e50; margin-top: 4px; }}
-                .kpi-lbl {{ font-size: 10px; text-transform: uppercase; color: #7f8c8d; }}
-                table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }}
-                th {{ background: #2c3e50; color: white; padding: 8px; text-align: center; }}
-                td {{ padding: 6px; border-bottom: 1px solid #eee; }}
-                .section-title {{ font-size: 16px; color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 6px; margin-top: 25px; margin-bottom: 12px; }}
-                .diag-box {{ background: #fdfefe; border: 1px solid #e1e8ed; padding: 15px; border-radius: 6px; margin-bottom: 15px; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>⛳ Voice Caddy — Analisi Prestazionale PGA</h1>
-                <p><b>Campo:</b> {info.course_name or 'Non specificato'} | <b>Buche:</b> {info.holes_played} | <b>Data:</b> {info.date or 'Oggi'}</p>
-            </div>
+        html_content = f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <title>Voice Caddy - Report Partita PGA</title>
+    <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; color: #333; margin: 30px; background: #fff; line-height: 1.5; }}
+        .header {{ border-bottom: 3px solid #2ecc71; padding-bottom: 15px; margin-bottom: 20px; }}
+        .header h1 {{ margin: 0; color: #1e2b37; font-size: 24px; }}
+        .header p {{ margin: 5px 0 0 0; color: #7f8c8d; font-size: 13px; }}
+        .kpi-container {{ display: flex; justify-content: space-between; margin-bottom: 20px; background: #f4f6f7; padding: 12px; border-radius: 8px; }}
+        .kpi-card {{ text-align: center; flex: 1; border-right: 1px solid #ddd; }}
+        .kpi-card:last-child {{ border-right: none; }}
+        .kpi-val {{ font-size: 20px; font-weight: bold; color: #2c3e50; margin-top: 4px; }}
+        .kpi-lbl {{ font-size: 10px; text-transform: uppercase; color: #7f8c8d; }}
+        table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }}
+        th {{ background: #2c3e50; color: white; padding: 8px; text-align: center; }}
+        td {{ padding: 6px; border-bottom: 1px solid #eee; }}
+        .section-title {{ font-size: 16px; color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 6px; margin-top: 25px; margin-bottom: 12px; }}
+        .diag-box {{ background: #fdfefe; border: 1px solid #e1e8ed; padding: 15px; border-radius: 6px; margin-bottom: 15px; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⛳ Voice Caddy — Analisi Prestazionale PGA</h1>
+        <p><b>Campo:</b> {info.course_name or 'Non specificato'} | <b>Buche:</b> {info.holes_played} | <b>Data:</b> {info.date or 'Oggi'}</p>
+    </div>
 
-            <div class="kpi-container">
-                <div class="kpi-card">
-                    <div class="kpi-lbl">Score Finale</div>
-                    <div class="kpi-val">{summary.total_score} ({rel_par_str})</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-lbl">Fairway Hit (FIR)</div>
-                    <div class="kpi-val">{summary.fairway_accuracy_pct}%</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-lbl">Green in Reg. (GIR)</div>
-                    <div class="kpi-val">{summary.gir_pct}%</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-lbl">Course Mgmt Score</div>
-                    <div class="kpi-val">{diag.course_management_score}/100</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-lbl">Scrambling</div>
-                    <div class="kpi-val">{summary.scrambling_pct}%</div>
-                </div>
-            </div>
+    <div class="kpi-container">
+        <div class="kpi-card">
+            <div class="kpi-lbl">Score Finale</div>
+            <div class="kpi-val">{summary.total_score} ({rel_par_str})</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-lbl">Fairway Hit (FIR)</div>
+            <div class="kpi-val">{summary.fairway_accuracy_pct}%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-lbl">Green in Reg. (GIR)</div>
+            <div class="kpi-val">{summary.gir_pct}%</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-lbl">Course Mgmt Score</div>
+            <div class="kpi-val">{diag.course_management_score}/100</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-lbl">Scrambling</div>
+            <div class="kpi-val">{summary.scrambling_pct}%</div>
+        </div>
+    </div>
 
-            <div class="section-title">🧠 Diagnosi Professionale del Caddie</div>
-            <div class="diag-box">
-                <p><b>Sintesi Giro:</b> {diag.executive_narrative}</p>
-                <p><b>Dispersion Leak Principale:</b> {diag.biggest_stroke_leak}</p>
-                <p><b>Analisi Esecuzione Tecnica vs Tattica:</b> {diag.technical_vs_tactical_split}</p>
-            </div>
+    <div class="section-title">🧠 Diagnosi Professionale del Caddie</div>
+    <div class="diag-box">
+        <p><b>Sintesi Giro:</b> {diag.executive_narrative}</p>
+        <p><b>Dispersion Leak Principale:</b> {diag.biggest_stroke_leak}</p>
+        <p><b>Analisi Esecuzione Tecnica vs Tattica:</b> {diag.technical_vs_tactical_split}</p>
+    </div>
 
-            <div class="section-title">📋 Scorecard Dettagliata</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Buca</th>
-                        <th>Par</th>
-                        <th>Score</th>
-                        <th>FIR</th>
-                        <th>GIR</th>
-                        <th>Putt</th>
-                        <th>Dettaglio Errore / Note</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {scorecard_rows}
-                </tbody>
-            </table>
+    <div class="section-title">📋 Scorecard Dettagliata</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Buca</th>
+                <th>Par</th>
+                <th>Score</th>
+                <th>FIR</th>
+                <th>GIR</th>
+                <th>Putt</th>
+                <th>Dettaglio Errore / Note</th>
+            </tr>
+        </thead>
+        <tbody>
+            {scorecard_rows}
+        </tbody>
+    </table>
 
-            <div class="section-title">🏋️ Piano di Allenamento Personalizzato</div>
-            {drills_html}
+    <div class="section-title">🎯 Piano di Allenamento Personalizzato</div>
+    {drills_html}
 
-            <div style="margin-top:30px; text-align:center; font-size:10px; color:#bdc3c7;">
-                Generato automaticamente da Voice Caddy AI Performance Engine
-            </div>
-        </body>
-        </html>
-        """
+    <div style="margin-top:30px; text-align:center; font-size:10px; color:#bdc3c7;">
+        Generato automaticamente da Voice Caddy AI Performance Engine
+    </div>
+</body>
+</html>
+"""
         return html_content
