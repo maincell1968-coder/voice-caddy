@@ -176,9 +176,15 @@ class VoiceCaddyTelegramBot:
 
             self.download_file(telegram_file_path, temp_audio_path)
 
-            # Transcribe with Whisper
+            # Transcribe with Whisper (supports Groq, OpenAI, or local)
             whisper_key = ai_cfg.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-            transcript, meta = self.audio_engine.transcribe(temp_audio_path, engine_mode="local", api_key=whisper_key)
+            groq_key = ai_cfg.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+            transcript, meta = self.audio_engine.transcribe(
+                temp_audio_path,
+                engine_mode="local",
+                api_key=whisper_key,
+                groq_api_key=groq_key
+            )
 
             self.send_message(
                 chat_id,
@@ -257,10 +263,33 @@ class VoiceCaddyTelegramBot:
         cmd = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
 
+        # Support commands typed without space, e.g. /giocatoreStefano
+        for prefix in ["/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo"]:
+            if cmd.startswith(prefix) and cmd != prefix and not args:
+                args = [text.strip()[len(prefix):].strip()]
+                cmd = prefix
+                break
+
         if cmd in ["/start", "/help", "/guida"]:
             all_users = self.auth_mgr.get_all_users()
-            strafatti_names = [u.first_name for u in all_users if u.group == "strafatti"]
-            amici_names = [u.first_name for u in all_users if u.group == "amici"]
+
+            # Format names clearly, disambiguating homonyms
+            def format_roster(users_list):
+                counts = {}
+                for u in users_list:
+                    counts[u.first_name.lower()] = counts.get(u.first_name.lower(), 0) + 1
+                items = []
+                for u in users_list:
+                    if counts[u.first_name.lower()] > 1:
+                        items.append(f"{u.first_name} {u.last_name[:1]}. ({u.last_name})")
+                    else:
+                        items.append(u.first_name)
+                return items
+
+            strafatti_list = [u for u in all_users if u.group == "strafatti"]
+            amici_list = [u for u in all_users if u.group == "amici"]
+            strafatti_names = format_roster(strafatti_list)
+            amici_names = format_roster(amici_list)
 
             help_msg = (
                 "⛳ <b>BENVENUTO IN VOICE CADDY PRO BOT!</b>\n\n"
@@ -284,17 +313,52 @@ class VoiceCaddyTelegramBot:
 
         elif cmd in ["/giocatore", "/utente", "/login", "/collega"]:
             if not args:
-                self.send_message(chat_id, "⚠️ Specifica il tuo nome. Esempio: <code>/giocatore Stefano</code> oppure <code>/giocatore Giorgio</code>")
+                self.send_message(chat_id, "⚠️ Specifica il tuo nome o cognome. Esempio: <code>/giocatore Stefano</code> oppure <code>/giocatore Giorgio</code>")
                 return
 
             search_name = " ".join(args).strip().lower()
             all_users = self.auth_mgr.get_all_users()
-            matched_user = None
 
+            # 1. Exact matches (username, full name, surname, short name like 'marco s')
+            exact_matches = []
             for u in all_users:
-                if search_name in u.first_name.lower() or search_name in u.last_name.lower() or search_name in u.username.lower():
-                    matched_user = u
-                    break
+                full_name = f"{u.first_name} {u.last_name}".lower()
+                short_name = f"{u.first_name} {u.last_name[:1]}".lower()
+                short_dot = f"{u.first_name} {u.last_name[:1]}.".lower()
+                if search_name in [u.username.lower(), full_name, short_name, short_dot, u.last_name.lower()]:
+                    exact_matches.append(u)
+
+            if len(exact_matches) == 1:
+                matched_user = exact_matches[0]
+            elif len(exact_matches) > 1:
+                options = "\n".join([f"• <code>/giocatore {u.first_name} {u.last_name}</code>" for u in exact_matches])
+                self.send_message(
+                    chat_id,
+                    f"⚠️ <b>Trovati più giocatori corrispondenti:</b>\n\n{options}\n\n"
+                    f"<i>Riprova specificando Nome e Cognome.</i>"
+                )
+                return
+            else:
+                # 2. Check first name or partial matches
+                partial_matches = []
+                for u in all_users:
+                    full_name = f"{u.first_name} {u.last_name}".lower()
+                    if search_name == u.first_name.lower() or search_name in full_name:
+                        partial_matches.append(u)
+
+                if len(partial_matches) == 1:
+                    matched_user = partial_matches[0]
+                elif len(partial_matches) > 1:
+                    options = "\n".join([f"• <code>/giocatore {u.first_name} {u.last_name}</code> (oppure <code>/giocatore {u.username}</code>)" for u in partial_matches])
+                    self.send_message(
+                        chat_id,
+                        f"⚠️ <b>Ci sono più giocatori con il nome «{search_name.title()}»!</b>\n\n"
+                        f"Per associare la sacca e l'handicap corretti, specifica il cognome o l'iniziale:\n"
+                        f"{options}"
+                    )
+                    return
+                else:
+                    matched_user = None
 
             if matched_user:
                 self.config_mgr.link_chat_user(
@@ -304,7 +368,6 @@ class VoiceCaddyTelegramBot:
                     first_name=matched_user.first_name
                 )
                 prof = UserProfile.load_for_user(matched_user.user_id)
-                clubs_str = ", ".join([c.club_name for c in prof.clubs_in_bag[:5]])
                 self.send_message(
                     chat_id,
                     f"✅ <b>Chat collegata con successo a {matched_user.first_name} {matched_user.last_name}!</b>\n\n"
@@ -315,7 +378,11 @@ class VoiceCaddyTelegramBot:
                     f"🏌️ Ora puoi inviare le tue note vocali o messaggi durante il gioco: saranno registrati nel tuo archivio!"
                 )
             else:
-                self.send_message(chat_id, f"❌ Nessun giocatore trovato con il nome «{search_name}». Usa <code>/start</code> per vedere la lista.")
+                self.send_message(
+                    chat_id,
+                    f"❌ Nessun giocatore trovato con il nome «{search_name}».\n"
+                    f"Usa <code>/start</code> per vedere la lista dei giocatori registrati."
+                )
 
         elif cmd in ["/profilo", "/chi", "/status"]:
             user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
@@ -398,6 +465,12 @@ class VoiceCaddyTelegramBot:
                             self.process_voice_message(chat_id, file_id)
                         elif "audio" in message:
                             file_id = message["audio"]["file_id"]
+                            self.process_voice_message(chat_id, file_id)
+                        elif "video_note" in message:
+                            file_id = message["video_note"]["file_id"]
+                            self.process_voice_message(chat_id, file_id)
+                        elif "video" in message:
+                            file_id = message["video"]["file_id"]
                             self.process_voice_message(chat_id, file_id)
                         elif text:
                             if text.startswith("/"):

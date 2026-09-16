@@ -74,6 +74,36 @@ class TelegramConfigManager:
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
+    def get_bot_username(self) -> Optional[str]:
+        """Recupera l'username del bot se salvato in cache o interrogando Telegram."""
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if data.get("bot_username"):
+                        return data["bot_username"]
+            except Exception:
+                pass
+        tok = self.get_token()
+        if tok:
+            ok, _, uname = self.test_token(tok)
+            if ok and uname:
+                return uname
+        return None
+
+    def save_bot_username(self, username: str):
+        """Salva l'username del bot nel file config."""
+        data = {}
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data["bot_username"] = username
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
     def test_token(self, token: Optional[str] = None) -> Tuple[bool, str, Optional[str]]:
         """
         Interroga Telegram API (getMe) per verificare la validità del token.
@@ -92,6 +122,8 @@ class TelegramConfigManager:
                     bot_info = res["result"]
                     username = bot_info.get("username", "")
                     first_name = bot_info.get("first_name", "Bot")
+                    if username:
+                        self.save_bot_username(username)
                     return True, f"Connessione riuscita! Bot: @{username} ({first_name})", username
                 else:
                     return False, f"Telegram API error: {res.get('description', 'Sconosciuto')}", None

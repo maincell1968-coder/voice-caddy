@@ -737,6 +737,9 @@ with st.sidebar:
     active_course = course_registry.get_course(st.session_state.selected_course_id) or CONERO_GOLF_CLUB
 
     st.caption(f"📍 **{active_course.name}** ({active_course.city}) — Par Totale {active_course.total_par}")
+    terrain_desc = getattr(active_course, "terrain_description", "")
+    if terrain_desc:
+        st.markdown(f"<div style='font-size:0.8rem; color:#94A3B8; margin-top:-6px; margin-bottom:10px;'>⛰️ <i>{terrain_desc}</i></div>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.subheader("🎮 Prova Rapida (Giro Demo)")
@@ -758,7 +761,7 @@ with st.sidebar:
 
     whisper_engine = st.radio(
         "Motore Speech-to-Text:",
-        options=["Faster-Whisper Locale (Offline Gratuito)", "OpenAI Whisper Cloud (Usa tua API Key)"],
+        options=["Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)", "OpenAI Whisper Cloud (Usa tua API Key)", "Faster-Whisper Locale"],
         index=0
     )
 
@@ -780,11 +783,50 @@ with st.sidebar:
     st.caption("Registra o scrivi i colpi buca per buca durante la partita dallo smartphone.")
 
     curr_token = tg_manager.get_token()
-    token_status_color = "#2ECC71" if curr_token else "#E74C3C"
-    token_status_text = "✅ Configurato" if curr_token else "⚠️ Da Configurare"
-    st.markdown(f"Stato Bot: <b style='color:{token_status_color};'>{token_status_text}</b>", unsafe_allow_html=True)
+    bot_username = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
 
-    with st.expander("⚙️ Gestione Bot Telegram", expanded=not bool(curr_token)):
+    token_status_color = "#2ECC71" if curr_token else "#E74C3C"
+    token_status_text = "✅ Configurato & Pronto" if curr_token else "⚠️ Da Configurare"
+
+    # Box informativo principale con Nome Bot, link diretto e utenza
+    st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">🤖 Bot Telegram:</span>
+                <span style="font-size:0.75rem; font-weight:bold; color:{token_status_color}; background:rgba(46,204,113,0.1); padding:2px 8px; border-radius:4px;">{token_status_text}</span>
+            </div>
+            <div style="font-size:1.15rem; font-weight:bold; color:#38BDF8; margin-bottom: 8px;">
+                @{bot_username}
+            </div>
+            <div style="font-size:0.82rem; color:#94A3B8; line-height:1.5; margin-bottom: 12px; background:#0b0f19; padding:8px; border-radius:6px;">
+                👤 <b>Tua utenza:</b> <span style="color:#F1F5F9;">{current_user.first_name} {current_user.last_name}</span><br>
+                💬 <b>Comando di collegamento:</b><br>
+                <code style="color:#FBBF24; font-weight:bold; font-size:0.88rem;">/giocatore {current_user.first_name}</code>
+            </div>
+            <a href="https://t.me/{bot_username}" target="_blank" style="display:block; text-align:center; background:#0284C7; color:#FFFFFF; padding:9px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem; text-decoration:none; box-shadow: 0 2px 8px rgba(2,132,199,0.3);">
+                👉 Apri Chat con @{bot_username}
+            </a>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Guida passo-passo chiara
+    with st.expander("ℹ️ Come funziona il salvataggio automatico sul sito", expanded=False):
+        st.markdown(f"""
+            <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
+                <b>1. Avvia il Bot sul PC:</b><br>
+                Fai doppio clic sul file <code>avvia_telegram_bot.bat</code> sul PC. Rimarrà aperta la finestra nera di ascolto.<br><br>
+                <b>2. Collega la chat Telegram:</b><br>
+                Sul cellulare apri <b>@{bot_username}</b> e scrivi:<br>
+                <code>/giocatore {current_user.first_name}</code><br>
+                <i>(Basta farlo la prima volta per associare la chat al tuo profilo e alla tua sacca)</i>.<br><br>
+                <b>3. Invia note vocali o testo durante il gioco:</b><br>
+                Manda note vocali o messaggi descrivendo i colpi buca per buca.<br><br>
+                <b>4. Come si trasferiscono sul sito:</b><br>
+                <b>Il trasferimento è 100% automatico!</b> Il Bot e questo sito condividono lo stesso database SQLite locale. Non devi esportare nulla a mano: appena invii il vocale, il bot calcola lo score e salva il giro. Ti basta aprire la scheda <b>'📈 Storico Partite & Trend'</b> qui sopra per ritrovare la partita e aprirla con un clic!
+            </div>
+        """, unsafe_allow_html=True)
+
+    with st.expander("⚙️ Gestione Avanzata Token Telegram", expanded=not bool(curr_token)):
         tb_input = st.text_input(
             "Token Telegram (@BotFather):",
             value=curr_token,
@@ -814,15 +856,6 @@ with st.sidebar:
             else:
                 st.error(msg_si)
 
-        st.markdown(f"""
-            <div style="background-color:#121824; border:1px solid #2b384e; border-radius:8px; padding:10px; margin-top:8px; font-size:0.83rem; color:#CBD5E1;">
-                <b>🚀 Come giocare con Telegram:</b><br>
-                1. Avvia il bot sul PC cliccando su <code>avvia_telegram_bot.bat</code><br>
-                2. Apri il bot su Telegram e digita: <code>/giocatore {current_user.first_name}</code><br>
-                3. Invia note vocali o messaggi con i colpi giocati!
-            </div>
-        """, unsafe_allow_html=True)
-
 
 # ---------------------------------------------------------
 # PROCESS AUDIO PIPELINE (Using User's Configured AI)
@@ -850,19 +883,24 @@ if process_btn and uploaded_files:
         status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
         progress_bar.progress(40)
 
-        is_cloud = "Cloud" in whisper_engine
-        engine_mode = "cloud" if is_cloud else "local"
-        audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
+        if "Groq" in whisper_engine:
+            engine_mode = "groq"
+        elif "Cloud" in whisper_engine or "OpenAI" in whisper_engine:
+            engine_mode = "cloud"
+        else:
+            engine_mode = "local"
 
+        audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
         whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+        groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
 
         if len(temp_paths) == 1:
             transcript_text, meta = audio_engine.transcribe(
-                temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key
+                temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
             )
         else:
             transcript_text, meta = audio_engine.transcribe_multiple(
-                temp_paths, engine_mode=engine_mode, api_key=whisper_api_key
+                temp_paths, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
             )
 
         st.session_state.transcript = transcript_text
@@ -1049,7 +1087,9 @@ with nav_tab1:
             st.caption(f"Valutazione strategica tarata sull'Handicap personale ({st.session_state.user_profile.handicap}): Target Ideale vs Atterraggio Reale.")
 
             for h in data.holes:
-                with st.expander(f"Buca {h.hole_number} — Par {h.par} | Score: {h.score} | Putt: {h.putts}"):
+                c_hole = next((ch for ch in active_course.holes if ch.hole_number == h.hole_number), None)
+                slope_label = f" — ⛰️ {c_hole.slope_elevation_profile}" if (c_hole and hasattr(c_hole, 'slope_elevation_profile') and c_hole.slope_elevation_profile != "In pianura") else ""
+                with st.expander(f"Buca {h.hole_number} — Par {h.par} | Score: {h.score} | Putt: {h.putts}{slope_label}"):
                     map_col, table_col = st.columns([2, 3])
 
                     with map_col:
@@ -1057,6 +1097,13 @@ with nav_tab1:
                         st.plotly_chart(fig_map, use_container_width=True)
 
                     with table_col:
+                        if c_hole and hasattr(c_hole, 'slope_elevation_profile'):
+                            slope_badge_bg = "#1e293b" if c_hole.slope_elevation_profile == "In pianura" else "#1e3a5f"
+                            st.markdown(f"""
+                                <div style="background:{slope_badge_bg}; border:1px solid #3b82f6; border-radius:6px; padding:6px 10px; margin-bottom:10px; font-size:0.83rem; color:#93C5FD;">
+                                    ⛰️ <b>Profilo Altimetrico:</b> {c_hole.slope_elevation_profile}
+                                </div>
+                            """, unsafe_allow_html=True)
                         t_an = h.target_landing_analysis
                         if t_an:
                             verdict_color = "#2ECC71" if any(w in t_an.tactical_verdict for w in ["Bravo", "Ottimo", "Vincente", "Perfetto"]) else "#E67E22"
