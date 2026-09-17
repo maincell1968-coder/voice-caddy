@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
+from core.whs_rules import TeeRating
 
 
 class HoleCoordinates(BaseModel):
@@ -56,6 +57,7 @@ class GolfCourse(BaseModel):
     holes_count: int = Field(default=18, description="Numero totale di buche del tracciato (9 o 18)")
     terrain_description: str = Field(default="Standard", description="Descrizione generale dell'orografia e pendenze del campo")
     holes: List[HoleInfo] = Field(..., description="Dettaglio delle buche")
+    tees: Dict[str, TeeRating] = Field(default_factory=dict, description="Schede tecniche dei Tee ufficiali (WHS)")
 
     def get_hole(self, hole_number: int) -> Optional[HoleInfo]:
         """Recupera le informazioni di una specifica buca."""
@@ -63,6 +65,46 @@ class GolfCourse(BaseModel):
             if h.hole_number == hole_number:
                 return h
         return None
+
+    def get_tee(self, tee_name: str, gender: Optional[str] = None) -> Optional[TeeRating]:
+        """
+        Recupera la scheda tecnica del tee in base al nome o colore (es. Gialli, Bianchi, Rossi, Verdi).
+        Matching flessibile e case-insensitive con fallback sicuro.
+        """
+        if not self.tees:
+            return None
+
+        tn = str(tee_name).strip().lower()
+        # 1. Corrispondenza esatta chiave
+        if tn in self.tees:
+            return self.tees[tn]
+
+        # 2. Corrispondenza parziale per nome o colore
+        for key, tee in self.tees.items():
+            k_low = key.lower()
+            t_low = tee.tee_name.lower()
+            c_low = tee.color_code.lower()
+            if tn in k_low or k_low in tn or tn in t_low or tn in c_low:
+                if gender and tee.gender.lower() != gender.lower():
+                    continue
+                return tee
+
+        # 3. Fallback standard su Gialli (Uomini) o Rossi (Donne)
+        target_fallbacks = ["rossi", "red"] if (gender and "donn" in gender.lower()) else ["gialli", "yellow", "bianchi", "white"]
+        for fb in target_fallbacks:
+            if fb in self.tees:
+                return self.tees[fb]
+
+        # 4. Restituisce il primo tee disponibile
+        return next(iter(self.tees.values())) if self.tees else None
+
+    def get_stroke_indices(self) -> Dict[int, int]:
+        """Mappa Buca -> Stroke Index (SI) predefinito del percorso."""
+        return {h.hole_number: (h.handicap_index or h.hole_number) for h in self.holes}
+
+    def get_hole_pars(self) -> Dict[int, int]:
+        """Mappa Buca -> Par della buca."""
+        return {h.hole_number: h.par for h in self.holes}
 
     def get_target_pin_coordinates(self, hole_number: int) -> Optional[Tuple[float, float, Optional[float]]]:
         """
@@ -239,7 +281,59 @@ CONERO_GOLF_CLUB = GolfCourse(
                 green_lat=43.5230, green_lon=13.6055, green_altitude=116.0
             )
         ),
-    ]
+    ],
+    tees={
+        "bianchi": TeeRating(
+            tee_name="Bianchi",
+            color_code="white",
+            gender="Uomini",
+            course_rating=71.4,
+            slope_rating=131,
+            par=71,
+            holes_count=18,
+            length_meters=6178
+        ),
+        "gialli": TeeRating(
+            tee_name="Gialli",
+            color_code="yellow",
+            gender="Uomini",
+            course_rating=70.2,
+            slope_rating=129,
+            par=71,
+            holes_count=18,
+            length_meters=5996
+        ),
+        "verdi": TeeRating(
+            tee_name="Verdi",
+            color_code="green",
+            gender="Uomini",
+            course_rating=68.0,
+            slope_rating=123,
+            par=71,
+            holes_count=18,
+            length_meters=5540
+        ),
+        "rossi": TeeRating(
+            tee_name="Rossi",
+            color_code="red",
+            gender="Donne",
+            course_rating=73.3,
+            slope_rating=125,
+            par=71,
+            holes_count=18,
+            length_meters=5417
+        ),
+        "arancioni": TeeRating(
+            tee_name="Arancioni",
+            color_code="orange",
+            gender="Donne",
+            course_rating=69.5,
+            slope_rating=118,
+            par=71,
+            holes_count=18,
+            length_meters=4980
+        ),
+    }
 )
 
 # Pre-loaded Course 2: Torrenova Golf (9 Buche - Par 34) a Porto Potenza Picena (MC)
@@ -323,7 +417,49 @@ TORRENOVA_GOLF_CLUB = GolfCourse(
                 green_lat=43.3988, green_lon=13.6852, green_altitude=5.0
             )
         ),
-    ]
+    ],
+    tees={
+        "gialli": TeeRating(
+            tee_name="Gialli",
+            color_code="yellow",
+            gender="Uomini",
+            course_rating=34.9,
+            slope_rating=128,
+            par=34,
+            holes_count=9,
+            length_meters=2770
+        ),
+        "rossi": TeeRating(
+            tee_name="Rossi",
+            color_code="red",
+            gender="Donne",
+            course_rating=35.4,
+            slope_rating=125,
+            par=34,
+            holes_count=9,
+            length_meters=2510
+        ),
+        "gialli_18": TeeRating(
+            tee_name="Gialli (18 Buche)",
+            color_code="yellow",
+            gender="Uomini",
+            course_rating=69.8,
+            slope_rating=128,
+            par=68,
+            holes_count=18,
+            length_meters=5540
+        ),
+        "rossi_18": TeeRating(
+            tee_name="Rossi (18 Buche)",
+            color_code="red",
+            gender="Donne",
+            course_rating=70.8,
+            slope_rating=125,
+            par=68,
+            holes_count=18,
+            length_meters=5020
+        ),
+    }
 )
 
 
