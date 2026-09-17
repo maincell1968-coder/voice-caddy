@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 from core.audio import VoiceCaddyAudioEngine
-from core.parser import parse_golf_audio_transcript, parse_quick_shot_update
+from core.parser import parse_golf_audio_transcript, parse_quick_shot_update, parse_hole_closure_intent
 from core.metrics import GolfMetricsCalculator
 from core.db import DatabaseManager
 from core.auth import AuthManager, AIUserConfig, UserRecord
@@ -727,7 +727,61 @@ class VoiceCaddyTelegramBot:
         # Controllo se è un update rapido di un singolo colpo durante la buca
         quick = parse_quick_shot_update(text)
 
-        # Riconoscimento punteggio a conclusione buca (es. "fatto 5", "score 4", "ho chiuso in 5 colpi")
+        # 1. Trigger prioritario di CHIUSURA BUCA sui PUTT (es. "buca finita, 5 colpi e 2 putt", "chiuso con 2 putt per un totale di 4", "fatto 6, 3 putt")
+        closure = parse_hole_closure_intent(clean)
+        if closure["is_closure"]:
+            if not closure["valid"]:
+                return self.send_message(chat_id, f"⚠️ <b>Errore nei colpi comunicati:</b>\n{closure['error']}\n\n<i>Riprova comunicando ad es. '5 colpi e 2 putt'</i>")
+
+            gross_score = closure["gross_strokes"]
+            putts = closure["putts"]
+            session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+            h_num = session.get("current_hole", 1)
+            whs_profile = self._resolve_handicap_profile(chat_id)
+            score_res = whs_profile.calculate_hole_score(h_num, gross_score)
+
+            card = self.session_mgr.record_completed_hole(
+                chat_id=chat_id,
+                hole_number=h_num,
+                par=score_res["par"],
+                stroke_index=score_res["stroke_index"],
+                gross_strokes=gross_score,
+                putts=putts,
+                received_strokes=score_res["received_strokes"],
+                net_par=score_res["net_par"],
+                stableford_points=score_res["stableford_points"],
+                net_strokes=score_res["net_strokes"],
+                score_label=score_res["score_label"]
+            )
+
+            next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
+            n_strokes = whs_profile.get_received_strokes(next_h)
+            n_net_par = whs_profile.get_net_par(next_h)
+            n_par = whs_profile.hole_pars.get(next_h, 4)
+            n_si = whs_profile.hole_stroke_indices.get(next_h, next_h)
+
+            diff_par = card["gross_to_par"]
+            diff_str = f"+{diff_par}" if diff_par > 0 else ("Par" if diff_par == 0 else str(diff_par))
+            hole_chips = " | ".join([f"B{h['hole_number']}: {h['stableford_points']}pt" for h in card["completed_holes"]])
+
+            msg = (
+                f"⛳ <b>BUCA {h_num} COMPLETATA</b> (Par {score_res['par']} • HCP Buca {score_res['stroke_index']})\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• <b>Score Lordo:</b> {gross_score} colpi <i>({gross_score - putts} colpi + {putts} putt)</i>\n"
+                f"• <b>Colpi Ricevuti:</b> {score_res['received_strokes']} ➔ <b>Par Netto: {score_res['net_par']}</b>\n"
+                f"• <b>Score Netto:</b> {score_res['net_strokes']} colpi <i>({score_res['score_label']})</i>\n"
+                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt</b>\n\n"
+                f"📊 <b>RIEPILOGO PROGRESSIVO ({card['holes_played']}/{whs_profile.holes_count} Buche)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} Punti</b>\n"
+                f"• 🏌️ <b>Colpi Lordi Totali:</b> {card['total_gross']} ({diff_str})\n"
+                f"• ⛳ <b>Totale Putt:</b> {card['total_putts']} (Media {card['putts_avg']} / buca)\n"
+                f"• 📝 <b>Dettaglio:</b> [ {hole_chips} ]\n\n"
+                f"⏩ <i>Sei alla <b>Buca {next_h}</b> (Par {n_par} • SI {n_si} • Ricevi {n_strokes} colpi ➔ Par Netto: {n_net_par}). Buon tiro!</i>"
+            )
+            return self.send_message(chat_id, msg)
+
+        # 2. Riconoscimento punteggio alternativo senza putt espliciti (es. "fatto 5", "score 4")
         import re
         score_match = re.search(r"\b(?:fatto|score|chiuso(?:\s+in)?|chiusa(?:\s+in)?|totale)\s*(\d+)\b", clean_lower)
         if score_match and not quick["is_quick_shot"]:
@@ -737,17 +791,41 @@ class VoiceCaddyTelegramBot:
             whs_profile = self._resolve_handicap_profile(chat_id)
             score_res = whs_profile.calculate_hole_score(h_num, gross_score)
 
-            next_h = self.session_mgr.next_hole(chat_id)
+            card = self.session_mgr.record_completed_hole(
+                chat_id=chat_id,
+                hole_number=h_num,
+                par=score_res["par"],
+                stroke_index=score_res["stroke_index"],
+                gross_strokes=gross_score,
+                putts=2,
+                received_strokes=score_res["received_strokes"],
+                net_par=score_res["net_par"],
+                stableford_points=score_res["stableford_points"],
+                net_strokes=score_res["net_strokes"],
+                score_label=score_res["score_label"]
+            )
+
+            next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
             n_strokes = whs_profile.get_received_strokes(next_h)
             n_net_par = whs_profile.get_net_par(next_h)
+            n_par = whs_profile.hole_pars.get(next_h, 4)
+            n_si = whs_profile.hole_stroke_indices.get(next_h, next_h)
+
+            hole_chips = " | ".join([f"B{h['hole_number']}: {h['stableford_points']}pt" for h in card["completed_holes"]])
 
             msg = (
-                f"⛳ <b>Buca {h_num} Conclusa!</b> (Par {score_res['par']} • SI {score_res['stroke_index']})\n\n"
+                f"⛳ <b>BUCA {h_num} COMPLETATA</b> (Par {score_res['par']} • HCP Buca {score_res['stroke_index']})\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"• <b>Colpi Lordi:</b> {gross_score}\n"
                 f"• <b>Colpi Ricevuti:</b> {score_res['received_strokes']} ➔ <b>Par Netto: {score_res['net_par']}</b>\n"
-                f"• <b>Colpi Netti:</b> {score_res['net_strokes']}\n"
-                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt</b> ({score_res['score_label']})\n\n"
-                f"⏩ <i>Avanzato a <b>Buca {next_h}</b> (Colpi ricevuti: {n_strokes} • Par Netto: {n_net_par}). Buon tiro!</i>"
+                f"• <b>Score Netto:</b> {score_res['net_strokes']} colpi <i>({score_res['score_label']})</i>\n"
+                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt</b>\n\n"
+                f"📊 <b>RIEPILOGO PROGRESSIVO ({card['holes_played']}/{whs_profile.holes_count} Buche)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} Punti</b>\n"
+                f"• 🏌️ <b>Colpi Lordi Totali:</b> {card['total_gross']}\n"
+                f"• 📝 <b>Dettaglio:</b> [ {hole_chips} ]\n\n"
+                f"⏩ <i>Sei alla <b>Buca {next_h}</b> (Par {n_par} • SI {n_si} • Ricevi {n_strokes} colpi ➔ Par Netto: {n_net_par}). Buon tiro!</i>"
             )
             return self.send_message(chat_id, msg)
 

@@ -85,6 +85,7 @@ class LiveSessionManager:
                 ("handicap_profile_json", "TEXT", "NULL"),
                 ("awaiting_tee_choice", "INTEGER", "0"),
                 ("has_specified_tee", "INTEGER", "0"),
+                ("completed_scores_json", "TEXT", "'[]'"),
             ]
             for col_name, col_type, default_val in new_columns:
                 if col_name not in existing_cols:
@@ -420,3 +421,124 @@ class LiveSessionManager:
             if row and row["awaiting_tee_choice"]:
                 return bool(row["awaiting_tee_choice"])
         return False
+
+    def record_completed_hole(
+        self,
+        chat_id: int | str,
+        hole_number: int,
+        par: int,
+        stroke_index: int,
+        gross_strokes: int,
+        putts: int,
+        received_strokes: int,
+        net_par: int,
+        stableford_points: int,
+        net_strokes: int,
+        score_label: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Registra la buca completata, aggiorna i totali progressivi e avanza automaticamente alla buca successiva.
+        """
+        c_id = str(chat_id)
+        self.get_or_create_session(c_id, user_id="default_user")
+
+        hole_entry = {
+            "hole_number": hole_number,
+            "par": par,
+            "stroke_index": stroke_index,
+            "gross_strokes": gross_strokes,
+            "putts": putts,
+            "received_strokes": received_strokes,
+            "net_par": net_par,
+            "stableford_points": stableford_points,
+            "net_strokes": net_strokes,
+            "score_label": score_label
+        }
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT completed_scores_json FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            scores_list = []
+            if row and row["completed_scores_json"]:
+                try:
+                    scores_list = json.loads(row["completed_scores_json"])
+                except Exception:
+                    scores_list = []
+
+            # Se la buca era già stata registrata, aggiorna; altrimenti aggiunge in ordine
+            existing_idx = next((i for i, h in enumerate(scores_list) if h.get("hole_number") == hole_number), None)
+            if existing_idx is not None:
+                scores_list[existing_idx] = hole_entry
+            else:
+                scores_list.append(hole_entry)
+            scores_list.sort(key=lambda x: x.get("hole_number", 0))
+
+            next_h = 1 if hole_number >= 18 else hole_number + 1
+
+            cursor.execute("""
+                UPDATE live_sessions
+                SET completed_scores_json = ?, current_hole = ?, current_shot_index = 1,
+                    last_latitude = NULL, last_longitude = NULL, last_altitude = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (json.dumps(scores_list), next_h, c_id))
+            conn.commit()
+
+        return self.get_round_scorecard(c_id)
+
+    def get_round_scorecard(self, chat_id: int | str) -> Dict[str, Any]:
+        """
+        Recupera il riepilogo progressivo di tutte le buche completate nel round:
+        - Totale Stableford parziale
+        - Colpi Lordi totali e totale sul Par
+        - Putt totali e media putt/buca
+        - Lista delle buche giocate
+        """
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT completed_scores_json FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            scores = []
+            if row and row["completed_scores_json"]:
+                try:
+                    scores = json.loads(row["completed_scores_json"])
+                except Exception:
+                    scores = []
+
+        holes_played = len(scores)
+        total_stableford = sum(h.get("stableford_points", 0) for h in scores)
+        total_gross = sum(h.get("gross_strokes", 0) for h in scores)
+        total_net = sum(h.get("net_strokes", 0) for h in scores)
+        total_putts = sum(h.get("putts", 0) for h in scores)
+        total_par = sum(h.get("par", 0) for h in scores)
+        gross_to_par = total_gross - total_par
+        putts_avg = round(total_putts / holes_played, 2) if holes_played > 0 else 0.0
+
+        return {
+            "completed_holes": scores,
+            "holes_played": holes_played,
+            "total_stableford": total_stableford,
+            "total_gross": total_gross,
+            "total_net": total_net,
+            "total_putts": total_putts,
+            "total_par": total_par,
+            "gross_to_par": gross_to_par,
+            "putts_avg": putts_avg
+        }
+
+    def reset_round_scores(self, chat_id: int | str) -> bool:
+        """Azzera la scorecard del round corrente."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET completed_scores_json = '[]', current_hole = 1, current_shot_index = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (c_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+

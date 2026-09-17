@@ -249,6 +249,71 @@ class TestTelegramWHSIntegration(unittest.TestCase):
         self.assertIn("Par Netto:", last_msg)
         self.assertIn("Punti Stableford:", last_msg)
 
+    def test_get_strokes_for_hole_pure_function(self):
+        """Test della funzione pura get_strokes_for_hole."""
+        from core.whs_rules import get_strokes_for_hole
+        # Playing HCP 19 su 18 buche:
+        # Base = 19 // 18 = 1 colpo. Resto = 1.
+        # SI 1 riceve 1 base + 1 extra = 2 colpi.
+        # SI 2..18 ricevono 1 colpo.
+        self.assertEqual(get_strokes_for_hole(19, hole_stroke_index=1, holes_count=18), 2)
+        self.assertEqual(get_strokes_for_hole(19, hole_stroke_index=2, holes_count=18), 1)
+        self.assertEqual(get_strokes_for_hole(19, hole_stroke_index=18, holes_count=18), 1)
+
+        # Playing HCP 36 su 18 buche: ogni buca riceve 2 colpi
+        self.assertEqual(get_strokes_for_hole(36, hole_stroke_index=5, holes_count=18), 2)
+
+        # Playing HCP 9 su 9 buche: ogni buca riceve 1 colpo
+        self.assertEqual(get_strokes_for_hole(9, hole_stroke_index=3, holes_count=9), 1)
+
+    def test_parse_hole_closure_intent_regex(self):
+        """Test del parser d'intento per la chiusura buca con trigger sui putt."""
+        from core.parser import parse_hole_closure_intent
+
+        res1 = parse_hole_closure_intent("buca finita, 5 colpi e 2 putt")
+        self.assertTrue(res1["is_closure"])
+        self.assertTrue(res1["valid"])
+        self.assertEqual(res1["gross_strokes"], 5)
+        self.assertEqual(res1["putts"], 2)
+
+        res2 = parse_hole_closure_intent("chiuso con 2 putt per un totale di 4")
+        self.assertTrue(res2["is_closure"])
+        self.assertTrue(res2["valid"])
+        self.assertEqual(res2["gross_strokes"], 4)
+        self.assertEqual(res2["putts"], 2)
+
+        res3 = parse_hole_closure_intent("fatto 6, 3 putt")
+        self.assertTrue(res3["is_closure"])
+        self.assertTrue(res3["valid"])
+        self.assertEqual(res3["gross_strokes"], 6)
+        self.assertEqual(res3["putts"], 3)
+
+        # Controllo validità: i putt non possono superare i colpi totali
+        res_invalid = parse_hole_closure_intent("fatto 2 colpi con 3 putt")
+        self.assertTrue(res_invalid["is_closure"])
+        self.assertFalse(res_invalid["valid"])
+        self.assertIn("non può superare", res_invalid["error"])
+
+    def test_putt_trigger_hole_closure_telegram(self):
+        """Il bot rileva la chiusura buca su messaggio vocale/testuale con putt e aggiorna i progressivi."""
+        self.bot.process_text_message(12345, "🟡 Gialli")
+        self.bot.process_text_message(12345, "buca finita, 5 colpi e 2 putt")
+
+        last_msg = self.sent_messages[-1]["text"]
+        self.assertIn("BUCA 1 COMPLETATA", last_msg)
+        self.assertIn("Score Lordo:", last_msg)
+        self.assertIn("2 putt", last_msg)
+        self.assertIn("Punti Stableford:", last_msg)
+        self.assertIn("RIEPILOGO PROGRESSIVO", last_msg)
+        self.assertIn("Totale Stableford:", last_msg)
+        self.assertIn("Totale Putt:", last_msg)
+
+        card = self.session_mgr.get_round_scorecard(12345)
+        self.assertEqual(card["holes_played"], 1)
+        self.assertEqual(card["total_gross"], 5)
+        self.assertEqual(card["total_putts"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -195,3 +195,131 @@ def parse_quick_shot_update(text: str) -> Dict[str, Any]:
         "manual_distance": manual_distance,
         "raw_text": text
     }
+
+
+ITALIAN_WORD_NUMBERS = {
+    "zero": 0, "un": 1, "uno": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4,
+    "cinque": 5, "sei": 6, "sette": 7, "otto": 8, "nove": 9, "dieci": 10,
+    "undici": 11, "dodici": 12, "tredici": 13, "quattordici": 14, "quindici": 15
+}
+
+
+def word_or_digit_to_int(token: Optional[str]) -> Optional[int]:
+    """Converte una cifra numerica o una parola italiana ('due', 'cinque') in intero."""
+    if not token:
+        return None
+    cleaned = token.strip().lower()
+    if cleaned.isdigit():
+        return int(cleaned)
+    return ITALIAN_WORD_NUMBERS.get(cleaned, None)
+
+
+def parse_hole_closure_intent(text: str) -> Dict[str, Any]:
+    """
+    Rileva l'intento di CHIUSURA BUCA basato sulla comunicazione esplicita dei PUTT.
+    Esempi supportati:
+    - 'buca finita, 5 colpi e 2 putt'
+    - 'chiuso con 2 putt per un totale di 4'
+    - 'fatto 6, 3 putt'
+    - 'score 4 con 1 putt'
+    - 'chiuso in 5 di cui due putt'
+    - '4 colpi e 2 putt'
+
+    Restituisce un dizionario:
+    {
+        'is_closure': bool,
+        'valid': bool,
+        'gross_strokes': int | None,
+        'putts': int | None,
+        'error': str | None
+    }
+    """
+    text_clean = text.strip().lower()
+
+    # Trigger primario: la buca è considerata chiusa quando l'utente menziona esplicitamente i putt
+    if not re.search(r"\b(putt|putts|putter)\b", text_clean):
+        return {
+            "is_closure": False,
+            "valid": False,
+            "gross_strokes": None,
+            "putts": None,
+            "error": None
+        }
+
+    pat_num = r"(\d+|zero|uno?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici|tredici|quattordici|quindici)"
+
+    gross = None
+    putts = None
+
+    # Pattern 1: '[putts] putt per un totale di [gross]' / '[putts] putt e [gross] colpi' / 'chiuso con [putts] putt, [gross] colpi'
+    m_putt_first = re.search(
+        rf"{pat_num}\s+putts?.*?(?:totale(?:\s+di)?|score(?:\s+di)?|in tutto|per un(?:a)?|concluso in|,|\be\b)\s*{pat_num}(?:\s+colpi)?",
+        text_clean
+    )
+    if m_putt_first:
+        putts = word_or_digit_to_int(m_putt_first.group(1))
+        gross = word_or_digit_to_int(m_putt_first.group(2))
+
+    # Pattern 2: '[gross] colpi e [putts] putt' / 'fatto [gross], [putts] putt' / 'score [gross] con [putts] putt'
+    if gross is None or putts is None:
+        m_gross_first = re.search(
+            rf"(?:(?:fatto|score|chiuso(?:\s+in)?|chiusa(?:\s+in)?|buca(?:\s+finita)?|totale)\s+)?{pat_num}\s*(?:colpi)?(?:\s*[,e\.]|\s+con|\s+di cui)?\s+{pat_num}\s+putts?",
+            text_clean
+        )
+        if m_gross_first:
+            gross = word_or_digit_to_int(m_gross_first.group(1))
+            putts = word_or_digit_to_int(m_gross_first.group(2))
+
+    # Pattern 3: Fallback 'chiuso/fatto [gross] [putts] putt'
+    if gross is None or putts is None:
+        m_fallback = re.search(
+            rf"(?:fatto|score|chiuso|chiusa|totale)\s+{pat_num}\s+{pat_num}\s+putts?",
+            text_clean
+        )
+        if m_fallback:
+            gross = word_or_digit_to_int(m_fallback.group(1))
+            putts = word_or_digit_to_int(m_fallback.group(2))
+
+    if gross is not None and putts is not None:
+        if gross < 1:
+            return {
+                "is_closure": True,
+                "valid": False,
+                "gross_strokes": gross,
+                "putts": putts,
+                "error": f"I colpi totali ({gross}) devono essere almeno 1."
+            }
+        if putts < 0:
+            return {
+                "is_closure": True,
+                "valid": False,
+                "gross_strokes": gross,
+                "putts": putts,
+                "error": f"Il numero di putt ({putts}) non può essere negativo."
+            }
+        # Controllo di validità: il numero di putt non può superare i colpi totali
+        if putts > gross:
+            return {
+                "is_closure": True,
+                "valid": False,
+                "gross_strokes": gross,
+                "putts": putts,
+                "error": f"Il numero di putt ({putts}) non può superare i colpi totali ({gross})."
+            }
+
+        return {
+            "is_closure": True,
+            "valid": True,
+            "gross_strokes": gross,
+            "putts": putts,
+            "error": None
+        }
+
+    return {
+        "is_closure": False,
+        "valid": False,
+        "gross_strokes": None,
+        "putts": None,
+        "error": None
+    }
+
