@@ -1048,62 +1048,6 @@ with st.sidebar:
             </div>
         """, unsafe_allow_html=True)
 
-    # Gestione Server & Token (Avanzata)
-    with st.expander("⚙️ Gestione Server & Token Telegram", expanded=not bool(curr_token)):
-        st.markdown(f"<b>Stato Server Bot:</b> {server_badge}", unsafe_allow_html=True)
-        col_srv1, col_srv2 = st.columns(2)
-        with col_srv1:
-            if is_bot_alive:
-                if st.button("⏹ Ferma Server Bot", key="stop_bot_btn", use_container_width=True):
-                    bot_service.stop()
-                    st.rerun()
-            else:
-                if st.button("▶️ Avvia Server Bot", key="start_bot_btn", type="primary", use_container_width=True, disabled=not bool(curr_token)):
-                    ok_st, msg_st = bot_service.start()
-                    if ok_st:
-                        st.success(msg_st)
-                    else:
-                        st.error(msg_st)
-                    st.rerun()
-        with col_srv2:
-            if st.button("🔄 Riavvia Server Bot", key="restart_bot_btn", use_container_width=True, disabled=not bool(curr_token)):
-                ok_rst, msg_rst = bot_service.restart()
-                if ok_rst:
-                    st.success(msg_rst)
-                else:
-                    st.error(msg_rst)
-                st.rerun()
-
-        st.markdown("---")
-        tb_input = st.text_input(
-            "Token Telegram (@BotFather):",
-            value=curr_token,
-            type="password",
-            key="sidebar_tg_token",
-            help="Token API generato da @BotFather su Telegram"
-        )
-        col_tb1, col_tb2 = st.columns(2)
-        with col_tb1:
-            if st.button("💾 Salva Token", key="save_tg_tok_btn", use_container_width=True):
-                tg_manager.set_token(tb_input)
-                bot_service.restart(token=tb_input)
-                st.success("Token salvato e bot riavviato!")
-                st.rerun()
-        with col_tb2:
-            if st.button("🔌 Verifica Bot", key="test_tg_tok_btn", use_container_width=True):
-                ok_t, msg_t, b_uname = tg_manager.test_token(tb_input)
-                if ok_t:
-                    st.session_state["tg_status_info"] = (True, f"✅ Bot verificato: @{b_uname}", b_uname)
-                else:
-                    st.session_state["tg_status_info"] = (False, f"❌ {msg_t}", None)
-
-        if "tg_status_info" in st.session_state:
-            ok_si, msg_si, u_si = st.session_state["tg_status_info"]
-            if ok_si:
-                st.success(msg_si)
-                st.markdown(f"[👉 **Apri la chat del Bot su Telegram**](https://t.me/{u_si})")
-            else:
-                st.error(msg_si)
 
 
 # ---------------------------------------------------------
