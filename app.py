@@ -22,11 +22,13 @@ from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_tran
 from core.visualizer import GolfHoleVisualizer
 from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
+from datetime import datetime
 from core.ai_provider import test_ai_connection, AIProviderError
 from core.telegram_config import TelegramConfigManager
 from core.telegram_service import get_telegram_service
 from core.elevation_service import elevation_service, haversine_distance, calculate_plays_like
 from core.live_session import LiveSessionManager
+from core.backup_manager import backup_manager
 from golf_rules_module import render_rules_academy
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -224,6 +226,14 @@ bot_service = get_telegram_service()
 if tg_manager.get_token() and not bot_service.is_alive():
     try:
         bot_service.start()
+    except Exception:
+        pass
+
+# SafeVault: Snapshot di sicurezza automatico all'avvio sessione
+if "startup_backup_done" not in st.session_state:
+    try:
+        backup_manager.create_startup_snapshot()
+        st.session_state.startup_backup_done = True
     except Exception:
         pass
 
@@ -1620,6 +1630,65 @@ with nav_tab2:
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
             st.rerun()
+
+        # ---------------------------------------------------------
+        # SAFEVAULT: Protezione Dati, Esportazione & Ripristino 1-Clic
+        # ---------------------------------------------------------
+        st.markdown("---")
+        st.subheader("🛡️ Cassaforte Dati & Backup Personale (Anti-Perdita)")
+        st.caption("Scarica una copia di sicurezza certificata dei tuoi dati (Sacca, HCP, Distanze e Gare) o ripristina uno snapshot precedente.")
+
+        col_bk1, col_bk2 = st.columns(2)
+        with col_bk1:
+            st.markdown("<b>💾 Esporta Copia di Sicurezza:</b>", unsafe_allow_html=True)
+            st.caption("Scarica un pacchetto compresso ZIP contenente tutti i tuoi dati da conservare al sicuro.")
+            backup_bytes = backup_manager.export_full_backup_bytes()
+            ts_str = datetime.now().strftime("%Y%m%d_%H%M")
+            st.download_button(
+                label=f"⬇️ Scarica Backup Completo ({current_user.first_name})",
+                data=backup_bytes,
+                file_name=f"VoiceCaddy_Backup_{current_user.user_id}_{ts_str}.zip",
+                mime="application/zip",
+                use_container_width=True,
+                type="secondary"
+            )
+
+        with col_bk2:
+            st.markdown("<b>📥 Ripristina da Backup (ZIP):</b>", unsafe_allow_html=True)
+            uploaded_bk = st.file_uploader("Carica file ZIP di backup:", type=["zip"], key="upload_user_backup_zip")
+            if uploaded_bk is not None:
+                if st.button("🚀 Conferma e Ripristina Dati", key="confirm_restore_user_btn", type="primary", use_container_width=True):
+                    ok_rst, msg_rst = backup_manager.restore_from_zip(uploaded_bk.getvalue())
+                    if ok_rst:
+                        st.success(msg_rst)
+                        st.rerun()
+                    else:
+                        st.error(msg_rst)
+
+        # Snapshot locali rotativi automatici
+        snapshots = backup_manager.list_snapshots()
+        if snapshots:
+            with st.expander(f"🕒 Cronologia Snapshot Automatici ({len(snapshots)} disponibili)", expanded=False):
+                st.caption("Voice Caddy crea automaticamente uno snapshot di sicurezza rotativo ad ogni sessione.")
+                col_sn1, col_sn2 = st.columns([3, 1])
+                with col_sn1:
+                    snap_options = {s["filename"]: f"{s['filename']} — {s['date_str']} ({s['size_kb']} KB)" for s in snapshots}
+                    selected_snap = st.selectbox(
+                        "Seleziona snapshot da ripristinare:",
+                        options=list(snap_options.keys()),
+                        format_func=lambda x: snap_options[x],
+                        key="selected_snapshot_to_restore"
+                    )
+                with col_sn2:
+                    st.write("")
+                    st.write("")
+                    if st.button("🔄 Ripristina Snapshot", key="btn_apply_snapshot", use_container_width=True):
+                        ok_snap, msg_snap = backup_manager.restore_from_snapshot(selected_snap)
+                        if ok_snap:
+                            st.success(f"Snapshot '{selected_snap}' ripristinato con successo!")
+                            st.rerun()
+                        else:
+                            st.error(msg_snap)
 
 
 # ---------------------------------------------------------

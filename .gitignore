@@ -27,5 +27,8 @@ temp/
 
 # Backups & Test Artifacts
 backups/
+*.bak
+*.db.bak
+*.zip
 tests/temp_tg_data/
 
