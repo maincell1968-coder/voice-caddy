@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
+import time
 import contextlib
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -86,6 +87,7 @@ class LiveSessionManager:
                 ("awaiting_tee_choice", "INTEGER", "0"),
                 ("has_specified_tee", "INTEGER", "0"),
                 ("completed_scores_json", "TEXT", "'[]'"),
+                ("last_location_timestamp", "REAL", "NULL"),
             ]
             for col_name, col_type, default_val in new_columns:
                 if col_name not in existing_cols:
@@ -197,16 +199,35 @@ class LiveSessionManager:
             if prev_lat is not None and prev_lon is not None:
                 distance_covered = haversine_distance(prev_lat, prev_lon, latitude, longitude)
 
-            # Salva la nuova posizione
+            # Salva la nuova posizione e il timestamp epoch
+            now_ts = time.time()
             cursor.execute("""
                 UPDATE live_sessions
                 SET last_latitude = ?, last_longitude = ?, last_altitude = ?,
-                    updated_at = CURRENT_TIMESTAMP
+                    last_location_timestamp = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE chat_id = ?
-            """, (latitude, longitude, altitude, c_id))
+            """, (latitude, longitude, altitude, now_ts, c_id))
             conn.commit()
 
             return distance_covered, current_hole, current_shot
+
+    def get_last_position(self, chat_id: int | str) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+        """
+        Recupera l'ultima posizione GPS registrata per la chat:
+        (latitude, longitude, altitude, location_timestamp_epoch)
+        """
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT last_latitude, last_longitude, last_altitude, last_location_timestamp
+                FROM live_sessions WHERE chat_id = ?
+            """, (c_id,))
+            row = cursor.fetchone()
+            if row:
+                return row["last_latitude"], row["last_longitude"], row["last_altitude"], row["last_location_timestamp"]
+        return None, None, None, None
+
 
     def record_live_shot(
         self,

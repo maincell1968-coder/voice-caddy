@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 from core.whs_rules import TeeRating
+from core.green_distance_service import GreenCoordinates, GeoPoint, derive_front_back_green_points
 
 
 class HoleCoordinates(BaseModel):
     """
     Struttura dati per le coordinate geografiche e altimetriche della buca.
-    Supporta coordinate di partenza (Tee), centro green e pin personalizzato (bandiera).
+    Supporta coordinate di partenza (Tee), centro green, inizio green (Front), fondo green (Back) e pin personalizzato (bandiera).
     """
     tee_lat: float = Field(..., description="Latitudine GPS del Tee di partenza")
     tee_lon: float = Field(..., description="Longitudine GPS del Tee di partenza")
@@ -20,9 +21,28 @@ class HoleCoordinates(BaseModel):
     green_lon: float = Field(..., description="Longitudine GPS del centro green")
     green_altitude: Optional[float] = Field(default=None, description="Quota altimetrica del centro green in metri s.l.m.")
 
+    front_lat: Optional[float] = Field(default=None, description="Latitudine del bordo frontale (inizio) green")
+    front_lon: Optional[float] = Field(default=None, description="Longitudine del bordo frontale (inizio) green")
+    back_lat: Optional[float] = Field(default=None, description="Latitudine del bordo posteriore (fondo) green")
+    back_lon: Optional[float] = Field(default=None, description="Longitudine del bordo posteriore (fondo) green")
+
     pin_lat: Optional[float] = Field(default=None, description="Latitudine della posizione effettiva della bandiera/pin (se specificata)")
     pin_lon: Optional[float] = Field(default=None, description="Longitudine della posizione effettiva della bandiera/pin (se specificata)")
     pin_altitude: Optional[float] = Field(default=None, description="Quota altimetrica della bandiera in metri s.l.m.")
+
+    def get_green_coordinates(self) -> GreenCoordinates:
+        """Restituisce le coordinate geodetiche dei 3 punti del green (Front, Center, Back)."""
+        center_pt = GeoPoint(lat=self.green_lat, lon=self.green_lon)
+        if (self.front_lat is not None and self.front_lon is not None and
+                self.back_lat is not None and self.back_lon is not None):
+            return GreenCoordinates(
+                front=GeoPoint(lat=self.front_lat, lon=self.front_lon),
+                center=center_pt,
+                back=GeoPoint(lat=self.back_lat, lon=self.back_lon)
+            )
+        # Derivazione analitica dinamica lungo la linea di approccio Tee -> Centro Green
+        f_pt, b_pt = derive_front_back_green_points(self.tee_lat, self.tee_lon, self.green_lat, self.green_lon)
+        return GreenCoordinates(front=f_pt, center=center_pt, back=b_pt)
 
     @property
     def target_lat(self) -> float:
@@ -105,6 +125,13 @@ class GolfCourse(BaseModel):
     def get_hole_pars(self) -> Dict[int, int]:
         """Mappa Buca -> Par della buca."""
         return {h.hole_number: h.par for h in self.holes}
+
+    def get_green_coordinates(self, hole_number: int) -> Optional[GreenCoordinates]:
+        """Recupera le coordinate dei 3 punti di riferimento del green (Front, Center, Back) per la buca."""
+        h = self.get_hole(hole_number)
+        if h and h.coordinates:
+            return h.coordinates.get_green_coordinates()
+        return None
 
     def get_target_pin_coordinates(self, hole_number: int) -> Optional[Tuple[float, float, Optional[float]]]:
         """
