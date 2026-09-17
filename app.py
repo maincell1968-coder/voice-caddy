@@ -75,8 +75,10 @@ st.markdown("""
             margin-bottom: 8px;
         }
         .landing-subtitle {
-            font-size: 1.15rem;
-            color: #A0AEC0;
+            font-size: 0.92rem;
+            color: #94A3B8;
+            letter-spacing: 0.5px;
+            font-weight: 500;
             margin-bottom: 0;
         }
         .group-card-strafatti {
@@ -374,13 +376,13 @@ def render_footer():
 if st.session_state.auth_user is None:
     logo_full_b64 = get_asset_base64("voice_caddy_logo_full.png")
     if logo_full_b64:
-        hero_brand_html = f'<img src="data:image/png;base64,{logo_full_b64}" alt="Voice Caddy Pro" style="max-height: 85px; width: auto; max-width: 90%; margin-bottom: 12px; filter: drop-shadow(0 6px 20px rgba(212,175,55,0.35));">'
+        hero_brand_html = f'<img src="data:image/png;base64,{logo_full_b64}" alt="Voice Caddy Pro" style="max-height: 135px; width: auto; max-width: 92%; margin-bottom: 14px; filter: drop-shadow(0 8px 24px rgba(212,175,55,0.38));">'
     else:
         hero_brand_html = '<div class="landing-title">⛳ VOICE CADDY PRO</div>'
     st.markdown(f"""
-        <div class="landing-hero" style="text-align: center; padding: 28px 20px;">
+        <div class="landing-hero" style="text-align: center; padding: 32px 20px;">
             {hero_brand_html}
-            <div class="landing-subtitle">PGA Tour Performance Analytics & Club Portal • Accesso Riservato</div>
+            <div class="landing-subtitle">Performance Analytics & Club Portal • Accesso Riservato</div>
         </div>
         <div class="legal-disclaimer-box">
             <div class="disclaimer-title">
