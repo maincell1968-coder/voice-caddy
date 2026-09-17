@@ -1,0 +1,430 @@
+{
+  "rules": [
+    {
+      "id": "rule_17_penalty_areas",
+      "rule_number": "Regola 17",
+      "title": "Aree di Penalità (Paletti Rossi e Gialli)",
+      "category": "Aree di Penalità",
+      "icon": "🔴",
+      "short_summary": "Opzioni di gioco e di ovvio quando la palla si trova o è virtualmente certa di essere dentro un'area di penalità.",
+      "official_principle": "Le aree di penalità (specchi d'acqua, canali, fossati, boschi marcati) consentono al giocatore di giocare la palla così come si trova senza penalità, oppure di procedere all'ovvio con 1 colpo di penalità.",
+      "practical_steps": [
+        "Puoi giocare la palla dove si trova nell'area di penalità: puoi toccare terra o acqua e rimuovere impedimenti sciolti prima di colpirla senza penalità (novità R&A dal 2019).",
+        "Se decidi di procedere con l'ovvio (+1 colpo di penalità), determina il punto esatto in cui la palla ha attraversato per l'ultima volta il margine dell'area di penalità (Punto di Riferimento).",
+        "Scegli una delle opzioni disponibili a seconda del colore dei picchetti (Gialli = 2 opzioni; Rossi = 3 opzioni)."
+      ],
+      "relief_options": [
+        {
+          "name": "1. Colpo e Distanza",
+          "penalty": "+1 colpo",
+          "details": "Gioca una palla dal punto in cui è stato eseguito il colpo precedente (es. ritornare sul tee shot o sul fairway)."
+        },
+        {
+          "name": "2. Ovvio all'Indietro sulla Linea (Back-on-the-line)",
+          "penalty": "+1 colpo",
+          "details": "Droppa una palla mantenendo il punto in cui la palla ha attraversato il margine dell'area direttamente tra te e la bandiera, arretrando quanto vuoi senza limiti di distanza."
+        },
+        {
+          "name": "3. Ovvio Laterale (Solo Paletti ROSSI)",
+          "penalty": "+1 colpo",
+          "details": "Droppa entro 2 bastoni dal punto di riferimento dove la palla ha tagliato il margine dell'area rossa, non più vicino alla buca. Questa opzione NON esiste per i picchetti gialli."
+        }
+      ],
+      "common_mistakes": [
+        "Credere di poter droppare lateralmente a 2 bastoni con paletti GIALLI (non è consentito).",
+        "Droppare dal punto in cui la palla è finita nell'acqua invece del punto in cui ha oltrepassato il margine dell'area.",
+        "Pensare che non si possano rimuovere foglie o rami nell'area di penalità prima di colpire la palla (è consentito dal 2019!)."
+      ]
+    },
+    {
+      "id": "rule_19_unplayable_ball",
+      "rule_number": "Regola 19",
+      "title": "Palla Ingiocabile (Unplayable Ball)",
+      "category": "Palla Ingiocabile",
+      "icon": "🌵",
+      "short_summary": "Il giocatore è l'unico arbitro a poter dichiarare la propria palla ingiocabile in qualunque punto dell'area generale.",
+      "official_principle": "Puoi dichiarare la tua palla ingiocabile ovunque sul campo di gioco, TRANNE quando la palla si trova all'interno di un'area di penalità (in quel caso si deve applicare esclusivamente la Regola 17).",
+      "practical_steps": [
+        "Dichiara chiaramente: 'Dichiaro la palla ingiocabile'. Non serve l'approvazione di nessuno: sei l'unico giudice.",
+        "Valuta attentamente il lie e la situazione per scegliere l'opzione di ovvio più vantaggiosa tra le 3 opzioni standard (1 colpo di penalità).",
+        "Se la palla è in un bunker, puoi applicare le 3 opzioni restando nel bunker (+1 colpo), oppure l'opzione speciale all'indietro fuori dal bunker (+2 colpi)."
+      ],
+      "relief_options": [
+        {
+          "name": "Opzione A: Colpo e Distanza",
+          "penalty": "+1 colpo",
+          "details": "Gioca dal punto in cui hai tirato l'ultimo colpo (area di 1 bastone)."
+        },
+        {
+          "name": "Opzione B: Ovvio sulla Linea all'Indietro",
+          "penalty": "+1 colpo",
+          "details": "Individua il punto della palla ingiocabile e mantienilo allineato con la buca, arretrando in linea retta a piacere."
+        },
+        {
+          "name": "Opzione C: Ovvio Laterale (2 Bastoni)",
+          "penalty": "+1 colpo",
+          "details": "Droppa entro 2 bastoni dalla posizione della palla, non più vicino alla buca."
+        },
+        {
+          "name": "Opzione Speciale Bunker Fuori dalla Sabbia",
+          "penalty": "+2 colpi",
+          "details": "Se la palla è in un bunker e non riesci o non vuoi uscirne droppando nella sabbia, puoi droppare FUORI dal bunker sulla linea all'indietro allineata con la buca aggiungendo 2 colpi di penalità."
+        }
+      ],
+      "common_mistakes": [
+        "Dichiarare palla ingiocabile all'interno di un'area di penalità (non si può: si applica la Regola 17).",
+        "Droppare fuori da un bunker con 1 solo colpo di penalità (richiede 2 colpi se si esce dal bunker sulla linea all'indietro).",
+        "Misurare i 2 bastoni partendo da dove la palla si sarebbe potuta giocare facilmente invece che dalla posizione reale della palla."
+      ]
+    },
+    {
+      "id": "rule_13_putting_green",
+      "rule_number": "Regola 13",
+      "title": "Azioni sul Putting Green",
+      "category": "Putting Green",
+      "icon": "⛳",
+      "short_summary": "Regole sul green: riparazione danni, asta della bandiera, marcatura della palla e movimento accidentale.",
+      "official_principle": "Il green è una superficie speciale curata per facilitare il rotolo della palla. Le regole consentono una serie di interventi riparatori prima del putt e perdonano il movimento accidentale della palla una volta marcata.",
+      "practical_steps": [
+        "Prima di toccare o alzare la palla, devi SEMPRE posizionare un marca-palla o moneta direttamente dietro di essa (Regola 14.1).",
+        "Puoi riparare quasi tutti i danni sul green: pitch mark, vecchi fori di buca, segni di chiodi delle scarpe, solchi di animali o scrape di bastoni.",
+        "Non è invece consentito riparare la normale usura naturale del manto erboso o le pendenze.",
+        "Puoi puttare lasciando l'asta della bandiera inserita nella buca oppure facendola togliere: se la palla colpisce l'asta non c'è NESSUNA penalità."
+      ],
+      "relief_options": [
+        {
+          "name": "Movimento Accidentale della Palla sul Green",
+          "penalty": "Zero Penalità",
+          "details": "Se muovi accidentalmente la palla o il marca-palla sul green (es. facendoti cadere il putter o muovendola nello swing di prova), non c'è penalità: devi semplicemente ripiazzarla nella posizione originale."
+        },
+        {
+          "name": "Palla Spostata dal Vento dopo essere stata Marcata",
+          "penalty": "Zero Penalità",
+          "details": "Se alzi e ripiazzi la palla sul green e poi il vento la muove, devi ripiazzarla nel punto originale. Se invece non era mai stata alzata e marcata, si gioca da dove il vento l'ha portata."
+        }
+      ],
+      "common_mistakes": [
+        "Alzare la palla sul green per pulirla senza aver prima messo il marcatore (1 colpo di penalità).",
+        "Pensare che ci sia penalità se la palla imbuca colpendo l'asta della bandiera lasciata dentro (nessuna penalità dal 2019).",
+        "Testare deliberatamente la superficie del green facendo rotolare una pallina con la mano o grattando l'erba per valutare la velocità (Penalità Generale: 2 colpi in stroke play)."
+      ]
+    },
+    {
+      "id": "rule_12_bunkers",
+      "rule_number": "Regola 12",
+      "title": "Bunker: Sabbia, Impedimenti e Colpi",
+      "category": "Bunker",
+      "icon": "🏖️",
+      "short_summary": "Cosa è consentito fare all'interno di un ostacolo di sabbia e quali contatti con la sabbia sono vietati.",
+      "official_principle": "Il bunker è un'area di gioco speciale specificamente preparata per costituire una sfida. I limiti al contatto con la sabbia proteggono l'autenticità della sfida senza punire i gesti involontari.",
+      "practical_steps": [
+        "Puoi rimuovere foglie, ramoscelli, pietre, mozziconi e altri impedimenti sciolti dal bunker senza alcuna penalità, purché tu non muova la palla.",
+        "Puoi appoggiare i bastoni nella sabbia prima del tiro o appoggiarti a un bastone per non scivolare (mentre entri, esci o attendi il tuo turno).",
+        "È invece VIETATO toccare la sabbia con il bastone subito davanti o dietro la palla all'address, durante lo swing di prova, o per testare la compattezza della sabbia."
+      ],
+      "relief_options": [
+        {
+          "name": "Palla Ingiocabile nel Bunker (Drop Interno)",
+          "penalty": "+1 colpo",
+          "details": "Droppa nel bunker: entro 2 bastoni lateralmente, oppure indietro sulla linea retta palla-buca restando sempre nella sabbia."
+        },
+        {
+          "name": "Palla Ingiocabile Fuori dal Bunker (Drop Esterno)",
+          "penalty": "+2 colpi",
+          "details": "Droppa all'esterno del bunker sulla linea all'indietro buca-palla arretrando quanto vuoi."
+        },
+        {
+          "name": "Palla Incastrata / Conficcata nel Bunker",
+          "penalty": "Nessun Ovvio Gratuito",
+          "details": "L'ovvio per palla infossata (Regola 16.3) NON si applica nella sabbia di un bunker."
+        }
+      ],
+      "common_mistakes": [
+        "Toccare la sabbia con il bastone durante uno swing di pratica all'interno del bunker (Penalità Generale: 2 colpi).",
+        "Posizionare il bastone direttamente dietro la palla nella sabbia prima di eseguire il backswing (toccare la sabbia subito dietro la palla all'address è vietato).",
+        "Pensare che le pietre nel bunker non si possano togliere (dal 2019 sono considerati impedimenti sciolti e si possono sempre togliere)."
+      ]
+    },
+    {
+      "id": "rule_16_abnormal_course_conditions",
+      "rule_number": "Regola 16",
+      "title": "Condizioni Anormali del Campo e Ostruzioni Inamovibili",
+      "category": "Ostruzioni & Terreno",
+      "icon": "🚧",
+      "short_summary": "Ovvio gratuito da strade asfaltate, cartelli fissi, irrigatori, acqua temporanea e terreno in riparazione (GUR).",
+      "official_principle": "Il giocatore ha diritto all'ovvio gratuito (senza penalità) quando una condizione anormale interferisce fisicamente con la posizione della palla, con lo stance o con l'area dello swing inteso.",
+      "practical_steps": [
+        "Determina se c'è interferenza reale: la palla tocca l'ostruzione/condizione, oppure i tuoi piedi o il movimento del bastone vi interferiscono.",
+        "Individua il 'Punto Più Vicino di Completo Ovvio' (NPCO - Nearest Point of Complete Relief). Attenzione: è un punto fisico preciso, non il punto più gradevole!",
+        "Il NPCO non deve essere più vicino alla buca e deve garantire il 100% di assenza di interferenza (sia per la palla che per i piedi e lo swing).",
+        "Dalla posizione del NPCO hai un'area di ovvio di 1 bastone, non più vicino alla buca, nella stessa area del campo in cui si trovava la palla."
+      ],
+      "relief_options": [
+        {
+          "name": "Ovvio Gratuito Completo",
+          "penalty": "Zero Penalità",
+          "details": "NPCO + 1 bastone, all'altezza del ginocchio. La palla deve cadere e fermarsi nell'area di rilievo stabilita."
+        },
+        {
+          "name": "Condizioni di Terreno Anormale",
+          "penalty": "Zero Penalità",
+          "details": "Include: Acqua temporanea (pozzanghere visibili prima o dopo aver preso lo stance), Tane di animali, Terreno in riparazione marcato (GUR con linea bianca o cartelli)."
+        }
+      ],
+      "common_mistakes": [
+        "Scegliere arbitrariamente da che lato della strada droppare (il NPCO è uno solo: il punto geometricamente più vicino in cui non c'è interferenza).",
+        "Prendere l'ovvio gratuito solo perché l'ostruzione si trova sulla linea di tiro (l'interferenza con la 'linea di gioco' NON dà diritto a ovvio gratuito, eccetto sul green!).",
+        "Droppare più vicino alla buca rispetto al punto di riferimento originale."
+      ]
+    },
+    {
+      "id": "rule_15_loose_impediments_movable_obstructions",
+      "rule_number": "Regola 15",
+      "title": "Impedimenti Sciolti e Ostruzioni Amovibili",
+      "category": "Ostruzioni & Terreno",
+      "icon": "🍂",
+      "short_summary": "Rimuovere oggetti naturali non attaccati (foglie, rametti, insetti) e manufatti mobili artificiali (rastrelli, bottiglie).",
+      "official_principle": "Puoi rimuovere gli impedimenti sciolti e le ostruzioni amovibili ovunque sul percorso, ma fai attenzione a non provocare il movimento involontario della palla.",
+      "practical_steps": [
+        "Impedimenti Sciolti: elementi naturali non ancorati a terra (foglie, rami secchi, pigne, insetti, vermi, pietre non cementate). Si possono togliere ovunque.",
+        "Se la palla si muove mentre togli un impedimento sciolto: nell'area generale ricevi 1 colpo di penalità e devi ripiazzare la palla. Se invece sei sul green, non c'è NESSUNA penalità.",
+        "Ostruzioni Amovibili: oggetti artificiali che possono essere spostati con ragionevole sforzo (rastrello del bunker, lattina, ombrello, picchetto mobile).",
+        "Se la palla si muove mentre muovi un'ostruzione amovibile: nessuna penalità! La palla deve essere semplicemente ripiazzata (o droppata se l'ostruzione era sotto di essa)."
+      ],
+      "relief_options": [
+        {
+          "name": "Rimozione Ostruzione Amovibile",
+          "penalty": "Zero Penalità",
+          "details": "Sposta l'oggetto artificiale. Se la palla si muove accidentalmente, ripiazzala senza penalità (Regola 15.2a)."
+        },
+        {
+          "name": "Palla SOPRA o DENTRO un'ostruzione amovibile (es. un asciugamano)",
+          "penalty": "Zero Penalità",
+          "details": "Alza la palla, rimuovi l'ostruzione e droppa la palla nell'area di 1 bastone direttamente sotto il punto in cui si trovava."
+        }
+      ],
+      "common_mistakes": [
+        "Spezzare un ramo attaccato a un albero pensando che sia un impedimento sciolto (miglioramento del lie: 2 colpi di penalità!).",
+        "Sabbia e terriccio sciolto: sono considerati impedimenti sciolti SOLO sul putting green. Nel fairway o rough non si possono rimuovere.",
+        "Non ripiazzare la palla se si sposta togliendo un ramoscello."
+      ]
+    },
+    {
+      "id": "rule_18_stroke_and_distance_provisional",
+      "rule_number": "Regola 18",
+      "title": "Palla Fuori Limite, Palla Persa e Palla Provvisoria",
+      "category": "Palla Persa & Fuori Limite",
+      "icon": "⚪",
+      "short_summary": "Tempo limite di ricerca (3 minuti), procedura di colpo e distanza e annuncio corretto della palla provvisoria.",
+      "official_principle": "Se la palla finisce Fuori Limite (paletti bianchi) o viene persa, l'unica procedura standard prevista dalle Regole del Golf è il Colpo e Distanza (+1 colpo di penalità). La palla provvisoria serve a risparmiare tempo.",
+      "practical_steps": [
+        "Tempo di Ricerca: Hai un tempo massimo tassativo di 3 MINUTI per cercare la palla da quando tu o il tuo caddy iniziate a cercarla.",
+        "Se la palla non viene trovata entro 3 minuti, la palla è ufficialmente PERSA.",
+        "Palla Fuori Limite: Se l'intera palla si trova oltre la linea ideale che unisce la faccia interna dei paletti bianchi, è Fuori Limite.",
+        "Palla Provvisoria: Se ritieni che la palla possa essere fuori limite o persa fuori da un'area di penalità, PUOI giocare una palla provvisoria prima di andare avanti.",
+        "OBBLIGO DI ANNUNCIO: Devi dichiarare esplicitamente la parola 'Palla Provvisoria' (es. 'Gioco una palla provvisoria, Titleist 1 con punto blu') prima di colpire."
+      ],
+      "relief_options": [
+        {
+          "name": "Procedura Colpo e Distanza",
+          "penalty": "+1 colpo",
+          "details": "Ritorna nel punto esatto del colpo precedente. Se dal tee, ripiazza la palla su un tee in qualunque punto dell'area di partenza."
+        },
+        {
+          "name": "Regola Locale Modello E-5 (Se in vigore nel circolo)",
+          "penalty": "+2 colpi",
+          "details": "In gare di club con Regola Locale E-5 attiva: invece di tornare sul tee, puoi droppare nel fairway più vicino alla linea di perdita/fuori limite con 2 colpi di penalità."
+        }
+      ],
+      "common_mistakes": [
+        "Cercare la palla per 5 o più minuti (il cronometro è di 3 minuti dal 2019; scaduti i 3 minuti la palla è persa anche se viene vista un secondo dopo!).",
+        "Tirare un secondo colpo dicendo 'Ne tiro un'altra' o 'Fammi ritirare' senza pronunciare la parola 'Provvisoria' (quella palla diventa immediatamente la palla in gioco con colpo e distanza, e la prima viene abbandonata).",
+        "Giocare una palla provvisoria quando si è certi che la palla sia finita in un'area di penalità (con i paletti rossi/gialli non è consentita la palla provvisoria)."
+      ]
+    },
+    {
+      "id": "rule_14_marking_lifting_dropping",
+      "rule_number": "Regola 14",
+      "title": "Procedure: Marcare, Alzare e Droppare la Palla",
+      "category": "Procedure di Gioco",
+      "icon": "📏",
+      "short_summary": "Come eseguire correttamente il drop all'altezza del ginocchio e le regole per marcare e ripiazzare la palla.",
+      "official_principle": "Il modo in cui una palla viene rimessa in gioco garantisce equità e uniformità per tutti i partecipanti alla gara.",
+      "practical_steps": [
+        "Come Droppare: Il giocatore stesso deve tenere la palla all'altezza del proprio GINOCCHIO in posizione eretta e lasciarla cadere diritta verso il basso.",
+        "Non spingere o imprimere rotazione alla palla: deve solo cadere sotto la forza di gravità.",
+        "La palla deve cadere e fermarsi interamente all'interno dell'Area di Rilievo (entro 1 o 2 bastoni a seconda della regola applicata).",
+        "Se la palla rimbalza e si ferma fuori dall'area di rilievo: devi droppare una seconda volta. Se si ferma ancora fuori, la palla va PIAZZATA con la mano nel punto esatto in cui ha toccato terra nel secondo drop."
+      ],
+      "relief_options": [
+        {
+          "name": "Area di Rilievo di 1 Bastone",
+          "penalty": "Varia a seconda del caso",
+          "details": "Utilizzata per ovvio gratuito (Regola 16: Ostruzioni, Terreno in riparazione) e per opzione colpo e distanza."
+        },
+        {
+          "name": "Area di Rilievo di 2 Bastoni",
+          "penalty": "+1 colpo",
+          "details": "Utilizzata per ovvio laterale da area di penalità rossa (Regola 17.1d) e per palla ingiocabile laterale (Regola 19.2c)."
+        }
+      ],
+      "common_mistakes": [
+        "Droppare all'altezza della spalla (era la vecchia regola prima del 2019: se non si corregge prima di giocare il colpo, si incorre in 1 colpo di penalità!).",
+        "Alzare la palla dal green facendola rotolare con la faccia del putter senza aver prima posizionato il marca-palla.",
+        "Giocare la palla piazzata a mano dopo che il primo drop è rotolato fuori dall'area (è obbligatorio fare prima il secondo drop!)."
+      ]
+    }
+  ],
+  "quizzes": [
+    {
+      "id": 1,
+      "rule_ref": "Regola 12.2b",
+      "category": "Bunker",
+      "scenario": "Mario è finito nel bunker con il suo secondo colpo. Mentre aspetta che il suo compagno giochi, rimuove una foglia secca vicino alla palla senza muovere quest'ultima, poi appoggia delicatamente il ferro nella sabbia durante lo swing di prova prima del colpo. Qual è la decisione corretta?",
+      "options": [
+        "Nessuna penalità: togliere la foglia e toccare la sabbia nello swing di prova sono entrambi permessi dal 2019.",
+        "Mario riceve 2 colpi di penalità (o perdita della buca in match play) per aver toccato la sabbia con il bastone durante lo swing di prova; rimuovere la foglia era invece perfettamente legale.",
+        "Mario riceve 1 colpo di penalità per aver rimosso la foglia secca nel bunker.",
+        "Mario riceve 4 colpi di penalità (2 per la foglia e 2 per lo swing di prova)."
+      ],
+      "correct_index": 1,
+      "explanation": "Secondo la Regola 12.2a, rimuovere impedimenti sciolti (come foglie, rametti e pietre) dal bunker è permesso senza penalità purché la palla non si muova. Tuttavia, la Regola 12.2b vieta categoricamente di toccare la sabbia con il bastone durante uno swing di pratica o immediatamente davanti/dietro la palla all'address. La penalità per l'infrazione è la Penalità Generale (2 colpi in Stroke Play).",
+      "pro_tip": "Nel bunker puoi togliere le foglie, ma tieni sempre il bastone sospeso a mezz'aria durante lo swing di prova!"
+    },
+    {
+      "id": 2,
+      "rule_ref": "Regola 17.1d",
+      "category": "Aree di Penalità",
+      "scenario": "Il drive di Luca termina in un laghetto delimitato da picchetti GIALLI. Luca misura 2 bastoni dal punto in cui la palla ha attraversato per l'ultima volta il margine dell'acqua, non più vicino alla buca, e droppa lì la palla. Ha proceduto correttamente?",
+      "options": [
+        "Sì, l'ovvio laterale a 2 bastoni con 1 colpo di penalità è sempre consentito in qualsiasi area di penalità.",
+        "No, l'ovvio laterale entro 2 bastoni è un'opzione consentita ESCLUSIVAMENTE per le aree di penalità ROSSE. Nelle aree GIALLE ci sono solo 2 opzioni: Colpo e Distanza oppure Ovvio all'Indietro sulla Linea.",
+        "Sì, purché la palla sia caduta all'altezza del ginocchio.",
+        "No, perché nelle aree gialle non c'è mai penalità."
+      ],
+      "correct_index": 1,
+      "explanation": "La Regola 17.1d specifica che le aree di penalità con picchetti GIALLI offrono solo due opzioni di ovvio (+1 colpo): 1) Colpo e distanza; 2) Ovvio all'indietro sulla linea buca-punto di ingresso. L'ovvio laterale a 2 bastoni (opzione 3) è concesso SOLO ed ESCLUSIVAMENTE per le aree di penalità ROSSE.",
+      "pro_tip": "Ricorda: Paletti Rossi = 'Rosso come le 3 opzioni (incluso 2 bastoni laterali)'. Paletti Gialli = Solo 2 opzioni, MAI i 2 bastoni laterali!"
+    },
+    {
+      "id": 3,
+      "rule_ref": "Regola 13.1d",
+      "category": "Putting Green",
+      "scenario": "Giorgio ha marcato e alzato la sua palla sul green. Dopo averla pulita, la ripiazza sulla macchia originale. Mentre sta facendo uno swing di prova col putter vicino alla palla, tocca inavvertitamente la palla col tallone del putter facendola muovere di circa 10 cm. Cosa deve fare Giorgio?",
+      "options": [
+        "Riceve 1 colpo di penalità e deve giocare la palla dalla nuova posizione.",
+        "Riceve 2 colpi di penalità e deve ripiazzare la palla sul punto originale.",
+        "Nessuna penalità: deve semplicemente ripiazzare la palla nel punto originale prima di eseguire il putt.",
+        "Deve giocare la palla dalla nuova posizione senza penalità."
+      ],
+      "correct_index": 2,
+      "explanation": "In base alla Regola 13.1d (introdotta con la grande riforma del 2019), non vi è ALCUNA penalità se il giocatore, l'avversario o il partner muovono accidentalmente la palla o il marcatore sul putting green. L'unica condizione obbligatoria è che la palla DEVE essere ripiazzata nel suo punto originale prima di tirare.",
+      "pro_tip": "Sul green niente panico per i tocchi involontari: respira, rimetti la palla al suo posto e gioca senza penalità!"
+    },
+    {
+      "id": 4,
+      "rule_ref": "Regola 18.2",
+      "category": "Palla Persa & Fuori Limite",
+      "scenario": "Dopo aver tirato un tee shot finito nel rough profondo, Alessandro e i suoi compagni di gioco cercano la palla per 3 minuti e 30 secondi senza trovarla. Esattamente mentre Alessandro sta per tornare sul tee, un compagno grida: 'Trovata! È qui giocabile!'. Alessandro può giocarla?",
+      "options": [
+        "Sì, perché è stata ritrovata prima che Alessandro eseguisse il colpo dal tee.",
+        "No, una palla è considerata persa appena scadono i 3 minuti di ricerca. Quella palla è diventata una palla fuori gioco e Alessandro DEVE procedere con Colpo e Distanza dal tee.",
+        "Sì, ma solo aggiungendo 1 colpo di penalità sul punteggio della buca.",
+        "Sì, perché il tempo di ricerca ufficiale nel golf è di 5 minuti."
+      ],
+      "correct_index": 1,
+      "explanation": "Secondo la Regola 18.2a, il tempo massimo per cercare una palla è tassativamente di 3 MINUTI (ridotto da 5 a 3 minuti nel 2019 per velocizzare il gioco). Trascorsi i 3 minuti, la palla è ufficialmente PERSA e perde lo status di palla in gioco. Anche se viene ritrovata un istante dopo, è diventata una pallina estranea.",
+      "pro_tip": "Fai partire il cronometro: a 3 minuti esatti la palla non esiste più. Per risparmiare tempo e fatica, dichiara sempre una palla provvisoria sul tee!"
+    },
+    {
+      "id": 5,
+      "rule_ref": "Regola 16.1",
+      "category": "Ostruzioni & Terreno",
+      "scenario": "La palla di Renzo finisce su una stradina asfaltata per i golf cart (ostruzione inamovibile). Renzo ha diritto all'ovvio gratuito. Da dove deve misurare l'area di rilievo di 1 bastone per il drop?",
+      "options": [
+        "Da qualsiasi punto dell'erba che Renzo preferisce, purché a bordo strada.",
+        "Dal 'Punto Più Vicino di Completo Ovvio' (NPCO), cioè il punto geometrico più vicino in cui la palla, lo stance e lo swing non toccano più l'asfalto, non più vicino alla buca.",
+        "Direttamente dal bordo della stradina più vicino al fairway.",
+        "Sempre dal lato destro della strada rispetto alla direzione della buca."
+      ],
+      "correct_index": 1,
+      "explanation": "In base alla Regola 16.1, l'ovvio gratuito da ostruzione inamovibile richiede di individuare obbligatoriamente il 'Punto Più Vicino di Completo Ovvio' (NPCO). Il NPCO è un punto unico, determinato dalla posizione della palla e dallo stance del giocatore: non è una scelta di comodità. Da quel punto si misura 1 bastone non più vicino alla buca.",
+      "pro_tip": "Il punto più vicino di ovvio a volte finisce in un cespuglio o nel rough: prima di prendere l'ovvio, verifica sempre dove cade il NPCO! Non sei obbligato a prenderlo se la palla sulla strada è giocabile."
+    },
+    {
+      "id": 6,
+      "rule_ref": "Regola 14.3b",
+      "category": "Procedure di Gioco",
+      "scenario": "Stefano deve droppare la palla dopo aver dichiarato palla ingiocabile. In piedi eretto, lascia cadere la palla tenendola all'altezza delle spalle, come faceva sempre nei tornei di qualche anno fa. I compagni lo avvisano prima che lui tiri. Cosa deve fare Stefano per non incorrere in penalità?",
+      "options": [
+        "Non può fare nulla: riceve automaticamente 2 colpi di penalità.",
+        "Basta che dica 'Scusate' e può colpire la palla così com'è.",
+        "Deve correggere l'errore prima di tirare: alzare la palla e ri-dropparla correttamente all'altezza del GINOCCHIO, senza alcuna penalità.",
+        "Deve piazzare la palla sul tee con 1 colpo di penalità."
+      ],
+      "correct_index": 2,
+      "explanation": "La Regola 14.3b impone che la palla debba essere droppata esclusivamente all'altezza del ginocchio (in vigore dal 2019). Secondo la Regola 14.5, se una palla viene droppata in modo errato (es. dall'altezza delle spalle), l'errore PUÒ essere corretto senza alcuna penalità purché il giocatore alzi la palla e la droppi nel modo corretto PRIMA di colpirla. Se l'avesse colpita, avrebbe preso 1 colpo di penalità.",
+      "pro_tip": "Se sbagli un drop, niente paura: finché non colpisci la palla puoi sempre alzarla e ripetere il drop corretto a zero penalità!"
+    },
+    {
+      "id": 7,
+      "rule_ref": "Regola 18.3b",
+      "category": "Palla Persa & Fuori Limite",
+      "scenario": "Marco F tira un colpo dal tee verso gli alberi. Preoccupato che la palla sia persa, mette subito un'altra palla sul tee ed esclama ai compagni: 'Ne tiro un'altra per sicurezza!'. Gioca il colpo e poi trova la prima palla perfettamente in centro alla pista. Qual è lo stato della prima palla?",
+      "options": [
+        "Marco può giocare la prima palla senza problemi perché era in pista.",
+        "La prima palla è ormai fuori gioco ed è abbandonata. Poiché Marco non ha usato esplicitamente l'espressione 'Palla Provvisoria' prima del colpo, la seconda palla è diventata automaticamente la palla in gioco con la procedura di colpo e distanza.",
+        "Marco può scegliere quale delle due palle giocare pagando 1 colpo di penalità.",
+        "Riceve una squalifica immediata per gioco fuori turno."
+      ],
+      "correct_index": 1,
+      "explanation": "La Regola 18.3b è categorica: per avere lo status di palla provvisoria, il giocatore DEVE annunciare chiaramente la parola 'provvisoria' prima di colpire. Frasi ambigue come 'Ne tiro un'altra', 'Riprovo' o 'Fammi ritirare' non costituiscono annuncio valido: la palla giocata diventa a tutti gli effetti la palla in gioco con colpo e distanza (+1 colpo), e la prima palla cessa di esistere anche se viene trovata.",
+      "pro_tip": "Usa sempre la formula magica: 'Gioco una palla provvisoria!' seguita da marca e numero del modello per evitare equivoci in gara."
+    },
+    {
+      "id": 8,
+      "rule_ref": "Regola 19.3",
+      "category": "Palla Ingiocabile",
+      "scenario": "La palla di Marco S è conficcata contro la sponda verticale di un profondo bunker. Marco decide di dichiarare la palla ingiocabile e non vuole assolutamente giocare dalla sabbia. Quale opzione gli consentono le regole R&A per droppare all'ESTERNO del bunker?",
+      "options": [
+        "Non esiste alcuna opzione: dalla palla ingiocabile in bunker è obbligatorio droppare dentro il bunker.",
+        "Può droppare fuori dal bunker entro 2 bastoni con 1 solo colpo di penalità.",
+        "Può avvalersi dell'opzione speciale con 2 COLPI DI PENALITÀ: droppare fuori dal bunker indietro sulla linea retta che unisce la buca al punto originale della palla nella sabbia.",
+        "Può droppare fuori dal bunker gratuitamente perché la palla era su una pendenza pericolosa."
+      ],
+      "correct_index": 2,
+      "explanation": "La Regola 19.3b prevede una specifica opzione per l'ovvio con palla ingiocabile in bunker: con 2 COLPI DI PENALITÀ, il giocatore può droppare all'esterno del bunker mantenendo il punto originario della palla allineato con la buca ed indietreggiando quanto desidera (Back-on-the-line relief). Le opzioni con 1 solo colpo di penalità richiedono invece di droppare restando all'interno del bunker (oppure ritornare al colpo precedente).",
+      "pro_tip": "Se sei in una sponda impossibile di un bunker di 2 metri, pagare 2 colpi per uscire sulla linea all'indietro in fairway può salvarti la carta dello score rispetto a fare 5 tentativi nella sabbia!"
+    },
+    {
+      "id": 9,
+      "rule_ref": "Regola 15.2a",
+      "category": "Ostruzioni & Terreno",
+      "scenario": "La palla di Gianluca è ferma appoggiata contro un rastrello del bunker (ostruzione amovibile) nel rough. Quando Gianluca rimuove delicatamente il rastrello, la palla rotola di qualche centimetro giù per la pendenza. Cosa prevede la regola?",
+      "options": [
+        "1 colpo di penalità e la palla deve essere giocata da dove si è fermata.",
+        "Zero penalità: Gianluca deve semplicemente ripiazzare la palla nel punto originale in cui si trovava prima di muovere il rastrello.",
+        "2 colpi di penalità per aver mosso la palla con un manufatto artificiale.",
+        "Gianluca deve droppare la palla all'altezza del ginocchio entro 1 bastone con 1 colpo di penalità."
+      ],
+      "correct_index": 1,
+      "explanation": "In base alla Regola 15.2a, le ostruzioni amovibili possono essere rimosse ovunque sul percorso. Se la rimozione dell'ostruzione amovibile provoca il movimento accidentale della palla, NON C'È ALCUNA PENALITÀ: la palla deve essere semplicemente ripiazzata nel suo punto originario.",
+      "pro_tip": "Diverso è se muovi la palla togliendo un ramoscello (impedimento sciolto) nel rough: lì prendi 1 colpo di penalità! Con gli oggetti artificiali (rastrelli, bottiglie, lattine) invece sei sempre al sicuro a zero penalità."
+    },
+    {
+      "id": 10,
+      "rule_ref": "Regola 13.2a",
+      "category": "Putting Green",
+      "scenario": "Dal bordo del green a 15 metri dalla buca, un giocatore decide di puttare lasciando l'asta della bandiera inserita nella buca. Il putt è potente, centra l'asta in pieno e la palla cade dentro la buca. Un avversario reclama che l'asta andava rimossa o custodita. Qual è la decisione corretta?",
+      "options": [
+        "La palla è imbucata validamente con zero penalità: dal 2019 i giocatori possono effettuare qualsiasi colpo con l'asta lasciata inserita nella buca.",
+        "Il giocatore riceve 2 colpi di penalità perché l'asta non era sorvegliata da un caddie.",
+        "Il colpo viene annullato e deve essere ripetuto togliendo l'asta.",
+        "1 colpo di penalità e la palla va piazzata sul bordo della buca."
+      ],
+      "correct_index": 0,
+      "explanation": "La Regola 13.2a stabilisce che il giocatore può decidere di giocare con l'asta della bandiera lasciata nella buca da qualsiasi posizione, incluso il putting green. Se la palla in movimento colpisce l'asta della bandiera lasciata nella buca, non vi è alcuna penalità e la palla viene giocata come si trova (se entra in buca è considerata imbucata con quel colpo).",
+      "pro_tip": "Lasciare l'asta della bandiera inserita sul green è una grande opzione strategica per velocizzare il gioco e avere un bersaglio visivo di riferimento."
+    }
+  ]
+}
