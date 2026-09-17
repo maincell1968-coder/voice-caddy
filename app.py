@@ -249,7 +249,7 @@ def inject_autofill_cleaner(username_val: str = ""):
     """
     Disabilita in modo categorico l'autofill e la memorizzazione automatica delle password
     da parte dei browser (Chrome, Edge, Firefox, Safari) e password manager esterni.
-    Garantisce che il campo password sia sempre completamente vuoto all'accesso o al cambio utente.
+    Svuota attivamente qualsiasi valore auto-iniettato da Chrome/Edge finché l'utente non digita manualmente.
     """
     components.html("""
         <script>
@@ -257,7 +257,7 @@ def inject_autofill_cleaner(username_val: str = ""):
                 try {
                     const parentDoc = window.parent.document;
 
-                    // Rimuove eventuali campi nascosti legacy usati per autofill
+                    // Rimuove eventuali campi nascosti legacy
                     const oldUserField = parentDoc.getElementById('vc_autofill_username');
                     if (oldUserField) {
                         oldUserField.remove();
@@ -271,7 +271,6 @@ def inject_autofill_cleaner(username_val: str = ""):
 
                         const pwInputs = parentDoc.querySelectorAll('input[type="password"]');
                         pwInputs.forEach(input => {
-                            // Disabilita espressamente suggerimenti, autofill e salvataggio
                             input.setAttribute('autocomplete', 'new-password');
                             input.setAttribute('data-lpignore', 'true');
                             input.setAttribute('data-1p-ignore', 'true');
@@ -281,17 +280,38 @@ def inject_autofill_cleaner(username_val: str = ""):
                             input.setAttribute('autocorrect', 'off');
                             input.setAttribute('spellcheck', 'false');
 
-                            // Se l'input non ha ancora il tag di protezione, assegna un name univoco
-                            if (!input.getAttribute('data-vc-clean')) {
-                                input.setAttribute('data-vc-clean', 'true');
-                                input.setAttribute('name', 'vc_auth_pwd_' + Math.random().toString(36).substring(7));
+                            // Se l'utente non ha interagito manualmente, svuota qualsiasi valore autofillato
+                            if (!input.dataset.userTyped && parentDoc.activeElement !== input) {
+                                if (input.value && input.value.length > 0) {
+                                    input.value = '';
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
+                            }
+
+                            // Registra evento digitazione manuale dell'utente
+                            if (!input.dataset.listenerAttached) {
+                                input.dataset.listenerAttached = 'true';
+                                input.addEventListener('input', function() {
+                                    this.dataset.userTyped = 'true';
+                                });
+                                input.addEventListener('keydown', function() {
+                                    this.dataset.userTyped = 'true';
+                                });
+                                input.addEventListener('focus', function() {
+                                    // Se il campo conteneva già caratteri prima del focus ed è un autofill, azzera
+                                    if (!this.dataset.userTyped && this.value.length > 20) {
+                                        this.value = '';
+                                    }
+                                });
                             }
                         });
                     }
 
                     sanitizePasswordInputs();
-                    setTimeout(sanitizePasswordInputs, 150);
-                    setTimeout(sanitizePasswordInputs, 500);
+                    setTimeout(sanitizePasswordInputs, 50);
+                    setTimeout(sanitizePasswordInputs, 200);
+                    setTimeout(sanitizePasswordInputs, 600);
                     setTimeout(sanitizePasswordInputs, 1200);
 
                     if (!window._vc_clean_observer) {
