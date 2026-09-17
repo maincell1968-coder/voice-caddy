@@ -1,6 +1,7 @@
 import os
 import tempfile
 import json
+import base64
 import urllib.request
 import urllib.parse
 from pathlib import Path
@@ -34,9 +35,19 @@ from golf_rules_module import render_rules_academy
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
 
+def get_asset_base64(filename: str) -> str:
+    path = PROJECT_ROOT / "assets" / filename
+    if path.exists():
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    return ""
+
+_icon_path = PROJECT_ROOT / "assets" / "voice_caddy_golfer_icon.png"
+_page_icon = str(_icon_path) if _icon_path.exists() else "⛳"
+
 st.set_page_config(
     page_title="Voice Caddy Pro | Club & Performance Portal",
-    page_icon="⛳",
+    page_icon=_page_icon,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -337,10 +348,15 @@ def inject_autofill_cleaner(username_val: str = ""):
 
 
 def render_footer():
-    st.markdown("""
+    golfer_b64 = get_asset_base64("voice_caddy_golfer_icon.png")
+    if golfer_b64:
+        icon_html = f'<img src="data:image/png;base64,{golfer_b64}" style="height: 18px; vertical-align: middle; margin-right: 6px; filter: drop-shadow(0 1px 4px rgba(212,175,55,0.5));">'
+    else:
+        icon_html = "⛳ "
+    st.markdown(f"""
         <div style="margin-top: 55px; padding: 25px 15px; border-top: 1px solid rgba(255, 255, 255, 0.08); text-align: center;">
             <div style="font-size: 0.95rem; font-weight: 700; color: #E2E8F0; letter-spacing: 0.5px; margin-bottom: 6px;">
-                ⛳ VOICE CADDY PRO &bull; PGA Performance Analytics & Live GPS Caddie
+                {icon_html}VOICE CADDY PRO &bull; PGA Performance Analytics & Live GPS Caddie
             </div>
             <div style="font-size: 0.85rem; color: #CBD5E1; margin-bottom: 6px;">
                 Concept, Architettura e Proprietà Intellettuale &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Tutti i diritti riservati
@@ -356,9 +372,14 @@ def render_footer():
 # SCREEN 1: ACCESS GATE & LOGIN / PASSWORD CHANGE FLOW
 # =========================================================
 if st.session_state.auth_user is None:
-    st.markdown("""
-        <div class="landing-hero">
-            <div class="landing-title">⛳ VOICE CADDY PRO</div>
+    logo_full_b64 = get_asset_base64("voice_caddy_logo_full.png")
+    if logo_full_b64:
+        hero_brand_html = f'<img src="data:image/png;base64,{logo_full_b64}" alt="Voice Caddy Pro" style="max-height: 85px; width: auto; max-width: 90%; margin-bottom: 12px; filter: drop-shadow(0 6px 20px rgba(212,175,55,0.35));">'
+    else:
+        hero_brand_html = '<div class="landing-title">⛳ VOICE CADDY PRO</div>'
+    st.markdown(f"""
+        <div class="landing-hero" style="text-align: center; padding: 28px 20px;">
+            {hero_brand_html}
             <div class="landing-subtitle">PGA Tour Performance Analytics & Club Portal • Accesso Riservato</div>
         </div>
         <div class="legal-disclaimer-box">
@@ -684,7 +705,15 @@ st.markdown("---")
 # SIDEBAR SETUP (BYO-AI & Analysis Controls)
 # =========================================================
 with st.sidebar:
-    st.title("⛳ Voice Caddy Pro")
+    logo_full_b64 = get_asset_base64("voice_caddy_logo_full.png")
+    if logo_full_b64:
+        st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 8px; padding: 4px 0;">
+                <img src="data:image/png;base64,{logo_full_b64}" alt="Voice Caddy Pro" style="max-height: 48px; max-width: 95%; filter: drop-shadow(0 3px 10px rgba(212,175,55,0.3));">
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.title("⛳ Voice Caddy Pro")
     st.caption("AI Caddie & PGA Performance Analytics Engine")
 
     # ---------------------------------------------------------
