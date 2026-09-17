@@ -23,6 +23,7 @@ from core.elevation_service import elevation_service, haversine_distance
 from core.live_session import LiveSessionManager
 from core.weather_service import weather_service
 from core.whs_rules import RoundHandicapProfile, build_round_handicap_profile, calculate_hole_score, TeeRating
+from core.green_distance_service import parse_green_distance_intent, calculate_green_distances, format_distance_response
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -520,6 +521,38 @@ class VoiceCaddyTelegramBot:
             )
         return self.send_message(chat_id, reply_msg)
 
+    def handle_green_distance_request(self, chat_id: int | str, intent: str) -> bool:
+        """
+        Gestisce la richiesta di distanza al green (Rapida o Dettagliata).
+        Calcola le distanze geodetiche con Haversine (Front, Center, Back),
+        valuta lo stato della posizione GPS (freschezza, presenza, arrivo sul green)
+        e invia la risposta formattata per Telegram.
+        """
+        user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
+        session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id)
+        current_hole = session.get("current_hole", 1)
+        hole_info = active_course.get_hole(current_hole)
+        par_val = hole_info.par if hole_info else 4
+
+        green_coords = active_course.get_green_coordinates(current_hole)
+        if not green_coords:
+            self.send_message(chat_id, f"⚠️ Coordinate green non disponibili per la Buca {current_hole}.")
+            return True
+
+        lat, lon, alt, loc_ts = self.session_mgr.get_last_position(chat_id)
+
+        res = calculate_green_distances(
+            user_lat=lat,
+            user_lon=lon,
+            green_coords=green_coords,
+            hole_number=current_hole,
+            location_timestamp=loc_ts
+        )
+
+        telegram_msg, voice_msg = format_distance_response(intent, res, current_hole, par=par_val)
+        self.send_message(chat_id, telegram_msg)
+        return True
+
     # ---------------------------------------------------------
     # Response Formatter
     # ---------------------------------------------------------
@@ -592,6 +625,12 @@ class VoiceCaddyTelegramBot:
                 api_key=whisper_key,
                 groq_api_key=groq_key
             )
+
+            # Controllo se è una richiesta vocale di distanza al green (Rapida o Dettagliata)
+            dist_intent = parse_green_distance_intent(transcript)
+            if dist_intent:
+                self.send_message(chat_id, f"🎙️ <i>Voce riconosciuta: «{transcript}»</i>")
+                return self.handle_green_distance_request(chat_id, dist_intent)
 
             # Controllo se è un update rapido di un singolo colpo durante la buca
             quick = parse_quick_shot_update(transcript)
@@ -723,6 +762,11 @@ class VoiceCaddyTelegramBot:
             matched_tee = clean_tee_cand if clean_tee_cand in known_tees else "gialli"
             cur_mode = self.get_user_mode(chat_id)
             return self.start_round_flow(chat_id, mode=cur_mode, tee_name=matched_tee)
+
+        # Controllo se è una richiesta di distanza al green (Rapida o Dettagliata)
+        dist_intent = parse_green_distance_intent(clean)
+        if dist_intent:
+            return self.handle_green_distance_request(chat_id, dist_intent)
 
         # Controllo se è un update rapido di un singolo colpo durante la buca
         quick = parse_quick_shot_update(text)
@@ -1129,6 +1173,14 @@ class VoiceCaddyTelegramBot:
         elif cmd in ["/whs", "/handicap", "/hcp", "/calcolo"]:
             prof = self._resolve_handicap_profile(chat_id)
             self.send_message(chat_id, prof.format_summary_card())
+
+        elif cmd in ["/distanza", "/misure", "/quanto"]:
+            if args and any(w in " ".join(args).lower() for w in ["dettaglio", "completo", "front", "back", "tutto", "green"]):
+                return self.handle_green_distance_request(chat_id, "DISTANZA_DETTAGLIATA")
+            return self.handle_green_distance_request(chat_id, "DISTANZA_RAPIDA")
+
+        elif cmd in ["/green", "/misuregreen", "/frontback", "/dettagliogreen"]:
+            return self.handle_green_distance_request(chat_id, "DISTANZA_DETTAGLIATA")
 
         elif cmd in ["/tee", "/partenza"]:
             if not args:

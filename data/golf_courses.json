@@ -6,17 +6,18 @@
       "city": "Sirolo (AN)",
       "total_par": 71,
       "holes_count": 18,
-      "terrain_description": "Percorso tecnico e collinare nel Parco del Conero con dislivelli significativi e buche orograficamente varie.",
+      "terrain_description": "Percorso tecnico e collinare con dislivelli orografici significativi (buche con salite, discese e vallate che incidono sulle distanze reali dei colpi).",
       "tees": {
         "bianchi": {
           "tee_name": "Bianchi",
           "color_code": "white",
           "gender": "Uomini",
           "course_rating": 71.4,
-          "slope_rating": 129,
+          "slope_rating": 131,
           "par": 71,
           "holes_count": 18,
-          "length_meters": 6023
+          "length_meters": 6178,
+          "hole_stroke_indexes": null
         },
         "gialli": {
           "tee_name": "Gialli",
@@ -26,7 +27,8 @@
           "slope_rating": 129,
           "par": 71,
           "holes_count": 18,
-          "length_meters": 5996
+          "length_meters": 5996,
+          "hole_stroke_indexes": null
         },
         "verdi": {
           "tee_name": "Verdi",
@@ -36,7 +38,8 @@
           "slope_rating": 123,
           "par": 71,
           "holes_count": 18,
-          "length_meters": 5540
+          "length_meters": 5540,
+          "hole_stroke_indexes": null
         },
         "rossi": {
           "tee_name": "Rossi",
@@ -46,7 +49,8 @@
           "slope_rating": 125,
           "par": 71,
           "holes_count": 18,
-          "length_meters": 5417
+          "length_meters": 5417,
+          "hole_stroke_indexes": null
         },
         "arancioni": {
           "tee_name": "Arancioni",
@@ -56,28 +60,515 @@
           "slope_rating": 118,
           "par": 71,
           "holes_count": 18,
-          "length_meters": 4980
+          "length_meters": 4980,
+          "hole_stroke_indexes": null
         }
       },
       "holes": [
-        { "hole_number": 1, "par": 4, "handicap_index": 5, "distance_meters": 342, "slope_elevation_profile": "Primi 2/3 in pianura, ultimo terzo in salita" },
-        { "hole_number": 2, "par": 3, "handicap_index": 17, "distance_meters": 134, "slope_elevation_profile": "In discesa" },
-        { "hole_number": 3, "par": 4, "handicap_index": 3, "distance_meters": 402, "slope_elevation_profile": "Primi 2/3 in discesa, ultimo terzo in pianura" },
-        { "hole_number": 4, "par": 5, "handicap_index": 15, "distance_meters": 433, "slope_elevation_profile": "In pianura" },
-        { "hole_number": 5, "par": 4, "handicap_index": 9, "distance_meters": 292, "slope_elevation_profile": "In pianura" },
-        { "hole_number": 6, "par": 3, "handicap_index": 13, "distance_meters": 139, "slope_elevation_profile": "In pianura" },
-        { "hole_number": 7, "par": 4, "handicap_index": 7, "distance_meters": 320, "slope_elevation_profile": "Primo terzo in pianura, 2/3 finali in salita" },
-        { "hole_number": 8, "par": 4, "handicap_index": 11, "distance_meters": 343, "slope_elevation_profile": "Prima metà in discesa, resto in pianura" },
-        { "hole_number": 9, "par": 4, "handicap_index": 1, "distance_meters": 390, "slope_elevation_profile": "Prima metà in salita, seconda metà in leggera salita" },
-        { "hole_number": 10, "par": 4, "handicap_index": 10, "distance_meters": 334, "slope_elevation_profile": "Prima metà in discesa, seconda metà in salita" },
-        { "hole_number": 11, "par": 4, "handicap_index": 6, "distance_meters": 307, "slope_elevation_profile": "Tutto in salita" },
-        { "hole_number": 12, "par": 5, "handicap_index": 18, "distance_meters": 477, "slope_elevation_profile": "Tutto in discesa" },
-        { "hole_number": 13, "par": 3, "handicap_index": 14, "distance_meters": 168, "slope_elevation_profile": "In pianura" },
-        { "hole_number": 14, "par": 4, "handicap_index": 12, "distance_meters": 287, "slope_elevation_profile": "In pianura" },
-        { "hole_number": 15, "par": 5, "handicap_index": 4, "distance_meters": 500, "slope_elevation_profile": "In pianura" },
-        { "hole_number": 16, "par": 3, "handicap_index": 16, "distance_meters": 133, "slope_elevation_profile": "In salita" },
-        { "hole_number": 17, "par": 4, "handicap_index": 8, "distance_meters": 376, "slope_elevation_profile": "Tutto in discesa" },
-        { "hole_number": 18, "par": 4, "handicap_index": 2, "distance_meters": 334, "slope_elevation_profile": "Tutto in salita" }
+        {
+          "hole_number": 1,
+          "buca": 1,
+          "par": 4,
+          "handicap_index": 5,
+          "distance_meters": 342,
+          "slope_elevation_profile": "Primi 2/3 in pianura, ultimo terzo in salita",
+          "tee": {
+            "lat": 43.5228,
+            "lon": 13.606,
+            "altitude": 102.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.520003,
+              "lon": 13.607157
+            },
+            "center": {
+              "lat": 43.5199,
+              "lon": 13.6072,
+              "altitude": 110.0
+            },
+            "back": {
+              "lat": 43.519797,
+              "lon": 13.607243
+            }
+          }
+        },
+        {
+          "hole_number": 2,
+          "buca": 2,
+          "par": 3,
+          "handicap_index": 17,
+          "distance_meters": 134,
+          "slope_elevation_profile": "In discesa",
+          "tee": {
+            "lat": 43.5198,
+            "lon": 13.6074,
+            "altitude": 110.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.51889,
+              "lon": 13.608219
+            },
+            "center": {
+              "lat": 43.5188,
+              "lon": 13.6083,
+              "altitude": 102.0
+            },
+            "back": {
+              "lat": 43.51871,
+              "lon": 13.608381
+            }
+          }
+        },
+        {
+          "hole_number": 3,
+          "buca": 3,
+          "par": 4,
+          "handicap_index": 3,
+          "distance_meters": 402,
+          "slope_elevation_profile": "Primi 2/3 in discesa, ultimo terzo in pianura",
+          "tee": {
+            "lat": 43.5185,
+            "lon": 13.6085,
+            "altitude": 102.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.515299,
+              "lon": 13.61044
+            },
+            "center": {
+              "lat": 43.5152,
+              "lon": 13.6105,
+              "altitude": 94.0
+            },
+            "back": {
+              "lat": 43.515101,
+              "lon": 13.61056
+            }
+          }
+        },
+        {
+          "hole_number": 4,
+          "buca": 4,
+          "par": 5,
+          "handicap_index": 15,
+          "distance_meters": 433,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.515,
+            "lon": 13.6108,
+            "altitude": 94.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.514028,
+              "lon": 13.615856
+            },
+            "center": {
+              "lat": 43.514,
+              "lon": 13.616,
+              "altitude": 94.0
+            },
+            "back": {
+              "lat": 43.513972,
+              "lon": 13.616144
+            }
+          }
+        },
+        {
+          "hole_number": 5,
+          "buca": 5,
+          "par": 4,
+          "handicap_index": 9,
+          "distance_meters": 292,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.5142,
+            "lon": 13.6162,
+            "altitude": 94.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.516406,
+              "lon": 13.617927
+            },
+            "center": {
+              "lat": 43.5165,
+              "lon": 13.618,
+              "altitude": 95.0
+            },
+            "back": {
+              "lat": 43.516594,
+              "lon": 13.618073
+            }
+          }
+        },
+        {
+          "hole_number": 6,
+          "buca": 6,
+          "par": 3,
+          "handicap_index": 13,
+          "distance_meters": 139,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.5168,
+            "lon": 13.6182,
+            "altitude": 95.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.517707,
+              "lon": 13.618926
+            },
+            "center": {
+              "lat": 43.5178,
+              "lon": 13.619,
+              "altitude": 95.0
+            },
+            "back": {
+              "lat": 43.517893,
+              "lon": 13.619074
+            }
+          }
+        },
+        {
+          "hole_number": 7,
+          "buca": 7,
+          "par": 4,
+          "handicap_index": 7,
+          "distance_meters": 320,
+          "slope_elevation_profile": "Primo terzo in pianura, 2/3 finali in salita",
+          "tee": {
+            "lat": 43.518,
+            "lon": 13.6192,
+            "altitude": 95.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.520304,
+              "lon": 13.617568
+            },
+            "center": {
+              "lat": 43.5204,
+              "lon": 13.6175,
+              "altitude": 107.0
+            },
+            "back": {
+              "lat": 43.520496,
+              "lon": 13.617432
+            }
+          }
+        },
+        {
+          "hole_number": 8,
+          "buca": 8,
+          "par": 4,
+          "handicap_index": 11,
+          "distance_meters": 343,
+          "slope_elevation_profile": "Prima metà in discesa, resto in pianura",
+          "tee": {
+            "lat": 43.5206,
+            "lon": 13.6173,
+            "altitude": 107.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.523206,
+              "lon": 13.615273
+            },
+            "center": {
+              "lat": 43.5233,
+              "lon": 13.6152,
+              "altitude": 100.0
+            },
+            "back": {
+              "lat": 43.523394,
+              "lon": 13.615127
+            }
+          }
+        },
+        {
+          "hole_number": 9,
+          "buca": 9,
+          "par": 4,
+          "handicap_index": 1,
+          "distance_meters": 390,
+          "slope_elevation_profile": "Prima metà in salita, seconda metà in leggera salita",
+          "tee": {
+            "lat": 43.5235,
+            "lon": 13.615,
+            "altitude": 100.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.526116,
+              "lon": 13.612093
+            },
+            "center": {
+              "lat": 43.5262,
+              "lon": 13.612,
+              "altitude": 112.0
+            },
+            "back": {
+              "lat": 43.526284,
+              "lon": 13.611907
+            }
+          }
+        },
+        {
+          "hole_number": 10,
+          "buca": 10,
+          "par": 4,
+          "handicap_index": 10,
+          "distance_meters": 334,
+          "slope_elevation_profile": "Prima metà in discesa, seconda metà in salita",
+          "tee": {
+            "lat": 43.5255,
+            "lon": 13.611,
+            "altitude": 110.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.523087,
+              "lon": 13.608587
+            },
+            "center": {
+              "lat": 43.523,
+              "lon": 13.6085,
+              "altitude": 111.0
+            },
+            "back": {
+              "lat": 43.522913,
+              "lon": 13.608413
+            }
+          }
+        },
+        {
+          "hole_number": 11,
+          "buca": 11,
+          "par": 4,
+          "handicap_index": 6,
+          "distance_meters": 307,
+          "slope_elevation_profile": "Tutto in salita",
+          "tee": {
+            "lat": 43.5228,
+            "lon": 13.6083,
+            "altitude": 108.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.520594,
+              "lon": 13.606573
+            },
+            "center": {
+              "lat": 43.5205,
+              "lon": 13.6065,
+              "altitude": 122.0
+            },
+            "back": {
+              "lat": 43.520406,
+              "lon": 13.606427
+            }
+          }
+        },
+        {
+          "hole_number": 12,
+          "buca": 12,
+          "par": 5,
+          "handicap_index": 18,
+          "distance_meters": 477,
+          "slope_elevation_profile": "Tutto in discesa",
+          "tee": {
+            "lat": 43.5203,
+            "lon": 13.6063,
+            "altitude": 122.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.516595,
+              "lon": 13.60357
+            },
+            "center": {
+              "lat": 43.5165,
+              "lon": 13.6035,
+              "altitude": 104.0
+            },
+            "back": {
+              "lat": 43.516405,
+              "lon": 13.60343
+            }
+          }
+        },
+        {
+          "hole_number": 13,
+          "buca": 13,
+          "par": 3,
+          "handicap_index": 14,
+          "distance_meters": 168,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.5163,
+            "lon": 13.6033,
+            "altitude": 104.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.515092,
+              "lon": 13.602278
+            },
+            "center": {
+              "lat": 43.515,
+              "lon": 13.6022,
+              "altitude": 104.0
+            },
+            "back": {
+              "lat": 43.514908,
+              "lon": 13.602122
+            }
+          }
+        },
+        {
+          "hole_number": 14,
+          "buca": 14,
+          "par": 4,
+          "handicap_index": 12,
+          "distance_meters": 287,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.5152,
+            "lon": 13.602,
+            "altitude": 104.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.517204,
+              "lon": 13.600568
+            },
+            "center": {
+              "lat": 43.5173,
+              "lon": 13.6005,
+              "altitude": 105.0
+            },
+            "back": {
+              "lat": 43.517396,
+              "lon": 13.600432
+            }
+          }
+        },
+        {
+          "hole_number": 15,
+          "buca": 15,
+          "par": 5,
+          "handicap_index": 4,
+          "distance_meters": 500,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.5175,
+            "lon": 13.6003,
+            "altitude": 105.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.521404,
+              "lon": 13.597567
+            },
+            "center": {
+              "lat": 43.5215,
+              "lon": 13.5975,
+              "altitude": 106.0
+            },
+            "back": {
+              "lat": 43.521596,
+              "lon": 13.597433
+            }
+          }
+        },
+        {
+          "hole_number": 16,
+          "buca": 16,
+          "par": 3,
+          "handicap_index": 16,
+          "distance_meters": 133,
+          "slope_elevation_profile": "In salita",
+          "tee": {
+            "lat": 43.5218,
+            "lon": 13.5977,
+            "altitude": 106.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.522707,
+              "lon": 13.598426
+            },
+            "center": {
+              "lat": 43.5228,
+              "lon": 13.5985,
+              "altitude": 114.0
+            },
+            "back": {
+              "lat": 43.522893,
+              "lon": 13.598574
+            }
+          }
+        },
+        {
+          "hole_number": 17,
+          "buca": 17,
+          "par": 4,
+          "handicap_index": 8,
+          "distance_meters": 376,
+          "slope_elevation_profile": "Tutto in discesa",
+          "tee": {
+            "lat": 43.523,
+            "lon": 13.5988,
+            "altitude": 114.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.525421,
+              "lon": 13.601899
+            },
+            "center": {
+              "lat": 43.5255,
+              "lon": 13.602,
+              "altitude": 102.0
+            },
+            "back": {
+              "lat": 43.525579,
+              "lon": 13.602101
+            }
+          }
+        },
+        {
+          "hole_number": 18,
+          "buca": 18,
+          "par": 4,
+          "handicap_index": 2,
+          "distance_meters": 334,
+          "slope_elevation_profile": "Tutto in salita",
+          "tee": {
+            "lat": 43.5252,
+            "lon": 13.6025,
+            "altitude": 102.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.523077,
+              "lon": 13.605395
+            },
+            "center": {
+              "lat": 43.523,
+              "lon": 13.6055,
+              "altitude": 116.0
+            },
+            "back": {
+              "lat": 43.522923,
+              "lon": 13.605605
+            }
+          }
+        }
       ]
     },
     {
@@ -86,7 +577,7 @@
       "city": "Porto Potenza Picena (MC)",
       "total_par": 34,
       "holes_count": 9,
-      "terrain_description": "Percorso interamente in pianura lungo la costa marchigiana, ideale per gioco rapido e tattico.",
+      "terrain_description": "Percorso interamente in pianura (terreno piatto senza complicazioni di pendenze o dislivelli altimetrici).",
       "tees": {
         "gialli": {
           "tee_name": "Gialli",
@@ -96,7 +587,8 @@
           "slope_rating": 128,
           "par": 34,
           "holes_count": 9,
-          "length_meters": 2770
+          "length_meters": 2770,
+          "hole_stroke_indexes": null
         },
         "rossi": {
           "tee_name": "Rossi",
@@ -106,7 +598,8 @@
           "slope_rating": 125,
           "par": 34,
           "holes_count": 9,
-          "length_meters": 2510
+          "length_meters": 2510,
+          "hole_stroke_indexes": null
         },
         "gialli_18": {
           "tee_name": "Gialli (18 Buche)",
@@ -116,7 +609,8 @@
           "slope_rating": 128,
           "par": 68,
           "holes_count": 18,
-          "length_meters": 5540
+          "length_meters": 5540,
+          "hole_stroke_indexes": null
         },
         "rossi_18": {
           "tee_name": "Rossi (18 Buche)",
@@ -126,19 +620,263 @@
           "slope_rating": 125,
           "par": 68,
           "holes_count": 18,
-          "length_meters": 5020
+          "length_meters": 5020,
+          "hole_stroke_indexes": null
         }
       },
       "holes": [
-        { "hole_number": 1, "par": 4, "handicap_index": 5, "distance_meters": 330, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 2, "par": 3, "handicap_index": 9, "distance_meters": 140, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 3, "par": 4, "handicap_index": 1, "distance_meters": 350, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 4, "par": 4, "handicap_index": 7, "distance_meters": 310, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 5, "par": 5, "handicap_index": 3, "distance_meters": 465, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 6, "par": 3, "handicap_index": 8, "distance_meters": 155, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 7, "par": 4, "handicap_index": 2, "distance_meters": 340, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 8, "par": 4, "handicap_index": 6, "distance_meters": 325, "slope_elevation_profile": "Tutto in pianura" },
-        { "hole_number": 9, "par": 3, "handicap_index": 4, "distance_meters": 135, "slope_elevation_profile": "Tutto in pianura" }
+        {
+          "hole_number": 1,
+          "buca": 1,
+          "par": 4,
+          "handicap_index": 5,
+          "distance_meters": 330,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.398,
+            "lon": 13.682,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.395593,
+              "lon": 13.683925
+            },
+            "center": {
+              "lat": 43.3955,
+              "lon": 13.684,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.395407,
+              "lon": 13.684075
+            }
+          }
+        },
+        {
+          "hole_number": 2,
+          "buca": 2,
+          "par": 3,
+          "handicap_index": 9,
+          "distance_meters": 140,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.3952,
+            "lon": 13.6842,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.394293,
+              "lon": 13.684926
+            },
+            "center": {
+              "lat": 43.3942,
+              "lon": 13.685,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.394107,
+              "lon": 13.685074
+            }
+          }
+        },
+        {
+          "hole_number": 3,
+          "buca": 3,
+          "par": 4,
+          "handicap_index": 1,
+          "distance_meters": 350,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.394,
+            "lon": 13.6852,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.391298,
+              "lon": 13.686937
+            },
+            "center": {
+              "lat": 43.3912,
+              "lon": 13.687,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.391102,
+              "lon": 13.687063
+            }
+          }
+        },
+        {
+          "hole_number": 4,
+          "buca": 4,
+          "par": 4,
+          "handicap_index": 7,
+          "distance_meters": 310,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.391,
+            "lon": 13.6872,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.393105,
+              "lon": 13.688731
+            },
+            "center": {
+              "lat": 43.3932,
+              "lon": 13.6888,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.393295,
+              "lon": 13.688869
+            }
+          }
+        },
+        {
+          "hole_number": 5,
+          "buca": 5,
+          "par": 5,
+          "handicap_index": 3,
+          "distance_meters": 465,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.3935,
+            "lon": 13.689,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.3969,
+              "lon": 13.690943
+            },
+            "center": {
+              "lat": 43.397,
+              "lon": 13.691,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.3971,
+              "lon": 13.691057
+            }
+          }
+        },
+        {
+          "hole_number": 6,
+          "buca": 6,
+          "par": 3,
+          "handicap_index": 8,
+          "distance_meters": 155,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.3972,
+            "lon": 13.6912,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.398303,
+              "lon": 13.691935
+            },
+            "center": {
+              "lat": 43.3984,
+              "lon": 13.692,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.398497,
+              "lon": 13.692065
+            }
+          }
+        },
+        {
+          "hole_number": 7,
+          "buca": 7,
+          "par": 4,
+          "handicap_index": 2,
+          "distance_meters": 340,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.3986,
+            "lon": 13.6918,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.396091,
+              "lon": 13.68958
+            },
+            "center": {
+              "lat": 43.396,
+              "lon": 13.6895,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.395909,
+              "lon": 13.68942
+            }
+          }
+        },
+        {
+          "hole_number": 8,
+          "buca": 8,
+          "par": 4,
+          "handicap_index": 6,
+          "distance_meters": 325,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.3958,
+            "lon": 13.6892,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.397429,
+              "lon": 13.686612
+            },
+            "center": {
+              "lat": 43.3975,
+              "lon": 13.6865,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.397571,
+              "lon": 13.686388
+            }
+          }
+        },
+        {
+          "hole_number": 9,
+          "buca": 9,
+          "par": 3,
+          "handicap_index": 4,
+          "distance_meters": 135,
+          "slope_elevation_profile": "Tutto in pianura",
+          "tee": {
+            "lat": 43.3978,
+            "lon": 13.6862,
+            "altitude": 5.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.398712,
+              "lon": 13.685288
+            },
+            "center": {
+              "lat": 43.3988,
+              "lon": 13.6852,
+              "altitude": 5.0
+            },
+            "back": {
+              "lat": 43.398888,
+              "lon": 13.685112
+            }
+          }
+        }
       ]
     }
   ]
