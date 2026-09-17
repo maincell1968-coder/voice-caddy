@@ -398,6 +398,12 @@ if st.session_state.auth_user is None:
                             # Re-fetch updated user and authenticate session
                             updated_user = auth_manager.get_user_by_id(u_temp.user_id)
                             st.session_state.auth_user = updated_user
+                            tg_manager.notify_admin(
+                                f"🔒 <b>Primo Accesso PC (Web)</b>\n"
+                                f"👤 <b>Utente:</b> {updated_user.first_name} {updated_user.last_name}\n"
+                                f"🏷️ <b>Gruppo:</b> {updated_user.group.upper()}\n"
+                                f"🔑 Ha impostato la sua password personale ed è entrato nel portale."
+                            )
                             st.session_state.changing_pw_user_id = None
                             st.success("✅ Password aggiornata con successo! Accesso completato.")
                             st.rerun()
@@ -494,6 +500,12 @@ if st.session_state.auth_user is None:
                             st.rerun()
                         else:
                             st.session_state.auth_user = user
+                            tg_manager.notify_admin(
+                                f"💻 <b>Accesso PC (Web)</b>\n"
+                                f"👤 <b>Utente:</b> {user.first_name} {user.last_name}\n"
+                                f"🏷️ <b>Gruppo:</b> STRAFATTI (Membro Ufficiale)\n"
+                                f"🕒 Accesso alla Dashboard completato."
+                            )
                             st.success(f"Bentornato {user.first_name}!")
                             st.rerun()
                     else:
@@ -532,6 +544,12 @@ if st.session_state.auth_user is None:
                                 st.rerun()
                             else:
                                 st.session_state.auth_user = user
+                                tg_manager.notify_admin(
+                                    f"💻 <b>Accesso PC (Web)</b>\n"
+                                    f"👤 <b>Utente:</b> {user.first_name} {user.last_name}\n"
+                                    f"🏷️ <b>Gruppo:</b> AMICI & OSPITI\n"
+                                    f"🕒 Accesso alla Dashboard completato."
+                                )
                                 st.success(f"Bentornato {user.first_name}!")
                                 st.rerun()
                         else:

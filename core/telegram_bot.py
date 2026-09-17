@@ -50,6 +50,7 @@ class VoiceCaddyTelegramBot:
         self.auth_mgr = AuthManager()
         self.course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
         self.session_mgr = LiveSessionManager()
+        self.user_modes: Dict[str, str] = {}
         self.is_running = False
 
     def _api_request(self, method: str, data: Optional[dict] = None) -> dict:
@@ -65,20 +66,58 @@ class VoiceCaddyTelegramBot:
             logging.error(f"Errore chiamata Telegram API ({method}): {e}")
             return {"ok": False, "error": str(e)}
 
-    def get_on_course_keyboard(self) -> dict:
-        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e azioni di gioco."""
+    # ---------------------------------------------------------
+    # Game Mode (Gara vs Training)
+    # ---------------------------------------------------------
+    def get_user_mode(self, chat_id: int | str) -> str:
+        """Restituisce la modalità corrente ('gara' o 'training') per la chat."""
+        cid = str(chat_id)
+        if cid not in self.user_modes:
+            self.user_modes[cid] = self.config_mgr.get_user_mode(cid)
+        return self.user_modes[cid]
+
+    def set_user_mode(self, chat_id: int | str, mode: str):
+        """Imposta la modalità ('gara' o 'training') e invia conferma con tastiera aggiornata."""
+        cid = str(chat_id)
+        clean = "gara" if "gara" in str(mode).lower() else "training"
+        self.user_modes[cid] = clean
+        self.config_mgr.set_user_mode(cid, clean)
+
+        if clean == "gara":
+            msg = (
+                "⚖️ <b>MODALITÀ GARA (R&A / USGA) ATTIVATA!</b>\n\n"
+                "In conformità alla <b>Regola 4.3</b> delle Regole del Golf:\n"
+                "• 📏 <b>Consentito:</b> riceverai la sola distanza in metri al bersaglio/green.\n"
+                "• 🚫 <b>Disattivato:</b> nessun consiglio sul bastone da usare né indicazioni strategiche.\n\n"
+                "<i>Buona gara! Per tornare alla modalità con bastoni consigliati scrivi <code>/training</code>.</i>"
+            )
+        else:
+            msg = (
+                "🎯 <b>MODALITÀ TRAINING (ALLENAMENTO) ATTIVATA!</b>\n\n"
+                "Voice Caddy ti fornirà:\n"
+                "• 📏 <b>Distanza reale</b> e <b>Plays Like Distance</b> compensata col dislivello.\n"
+                "• 🏌️‍♂️ <b>Bastone consigliato</b> ottimale dalla tua sacca personale.\n\n"
+                "<i>Per attivare la modalità regolamentare da torneo scrivi <code>/gara</code>.</i>"
+            )
+        return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(clean))
+
+    def get_on_course_keyboard(self, mode: str = "training") -> dict:
+        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e toggle Modalità Gara/Training."""
+        mode_btn = "⚖️ Modalità Gara" if mode == "training" else "🎯 Modalità Training"
         return {
             "keyboard": [
                 [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
                 [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
-                [{"text": "🎒 Profilo & Sacca"}, {"text": "🔄 Nuovo Giro"}]
+                [{"text": mode_btn}, {"text": "🎒 Profilo & Sacca"}],
+                [{"text": "🔄 Nuovo Giro"}]
             ],
             "resize_keyboard": True,
             "is_persistent": True
         }
 
     def send_message(self, chat_id: int | str, text: str, parse_mode: str = "HTML", reply_markup: Optional[dict] = None) -> dict:
-        markup = reply_markup if reply_markup is not None else self.get_on_course_keyboard()
+        mode = self.get_user_mode(chat_id)
+        markup = reply_markup if reply_markup is not None else self.get_on_course_keyboard(mode)
         return self._api_request("sendMessage", {
             "chat_id": chat_id,
             "text": text,
@@ -226,12 +265,32 @@ class VoiceCaddyTelegramBot:
         raw_dist = int(round(approach["raw_distance"]))
         pl_dist = int(round(approach["plays_like_distance"]))
         par_val = hole_info.par if hole_info else 4
+        user_mode = self.get_user_mode(chat_id)
 
-        reply_msg = (
-            f"⛳ <b>Buca {current_hole}</b> (Par {par_val}) — <b>Colpo {current_shot}</b>\n\n"
-            f"📏 <b>Distanza reale:</b> {raw_dist}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
-            f"🎯 <b>Plays Like:</b> ~{pl_dist}m (Consigliato: <b>{rec_club_str}</b>)\n"
-        )
+        # Notifica Admin al primo colpo del giro (se il giocatore non è Stefano)
+        if current_hole == 1 and current_shot == 1:
+            if user_rec and user_rec.user_id != "strafatti_stefano_pirani":
+                self.config_mgr.notify_admin(
+                    f"🏌️‍♂️ <b>Nuova Partita Live in Campo</b>\n"
+                    f"👤 <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name} ({user_rec.group.upper()})\n"
+                    f"⛳ <b>Campo:</b> {active_course.name}\n"
+                    f"⚖️ <b>Modalità:</b> {user_mode.upper()}"
+                )
+
+        if user_mode == "gara":
+            # MODALITÀ GARA (R&A Regola 4.3): Solo distanze regolamentari, divieto assoluto consiglio bastone
+            reply_msg = (
+                f"⛳ <b>Buca {current_hole}</b> (Par {par_val}) — <b>Colpo {current_shot}</b>\n\n"
+                f"📏 <b>Distanza alla bandiera:</b> <b>{raw_dist}m</b>\n\n"
+                f"⚖️ <i>Modalità Gara attiva: per la <b>Regola 4.3</b> delle Regole del Golf non posso suggerire il bastone.</i>\n"
+            )
+        else:
+            # MODALITÀ TRAINING: Distanza reale, dislivello, Plays Like e raccomandazione bastone
+            reply_msg = (
+                f"⛳ <b>Buca {current_hole}</b> (Par {par_val}) — <b>Colpo {current_shot}</b>\n\n"
+                f"📏 <b>Distanza reale:</b> {raw_dist}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
+                f"🎯 <b>Plays Like:</b> ~{pl_dist}m (Consigliato: <b>{rec_club_str}</b>)\n"
+            )
 
         if distance_covered is not None and distance_covered >= 10:
             prev_shot = max(1, current_shot - 1)
@@ -273,12 +332,21 @@ class VoiceCaddyTelegramBot:
         sign = "+" if elev_diff > 0 else ""
         elev_str = f"{sign}{int(elev_diff)}m ({slope_label})" if elev_diff != 0 else "0m (In pianura)"
 
-        reply_msg = (
-            f"📍 <b>Distanza Manuale (Paletto/Scorecard) — Buca {current_hole}</b>\n\n"
-            f"📏 <b>Distanza indicata:</b> {int(manual_distance)}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
-            f"🎯 <b>Plays Like stimato:</b> ~{int(plays_like)}m (Consigliato: <b>{rec_club_str}</b>)\n\n"
-            f"💡 <i>Per inviare la posizione GPS esatta, usa l'icona graffetta 📎 ➔ Posizione su Telegram.</i>"
-        )
+        user_mode = self.get_user_mode(chat_id)
+        if user_mode == "gara":
+            reply_msg = (
+                f"📍 <b>Distanza Manuale — Buca {current_hole}</b>\n\n"
+                f"📏 <b>Distanza indicata:</b> <b>{int(manual_distance)}m</b>\n\n"
+                f"⚖️ <i>Modalità Gara attiva: per la <b>Regola 4.3</b> non posso suggerire il bastone.</i>\n\n"
+                f"💡 <i>Per inviare la posizione GPS esatta, tocca [📍 Calcola Distanza & Plays Like].</i>"
+            )
+        else:
+            reply_msg = (
+                f"📍 <b>Distanza Manuale (Paletto/Scorecard) — Buca {current_hole}</b>\n\n"
+                f"📏 <b>Distanza indicata:</b> {int(manual_distance)}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
+                f"🎯 <b>Plays Like stimato:</b> ~{int(plays_like)}m (Consigliato: <b>{rec_club_str}</b>)\n\n"
+                f"💡 <i>Per inviare la posizione GPS esatta, tocca [📍 Calcola Distanza & Plays Like].</i>"
+            )
         return self.send_message(chat_id, reply_msg)
 
     # ---------------------------------------------------------
@@ -420,11 +488,29 @@ class VoiceCaddyTelegramBot:
     def process_text_message(self, chat_id: int | str, text: str):
         """Elabora il resoconto testuale dei colpi digitato dal golfista."""
         clean = text.strip()
+        clean_lower = clean.lower()
+
+        # Intercettazione rapida pulsanti tastiera e comandi modalità
+        if clean in ["⚖️ Modalità Gara", "🎯 Modalità Training"] or clean_lower in ["gara", "modalità gara", "training", "allenamento", "modalità training"]:
+            new_mode = "gara" if "gara" in clean_lower else "training"
+            return self.set_user_mode(chat_id, new_mode)
+
         if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"]:
             return self.handle_command(chat_id, clean)
 
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         player_name = f"{user_rec.first_name} {user_rec.last_name}"
+        user_mode = self.get_user_mode(chat_id)
+
+        # Se in modalità gara e l'utente fa domande esplicite sul bastone da tirare
+        if user_mode == "gara" and any(w in clean_lower for w in ["bastone", "mazza", "ferro", "legno", "ibrido", "che tiro", "cosa tiro", "consiglio"]):
+            return self.send_message(
+                chat_id,
+                "⚖️ <b>Modalità Gara attiva:</b>\n"
+                "In conformità alla <b>Regola 4.3 (R&A / USGA)</b>, è severamente vietato "
+                "ricevere consigli sul bastone o sulla strategia durante una gara ufficiale.\n\n"
+                "📍 <i>Tocca <b>[📍 Calcola Distanza & Plays Like]</b> per ottenere la sola distanza regolamentare in metri.</i>"
+            )
 
         # Controllo se è un update rapido di un singolo colpo durante la buca
         quick = parse_quick_shot_update(text)
@@ -505,6 +591,10 @@ class VoiceCaddyTelegramBot:
             cmd = "/profilo"
         elif "nuovo giro" in clean_text.lower() and not clean_text.startswith("/"):
             cmd = "/nuovogiro"
+        elif "gara" in clean_text.lower() and not clean_text.startswith("/"):
+            cmd = "/gara"
+        elif "training" in clean_text.lower() and not clean_text.startswith("/"):
+            cmd = "/training"
 
         # Support commands typed without space, e.g. /giocatoreStefano
         for prefix in ["/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo", "/buca", "/h", "/distanza", "/paletto"]:
@@ -547,14 +637,18 @@ class VoiceCaddyTelegramBot:
                 "• <b>Distanza reale al green</b> (metri laser in piano)\n"
                 "• <b>Dislivello altimetrico</b> (es. +8m in Salita o -10m in Discesa)\n"
                 "• <b>Plays Like Distance</b> (es. 138m ➔ gioca come 146m)\n"
-                "• <b>Bastone consigliato</b> (dalla tua sacca reale)\n\n"
+                "• <b>Bastone consigliato</b> (se in modalità Training)\n\n"
                 "3️⃣ <b>DOPO IL COLPO:</b>\n"
                 "Mentre cammini verso la palla successiva o verso il green, tieni premuto il microfono per 2 secondi e detta il colpo eseguito (es. <i>'Ferro 7 dal fairway'</i>).\n"
                 "<i>Zero attese, zero rallentamenti per i compagni di gioco!</i>\n\n"
+                "<b>⚖️ MODALITÀ DI GIOCO:</b>\n"
+                "• <code>/gara</code>: <b>Modalità Gara R&A</b> (Regola 4.3: solo distanze, nessun consiglio di bastone)\n"
+                "• <code>/training</code>: <b>Modalità Training</b> (distanza + bastone consigliato dalla sacca)\n"
+                "• <code>/modalita</code>: Mostra la modalità attiva\n\n"
                 "<b>⚙️ ALTRI COMANDI RAPIDI:</b>\n"
                 "• <code>/distanza [metri]</code>: Fallback manuale se leggi un paletto (es. <code>/distanza 138</code>)\n"
                 "• <code>/pin [offset o coords]</code>: Personalizza la profondità della bandiera\n"
-                "• <code>/stato</code>: Verifica buca e colpo attuale\n"
+                "• <code>/stato</code>: Verifica buca, colpo attuale e modalità\n"
                 "• <code>/giocatore [Nome]</code>: Collega la chat al tuo profilo\n"
                 "• <code>/campo [Nome]</code>: Imposta il percorso (es. Conero Golf Club)\n\n"
                 f"<b>👥 Giocatori Registrati:</b>\n"
@@ -566,6 +660,40 @@ class VoiceCaddyTelegramBot:
             help_msg += "\n⚖️ <i>Voice Caddy Pro &bull; Concept, Architettura e Sviluppo: <b>Stefano Pirani</b></i>\n"
 
             self.send_message(chat_id, help_msg)
+
+        elif cmd in ["/gara", "/modalitagara"]:
+            self.set_user_mode(chat_id, "gara")
+
+        elif cmd in ["/training", "/allenamento", "/modalitatraining"]:
+            self.set_user_mode(chat_id, "training")
+
+        elif cmd in ["/modalita", "/mode"]:
+            cur_mode = self.get_user_mode(chat_id)
+            cur_label = "⚖️ GARA (Regola 4.3: solo distanze, no bastone)" if cur_mode == "gara" else "🎯 TRAINING (distanza + bastone consigliato)"
+            self.send_message(
+                chat_id,
+                f"⚙️ <b>MODALITÀ DI GIOCO ATTIVA:</b>\n👉 <b>{cur_label}</b>\n\n"
+                f"• Per passare a GARA: <code>/gara</code>\n"
+                f"• Per passare a TRAINING: <code>/training</code>\n\n"
+                f"<i>Puoi anche toccare il pulsante dedicato sulla tastiera in basso!</i>"
+            )
+
+        elif cmd in ["/admin", "/setadmin"]:
+            user_rec, _, _, _ = self._resolve_context(chat_id)
+            if user_rec and (user_rec.is_admin or user_rec.user_id == "strafatti_stefano_pirani"):
+                self.config_mgr.set_admin_chat_id(chat_id)
+                self.send_message(
+                    chat_id,
+                    f"👑 <b>Accesso Amministratore Riconosciuto!</b>\n\n"
+                    f"Chat ID <code>{chat_id}</code> registrato come Amministratore Principale (<b>{user_rec.first_name} {user_rec.last_name}</b>).\n"
+                    f"🔔 Riceverai notifiche Telegram istantanee quando i giocatori accedono da PC (Web) o da smartphone (Telegram)."
+                )
+            else:
+                self.send_message(
+                    chat_id,
+                    "⚠️ <i>Questo comando è riservato all'Amministratore (Stefano Pirani).</i>\n"
+                    "Collega prima il tuo profilo con <code>/giocatore Stefano</code>."
+                )
 
         elif cmd in ["/buca", "/h"]:
             if not args or not args[0].isdigit():
@@ -637,6 +765,8 @@ class VoiceCaddyTelegramBot:
             last_lat = session.get("last_latitude")
             last_lon = session.get("last_longitude")
             pos_str = f"{last_lat:.5f}, {last_lon:.5f}" if (last_lat and last_lon) else "Nessuna posizione registrata"
+            cur_mode = self.get_user_mode(chat_id)
+            mode_str = "⚖️ GARA (Solo distanze, Regola 4.3)" if cur_mode == "gara" else "🎯 TRAINING (Distanza + Bastoni)"
 
             self.send_message(
                 chat_id,
@@ -645,8 +775,9 @@ class VoiceCaddyTelegramBot:
                 f"• <b>Campo:</b> {active_course.name}\n"
                 f"• <b>Buca Attiva:</b> {h_num}\n"
                 f"• <b>Colpo Corrente:</b> {s_idx}\n"
+                f"• <b>Modalità:</b> {mode_str}\n"
                 f"• <b>Ultima Posizione GPS:</b> {pos_str}\n\n"
-                f"<i>Invia la posizione per calcolare la distanza e il bastone consigliato!</i>"
+                f"<i>Invia la posizione GPS per calcolare la distanza!</i>"
             )
 
         elif cmd in ["/nuovogiro", "/reset"]:
@@ -712,15 +843,32 @@ class VoiceCaddyTelegramBot:
                     first_name=matched_user.first_name
                 )
                 prof = UserProfile.load_for_user(matched_user.user_id)
+                cur_mode = self.get_user_mode(chat_id)
+                mode_str = "⚖️ GARA (Regola 4.3)" if cur_mode == "gara" else "🎯 TRAINING"
+
+                # Se l'utente collegato è Stefano (Amministratore), registra il suo chat_id per ricevere gli avvisi
+                if matched_user.is_admin or matched_user.user_id == "strafatti_stefano_pirani":
+                    self.config_mgr.set_admin_chat_id(chat_id)
+
                 self.send_message(
                     chat_id,
                     f"✅ <b>Chat collegata con successo a {matched_user.first_name} {matched_user.last_name}!</b>\n\n"
                     f"• <b>Gruppo:</b> {matched_user.group.upper()}\n"
                     f"• <b>Handicap Registrato:</b> {prof.handicap}\n"
                     f"• <b>Categoria & Tono Caddie:</b> {prof.category.value}\n"
+                    f"• <b>Modalità Attiva:</b> {mode_str}\n"
                     f"• <b>Mazza più lunga:</b> {prof.clubs_in_bag[0].club_name if prof.clubs_in_bag else 'Driver'}\n\n"
                     f"🏌️ Ora puoi inviare le coordinate GPS o note vocali durante il gioco!"
                 )
+
+                # Notifica all'amministratore (Stefano) dell'accesso via Telegram di un compagno
+                if not matched_user.is_admin and matched_user.user_id != "strafatti_stefano_pirani":
+                    self.config_mgr.notify_admin(
+                        f"📱 <b>Nuovo Accesso Telefono (Telegram)</b>\n"
+                        f"👤 <b>Utente:</b> {matched_user.first_name} {matched_user.last_name}\n"
+                        f"🏷️ <b>Gruppo:</b> {matched_user.group.upper()}\n"
+                        f"💬 Ha appena collegato il suo account Telegram."
+                    )
             else:
                 self.send_message(
                     chat_id,

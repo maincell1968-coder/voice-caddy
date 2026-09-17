@@ -182,3 +182,106 @@ class TelegramConfigManager:
             }
         with open(self.users_map_file, "w", encoding="utf-8") as f:
             json.dump(mapping, f, indent=4, ensure_ascii=False)
+
+    # ---------------------------------------------------------
+    # Player Mode (Gara vs Training)
+    # ---------------------------------------------------------
+    def get_user_mode(self, chat_id: int | str) -> str:
+        """
+        Ritorna la modalità del giocatore per questa chat:
+        'gara' (Regola 4.3 R&A, solo distanze, no consiglio mazza) oppure 'training' (distanza + bastone).
+        Default: 'training'.
+        """
+        mapping = self.load_users_map()
+        return mapping.get(str(chat_id), {}).get("mode", "training")
+
+    def set_user_mode(self, chat_id: int | str, mode: str):
+        """Imposta la modalità per la chat: 'training' o 'gara' in modo persistente."""
+        clean_mode = "gara" if "gara" in str(mode).lower() else "training"
+        mapping = self.load_users_map()
+        cid = str(chat_id)
+        if cid in mapping:
+            mapping[cid]["mode"] = clean_mode
+        else:
+            mapping[cid] = {
+                "user_id": "strafatti_stefano_pirani",
+                "group_name": "strafatti",
+                "first_name": "Stefano",
+                "active_course_name": "Conero Golf Club",
+                "mode": clean_mode
+            }
+        with open(self.users_map_file, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=4, ensure_ascii=False)
+
+    # ---------------------------------------------------------
+    # Admin Notifications (Stefano Pirani)
+    # ---------------------------------------------------------
+    def get_admin_chat_id(self) -> Optional[str]:
+        """
+        Recupera il chat_id dell'amministratore (Stefano Pirani):
+        1. Da telegram_config.json ("admin_chat_id")
+        2. Dalla mappa telegram_users.json (chat associata a Stefano)
+        3. Da variabile d'ambiente TELEGRAM_ADMIN_CHAT_ID
+        """
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    admin_id = data.get("admin_chat_id")
+                    if admin_id:
+                        return str(admin_id)
+            except Exception:
+                pass
+
+        # Cerca nella mappa utenti telegram
+        mapping = self.load_users_map()
+        for cid, uinfo in mapping.items():
+            u_id = uinfo.get("user_id", "")
+            if u_id == "strafatti_stefano_pirani" or uinfo.get("first_name", "").lower() == "stefano":
+                return str(cid)
+
+        # Variabile d'ambiente
+        env_admin = os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "").strip()
+        return env_admin if env_admin else None
+
+    def set_admin_chat_id(self, chat_id: int | str):
+        """Salva il chat_id dell'amministratore in telegram_config.json."""
+        data = {}
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data["admin_chat_id"] = str(chat_id)
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+    def notify_admin(self, message: str) -> bool:
+        """
+        Invia una notifica Telegram all'Amministratore (Stefano Pirani).
+        Silenzioso e sicuro: non solleva mai eccezioni né blocca l'applicazione se Telegram è offline.
+        """
+        bot_token = self.get_token()
+        admin_chat_id = self.get_admin_chat_id()
+        if not bot_token or not admin_chat_id:
+            return False
+
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = json.dumps({
+            "chat_id": admin_chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }).encode("utf-8")
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "VoiceCaddy/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                return bool(res.get("ok"))
+        except Exception:
+            return False
