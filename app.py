@@ -25,6 +25,7 @@ from core.ai_provider import test_ai_connection, AIProviderError
 from core.telegram_config import TelegramConfigManager
 from core.elevation_service import elevation_service, haversine_distance, calculate_plays_like
 from core.live_session import LiveSessionManager
+from golf_rules_module import render_rules_academy
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
@@ -1112,7 +1113,8 @@ tab_titles = [
     "📍 Pin Position & Plays Like GPS",
     "🏌️‍♂️ Profilo Personale & Sacca Mazze",
     "📈 Storico Partite & Trend",
-    "🎯 Benchmark & Strokes Gained"
+    "🎯 Benchmark & Strokes Gained",
+    "🎓 Rules Academy"
 ]
 if current_user.is_admin:
     tab_titles.append("👑 Amministrazione & Utenti")
@@ -1123,7 +1125,8 @@ nav_pin_gps = all_tabs[1]
 nav_tab2 = all_tabs[2]
 nav_tab3 = all_tabs[3]
 nav_tab4 = all_tabs[4]
-nav_admin = all_tabs[5] if current_user.is_admin else None
+nav_rules = all_tabs[5]
+nav_admin = all_tabs[6] if current_user.is_admin else None
 
 
 # ---------------------------------------------------------
@@ -1641,7 +1644,14 @@ with nav_tab4:
 
 
 # ---------------------------------------------------------
-# TAB 5: ADMIN & USERS MANAGEMENT (EXCLUSIVE FOR STEFANO)
+# TAB 6: RULES ACADEMY (STUDIO REGOLE R&A & QUIZ)
+# ---------------------------------------------------------
+with nav_rules:
+    render_rules_academy()
+
+
+# ---------------------------------------------------------
+# TAB 7: ADMIN & USERS MANAGEMENT (EXCLUSIVE FOR STEFANO)
 # ---------------------------------------------------------
 if current_user.is_admin and nav_admin:
     with nav_admin:
