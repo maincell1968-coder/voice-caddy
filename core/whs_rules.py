@@ -141,6 +141,31 @@ def calculate_playing_handicap(course_hcp: float, format_percentage: float = 0.9
     return round_half_up(round(val, 4))
 
 
+def get_strokes_for_hole(playing_hcp: int, hole_stroke_index: int, holes_count: int = 18) -> int:
+    """
+    Funzione pura deterministica per calcolare i colpi ricevuti su una singola buca (WHS):
+    - Colpi base = floor(playing_hcp / holes_count)
+    - Colpo addizionale (+1) se hole_stroke_index <= (playing_hcp % holes_count)
+    - Restituisce i colpi ricevuti totali su quella specifica buca.
+    Supporta percorsi a 18 e 9 buche e handicap plus (negativi).
+    """
+    if holes_count <= 0:
+        holes_count = 18
+
+    if playing_hcp >= 0:
+        base_strokes = playing_hcp // holes_count
+        remainder = playing_hcp % holes_count
+        extra = 1 if (1 <= hole_stroke_index <= remainder) else 0
+        return base_strokes + extra
+    else:
+        # Handicap scratch/plus negativi: restituiscono colpi sulle buche con SI più alto
+        abs_hcp = abs(playing_hcp)
+        base_deduct = abs_hcp // holes_count
+        remainder = abs_hcp % holes_count
+        extra_deduct = 1 if (hole_stroke_index > (holes_count - remainder)) else 0
+        return -(base_deduct + extra_deduct)
+
+
 def allocate_hole_strokes(
     playing_hcp: int,
     stroke_indices: Dict[int, int],
@@ -159,26 +184,14 @@ def allocate_hole_strokes(
         holes_count = 18
 
     table: Dict[int, int] = {}
-
-    if playing_hcp >= 0:
-        base_strokes = playing_hcp // holes_count
-        remainder = playing_hcp % holes_count
-
-        for hole_num, si in stroke_indices.items():
-            extra = 1 if (si is not None and si <= remainder) else 0
-            table[hole_num] = base_strokes + extra
-    else:
-        # Giocatori Plus (Handicap positivo/scratch elevato): restituiscono colpi
-        abs_hcp = abs(playing_hcp)
-        base_deduct = abs_hcp // holes_count
-        remainder = abs_hcp % holes_count
-
-        # Nel WHS, i giocatori plus cedono colpi a partire dalla buca con SI più alto (più facile)
-        for hole_num, si in stroke_indices.items():
-            extra_deduct = 1 if (si is not None and si > (holes_count - remainder)) else 0
-            table[hole_num] = -(base_deduct + extra_deduct)
+    for hole_num, si in stroke_indices.items():
+        if si is not None:
+            table[hole_num] = get_strokes_for_hole(playing_hcp, si, holes_count)
+        else:
+            table[hole_num] = get_strokes_for_hole(playing_hcp, hole_num, holes_count)
 
     return table
+
 
 
 def calculate_hole_score(

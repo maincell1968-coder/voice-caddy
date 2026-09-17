@@ -1,0 +1,145 @@
+{
+  "courses": [
+    {
+      "course_id": "conero_golf_club",
+      "name": "Conero Golf Club",
+      "city": "Sirolo (AN)",
+      "total_par": 71,
+      "holes_count": 18,
+      "terrain_description": "Percorso tecnico e collinare nel Parco del Conero con dislivelli significativi e buche orograficamente varie.",
+      "tees": {
+        "bianchi": {
+          "tee_name": "Bianchi",
+          "color_code": "white",
+          "gender": "Uomini",
+          "course_rating": 71.4,
+          "slope_rating": 129,
+          "par": 71,
+          "holes_count": 18,
+          "length_meters": 6023
+        },
+        "gialli": {
+          "tee_name": "Gialli",
+          "color_code": "yellow",
+          "gender": "Uomini",
+          "course_rating": 70.2,
+          "slope_rating": 129,
+          "par": 71,
+          "holes_count": 18,
+          "length_meters": 5996
+        },
+        "verdi": {
+          "tee_name": "Verdi",
+          "color_code": "green",
+          "gender": "Uomini",
+          "course_rating": 68.0,
+          "slope_rating": 123,
+          "par": 71,
+          "holes_count": 18,
+          "length_meters": 5540
+        },
+        "rossi": {
+          "tee_name": "Rossi",
+          "color_code": "red",
+          "gender": "Donne",
+          "course_rating": 73.3,
+          "slope_rating": 125,
+          "par": 71,
+          "holes_count": 18,
+          "length_meters": 5417
+        },
+        "arancioni": {
+          "tee_name": "Arancioni",
+          "color_code": "orange",
+          "gender": "Donne",
+          "course_rating": 69.5,
+          "slope_rating": 118,
+          "par": 71,
+          "holes_count": 18,
+          "length_meters": 4980
+        }
+      },
+      "holes": [
+        { "hole_number": 1, "par": 4, "handicap_index": 5, "distance_meters": 342, "slope_elevation_profile": "Primi 2/3 in pianura, ultimo terzo in salita" },
+        { "hole_number": 2, "par": 3, "handicap_index": 17, "distance_meters": 134, "slope_elevation_profile": "In discesa" },
+        { "hole_number": 3, "par": 4, "handicap_index": 3, "distance_meters": 402, "slope_elevation_profile": "Primi 2/3 in discesa, ultimo terzo in pianura" },
+        { "hole_number": 4, "par": 5, "handicap_index": 15, "distance_meters": 433, "slope_elevation_profile": "In pianura" },
+        { "hole_number": 5, "par": 4, "handicap_index": 9, "distance_meters": 292, "slope_elevation_profile": "In pianura" },
+        { "hole_number": 6, "par": 3, "handicap_index": 13, "distance_meters": 139, "slope_elevation_profile": "In pianura" },
+        { "hole_number": 7, "par": 4, "handicap_index": 7, "distance_meters": 320, "slope_elevation_profile": "Primo terzo in pianura, 2/3 finali in salita" },
+        { "hole_number": 8, "par": 4, "handicap_index": 11, "distance_meters": 343, "slope_elevation_profile": "Prima metà in discesa, resto in pianura" },
+        { "hole_number": 9, "par": 4, "handicap_index": 1, "distance_meters": 390, "slope_elevation_profile": "Prima metà in salita, seconda metà in leggera salita" },
+        { "hole_number": 10, "par": 4, "handicap_index": 10, "distance_meters": 334, "slope_elevation_profile": "Prima metà in discesa, seconda metà in salita" },
+        { "hole_number": 11, "par": 4, "handicap_index": 6, "distance_meters": 307, "slope_elevation_profile": "Tutto in salita" },
+        { "hole_number": 12, "par": 5, "handicap_index": 18, "distance_meters": 477, "slope_elevation_profile": "Tutto in discesa" },
+        { "hole_number": 13, "par": 3, "handicap_index": 14, "distance_meters": 168, "slope_elevation_profile": "In pianura" },
+        { "hole_number": 14, "par": 4, "handicap_index": 12, "distance_meters": 287, "slope_elevation_profile": "In pianura" },
+        { "hole_number": 15, "par": 5, "handicap_index": 4, "distance_meters": 500, "slope_elevation_profile": "In pianura" },
+        { "hole_number": 16, "par": 3, "handicap_index": 16, "distance_meters": 133, "slope_elevation_profile": "In salita" },
+        { "hole_number": 17, "par": 4, "handicap_index": 8, "distance_meters": 376, "slope_elevation_profile": "Tutto in discesa" },
+        { "hole_number": 18, "par": 4, "handicap_index": 2, "distance_meters": 334, "slope_elevation_profile": "Tutto in salita" }
+      ]
+    },
+    {
+      "course_id": "torrenova_golf_club",
+      "name": "Torrenova Golf",
+      "city": "Porto Potenza Picena (MC)",
+      "total_par": 34,
+      "holes_count": 9,
+      "terrain_description": "Percorso interamente in pianura lungo la costa marchigiana, ideale per gioco rapido e tattico.",
+      "tees": {
+        "gialli": {
+          "tee_name": "Gialli",
+          "color_code": "yellow",
+          "gender": "Uomini",
+          "course_rating": 34.9,
+          "slope_rating": 128,
+          "par": 34,
+          "holes_count": 9,
+          "length_meters": 2770
+        },
+        "rossi": {
+          "tee_name": "Rossi",
+          "color_code": "red",
+          "gender": "Donne",
+          "course_rating": 35.4,
+          "slope_rating": 125,
+          "par": 34,
+          "holes_count": 9,
+          "length_meters": 2510
+        },
+        "gialli_18": {
+          "tee_name": "Gialli (18 Buche)",
+          "color_code": "yellow",
+          "gender": "Uomini",
+          "course_rating": 69.8,
+          "slope_rating": 128,
+          "par": 68,
+          "holes_count": 18,
+          "length_meters": 5540
+        },
+        "rossi_18": {
+          "tee_name": "Rossi (18 Buche)",
+          "color_code": "red",
+          "gender": "Donne",
+          "course_rating": 70.8,
+          "slope_rating": 125,
+          "par": 68,
+          "holes_count": 18,
+          "length_meters": 5020
+        }
+      },
+      "holes": [
+        { "hole_number": 1, "par": 4, "handicap_index": 5, "distance_meters": 330, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 2, "par": 3, "handicap_index": 9, "distance_meters": 140, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 3, "par": 4, "handicap_index": 1, "distance_meters": 350, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 4, "par": 4, "handicap_index": 7, "distance_meters": 310, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 5, "par": 5, "handicap_index": 3, "distance_meters": 465, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 6, "par": 3, "handicap_index": 8, "distance_meters": 155, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 7, "par": 4, "handicap_index": 2, "distance_meters": 340, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 8, "par": 4, "handicap_index": 6, "distance_meters": 325, "slope_elevation_profile": "Tutto in pianura" },
+        { "hole_number": 9, "par": 3, "handicap_index": 4, "distance_meters": 135, "slope_elevation_profile": "Tutto in pianura" }
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@ ENV/
 # Voice Caddy Local Data & Temp (Users, Passwords, Profiles, DB)
 data/*
 !data/golf_rules_db.json
+!data/golf_courses.json
 *.db
 *.wav
 *.m4a
