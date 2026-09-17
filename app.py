@@ -247,63 +247,60 @@ if "selected_course_id" not in st.session_state:
 
 def inject_autofill_cleaner(username_val: str = ""):
     """
-    Prevents browser password managers from erroneously associating API keys
-    or model parameters (e.g. groq/compound-mini, base) with login passwords,
-    and explicitly binds the selected username to the login password input.
+    Disabilita in modo categorico l'autofill e la memorizzazione automatica delle password
+    da parte dei browser (Chrome, Edge, Firefox, Safari) e password manager esterni.
+    Garantisce che il campo password sia sempre completamente vuoto all'accesso o al cambio utente.
     """
-    escaped_user = (username_val or "").replace('"', '\\"')
-    components.html(f"""
+    components.html("""
         <script>
-            (function() {{
-                try {{
+            (function() {
+                try {
                     const parentDoc = window.parent.document;
-                    let userField = parentDoc.getElementById('vc_autofill_username');
-                    if (!userField) {{
-                        userField = parentDoc.createElement('input');
-                        userField.type = 'text';
-                        userField.id = 'vc_autofill_username';
-                        userField.name = 'username';
-                        userField.autocomplete = 'username';
-                        userField.style.position = 'absolute';
-                        userField.style.opacity = '0';
-                        userField.style.pointerEvents = 'none';
-                        userField.style.left = '-9999px';
-                        userField.tabIndex = -1;
-                        parentDoc.body.appendChild(userField);
-                    }}
-                    if ("{escaped_user}") {{
-                        userField.value = "{escaped_user}";
-                    }}
 
-                    function sanitizeInputs() {{
+                    // Rimuove eventuali campi nascosti legacy usati per autofill
+                    const oldUserField = parentDoc.getElementById('vc_autofill_username');
+                    if (oldUserField) {
+                        oldUserField.remove();
+                    }
+
+                    function sanitizePasswordInputs() {
+                        const forms = parentDoc.querySelectorAll('form');
+                        forms.forEach(f => {
+                            f.setAttribute('autocomplete', 'off');
+                        });
+
                         const pwInputs = parentDoc.querySelectorAll('input[type="password"]');
-                        pwInputs.forEach(input => {{
-                            const label = (input.getAttribute('aria-label') || '').toLowerCase();
-                            const placeholder = (input.getAttribute('placeholder') || '').toLowerCase();
-                            const isApiKey = label.includes('api') || label.includes('token') || label.includes('chiave') ||
-                                             placeholder.includes('token') || placeholder.includes('api');
-                            if (isApiKey) {{
-                                input.setAttribute('autocomplete', 'new-password');
-                                input.setAttribute('data-lpignore', 'true');
-                                input.setAttribute('data-1p-ignore', 'true');
-                                input.setAttribute('data-form-type', 'other');
-                            }} else {{
-                                input.setAttribute('autocomplete', 'current-password');
-                            }}
-                        }});
-                    }}
-                    sanitizeInputs();
-                    setTimeout(sanitizeInputs, 400);
-                    setTimeout(sanitizeInputs, 1200);
+                        pwInputs.forEach(input => {
+                            // Disabilita espressamente suggerimenti, autofill e salvataggio
+                            input.setAttribute('autocomplete', 'new-password');
+                            input.setAttribute('data-lpignore', 'true');
+                            input.setAttribute('data-1p-ignore', 'true');
+                            input.setAttribute('data-bwignore', 'true');
+                            input.setAttribute('data-form-type', 'other');
+                            input.setAttribute('autocapitalize', 'off');
+                            input.setAttribute('autocorrect', 'off');
+                            input.setAttribute('spellcheck', 'false');
 
-                    // Observe DOM changes in Streamlit containers
-                    if (!window._vc_observer_attached) {{
-                        window._vc_observer_attached = true;
-                        const observer = new MutationObserver(() => sanitizeInputs());
-                        observer.observe(parentDoc.body, {{ childList: true, subtree: true }});
-                    }}
-                }} catch (e) {{}}
-            }})();
+                            // Se l'input non ha ancora il tag di protezione, assegna un name univoco
+                            if (!input.getAttribute('data-vc-clean')) {
+                                input.setAttribute('data-vc-clean', 'true');
+                                input.setAttribute('name', 'vc_auth_pwd_' + Math.random().toString(36).substring(7));
+                            }
+                        });
+                    }
+
+                    sanitizePasswordInputs();
+                    setTimeout(sanitizePasswordInputs, 150);
+                    setTimeout(sanitizePasswordInputs, 500);
+                    setTimeout(sanitizePasswordInputs, 1200);
+
+                    if (!window._vc_clean_observer) {
+                        window._vc_clean_observer = true;
+                        const observer = new MutationObserver(() => sanitizePasswordInputs());
+                        observer.observe(parentDoc.body, { childList: true, subtree: true });
+                    }
+                } catch (e) {}
+            })();
         </script>
     """, height=0, width=0)
 
@@ -391,6 +388,7 @@ if st.session_state.auth_user is None:
         col_pw1, col_pw2, col_pw3 = st.columns([1, 2, 1])
         with col_pw2:
             with st.form("form_change_initial_pw"):
+                inject_autofill_cleaner()
                 new_pw = st.text_input("Nuova Password Personale", type="password", help="Almeno 4 caratteri")
                 new_pw_confirm = st.text_input("Conferma Nuova Password", type="password")
                 submit_pw = st.form_submit_button("💾 Salva Nuova Password ed Entra nel Dashboard", type="primary", use_container_width=True)
@@ -474,8 +472,10 @@ if st.session_state.auth_user is None:
                 </div>
             """, unsafe_allow_html=True)
 
+            if "strafatti_login_error" in st.session_state:
+                st.error(st.session_state.pop("strafatti_login_error"))
+
             with st.form("form_login_strafatti"):
-                # Autocomplete / Selector or custom text
                 member_names = [
                     "Stefano",
                     "Giorgio",
@@ -489,16 +489,19 @@ if st.session_state.auth_user is None:
                 strafatti_user_input = st.selectbox(
                     "Seleziona il tuo Profilo Utente:",
                     options=member_names,
-                    index=0
+                    index=0,
+                    key="strafatti_user_select"
                 )
                 inject_autofill_cleaner(strafatti_user_input)
 
+                pw_ver = st.session_state.get("strafatti_pw_version", 0)
                 strafatti_pw_input = st.text_input(
                     "Password (al primo accesso inserisci il tuo Cognome):",
                     type="password",
-                    placeholder="Inserisci la tua password..."
+                    placeholder="Inserisci la tua password...",
+                    key=f"strafatti_pw_{strafatti_user_input}_{pw_ver}"
                 )
-                st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate (es. 'groq/compound-mini' o 'base'), clicca su <b>Gestisci password...</b> nel menu del browser per eliminarle.</i></div>", unsafe_allow_html=True)
+                st.caption("🔒 *Autofill disattivato: il campo rimane sempre vuoto per evitare errori di compilazione.*")
                 submit_strafatti = st.form_submit_button("🚀 Entra nel Club Strafatti", type="primary", use_container_width=True)
 
                 if submit_strafatti:
@@ -519,7 +522,10 @@ if st.session_state.auth_user is None:
                             st.success(f"Bentornato {user.first_name}!")
                             st.rerun()
                     else:
-                        st.error(f"⛔ {msg}")
+                        st.session_state["strafatti_login_error"] = f"⛔ {msg}"
+                        # Incrementa versione: al rerun il campo password sarà immediatamente vuoto
+                        st.session_state["strafatti_pw_version"] = pw_ver + 1
+                        st.rerun()
 
         else:
             st.markdown("""
@@ -531,15 +537,21 @@ if st.session_state.auth_user is None:
                 </div>
             """, unsafe_allow_html=True)
 
+            if "amici_login_error" in st.session_state:
+                st.error(st.session_state.pop("amici_login_error"))
+
             with st.form("form_login_amici"):
-                amici_name_input = st.text_input("Il tuo Nome:", placeholder="es. Mario")
+                amici_name_input = st.text_input("Il tuo Nome:", placeholder="es. Mario", key="amici_name_input")
                 inject_autofill_cleaner(amici_name_input)
+
+                amici_pw_ver = st.session_state.get("amici_pw_version", 0)
                 amici_pw_input = st.text_input(
                     "Password (al primo accesso inserisci il tuo Cognome):",
                     type="password",
-                    placeholder="es. Rossi"
+                    placeholder="es. Rossi",
+                    key=f"amici_pw_{amici_pw_ver}"
                 )
-                st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate, puoi eliminarle da <b>Gestisci password...</b></i></div>", unsafe_allow_html=True)
+                st.caption("🔒 *Autofill disattivato: il campo rimane sempre vuoto per evitare errori di compilazione.*")
                 submit_amici = st.form_submit_button("🚀 Accedi come Amico", type="primary", use_container_width=True)
 
                 if submit_amici:
@@ -563,7 +575,9 @@ if st.session_state.auth_user is None:
                                 st.success(f"Bentornato {user.first_name}!")
                                 st.rerun()
                         else:
-                            st.error(f"⛔ {msg}")
+                            st.session_state["amici_login_error"] = f"⛔ {msg}"
+                            st.session_state["amici_pw_version"] = amici_pw_ver + 1
+                            st.rerun()
 
     # Visualizza footer di copyright anche sulla schermata di accesso
     render_footer()
