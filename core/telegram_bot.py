@@ -21,6 +21,7 @@ from core.demo_data import get_demo_golf_round
 from core.telegram_config import TelegramConfigManager
 from core.elevation_service import elevation_service, haversine_distance
 from core.live_session import LiveSessionManager
+from core.weather_service import weather_service
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -51,6 +52,7 @@ class VoiceCaddyTelegramBot:
         self.course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
         self.session_mgr = LiveSessionManager()
         self.user_modes: Dict[str, str] = {}
+        self.pending_weather: Dict[str, bool] = {}
         self.is_running = False
 
     def _api_request(self, method: str, data: Optional[dict] = None) -> dict:
@@ -67,7 +69,7 @@ class VoiceCaddyTelegramBot:
             return {"ok": False, "error": str(e)}
 
     # ---------------------------------------------------------
-    # Game Mode (Gara vs Training)
+    # Game Mode (Gara vs Training) & Weather Round Startup
     # ---------------------------------------------------------
     def get_user_mode(self, chat_id: int | str) -> str:
         """Restituisce la modalità corrente ('gara' o 'training') per la chat."""
@@ -100,6 +102,35 @@ class VoiceCaddyTelegramBot:
                 "<i>Per attivare la modalità regolamentare da torneo scrivi <code>/gara</code>.</i>"
             )
         return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(clean))
+
+    def get_weather_request_keyboard(self) -> dict:
+        """Restituisce la tastiera temporanea a 1 tocco per inviare la posizione all'avvio del round."""
+        return {
+            "keyboard": [
+                [{"text": "📍 Invia posizione per rilevare il vento", "request_location": True}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+
+    def start_round_flow(self, chat_id: int | str, mode: Optional[str] = None):
+        """
+        Avvia il round chiedendo la posizione per rilevare meteo e vento sul campo
+        tramite l'API gratuita di Open-Meteo.
+        """
+        cid = str(chat_id)
+        if mode:
+            clean = "gara" if "gara" in str(mode).lower() else "training"
+            self.user_modes[cid] = clean
+            self.config_mgr.set_user_mode(cid, clean)
+
+        self.pending_weather[cid] = True
+        msg = "Ottimo, buon giro! Tocca il pulsante qui sotto per rilevare il campo e calcolare vento e meteo sul percorso."
+        return self.send_message(
+            chat_id,
+            msg,
+            reply_markup=self.get_weather_request_keyboard()
+        )
 
     def get_on_course_keyboard(self, mode: str = "training") -> dict:
         """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e toggle Modalità Gara/Training."""
@@ -192,6 +223,47 @@ class VoiceCaddyTelegramBot:
         5. Suggerisce il bastone ideale dalla sacca personale del giocatore.
         6. Invia una risposta sintetica ed immediata.
         """
+        # Controllo se è la posizione iniziale richiesta per meteo & vento
+        cid = str(chat_id)
+        if self.pending_weather.get(cid, False):
+            self.pending_weather[cid] = False
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            user_mode = self.get_user_mode(chat_id)
+            mode_label = "GARA (Regola 4.3)" if user_mode == "gara" else "TRAINING"
+
+            # Reset sessione alla Buca 1 per il nuovo giro
+            self.session_mgr.reset_session(chat_id)
+
+            # Rileva meteo e vento in tempo reale da Open-Meteo
+            w = weather_service.get_current_weather(lat, lon)
+            cond = w.get("weather_desc", "Sereno ☀️")
+            temp = w.get("temperature", 20.0)
+            w_speed = w.get("wind_speed", 0.0)
+            w_card = w.get("wind_cardinal", "N")
+            w_arrow = w.get("wind_arrow", "⬇️")
+            w_gusts = w.get("wind_gusts", w_speed)
+
+            # Notifica all'amministratore (se giocatore diverso da Stefano)
+            if user_rec and user_rec.user_id != "strafatti_stefano_pirani":
+                self.config_mgr.notify_admin(
+                    f"🏌️‍♂️ <b>Avvio Partita Live in Campo</b>\n"
+                    f"👤 <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name}\n"
+                    f"⛳ <b>Campo:</b> {active_course.name}\n"
+                    f"💨 <b>Vento:</b> {w_speed} km/h da {w_card} {w_arrow} (Raffiche: {w_gusts} km/h)\n"
+                    f"⚖️ <b>Modalità:</b> {user_mode.upper()}"
+                )
+
+            reply_msg = (
+                f"🏌️‍♂️ <b>Modalità Round Attivata! ({mode_label})</b>\n\n"
+                f"🌤️ <b>Meteo:</b> {cond}, {temp}°C\n"
+                f"💨 <b>Vento medio:</b> {w_speed} km/h da {w_card} {w_arrow}\n"
+                f"⚠️ <b>Raffiche:</b> fino a {w_gusts} km/h\n\n"
+                f"⛳ <i>Sei sul Tee della Buca 1. Tira il colpo di partenza e tocca "
+                f"<b>[📍 Calcola Distanza & Plays Like]</b> appena arrivi sulla palla!</i>"
+            )
+            # Rimuove il pulsante temporaneo e ripristina la tastiera da gioco persistente
+            return self.send_message(chat_id, reply_msg, reply_markup=self.get_on_course_keyboard(user_mode))
+
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id)
 
@@ -489,11 +561,19 @@ class VoiceCaddyTelegramBot:
         """Elabora il resoconto testuale dei colpi digitato dal golfista."""
         clean = text.strip()
         clean_lower = clean.lower()
-
-        # Intercettazione rapida pulsanti tastiera e comandi modalità
-        if clean in ["⚖️ Modalità Gara", "🎯 Modalità Training"] or clean_lower in ["gara", "modalità gara", "training", "allenamento", "modalità training"]:
-            new_mode = "gara" if "gara" in clean_lower else "training"
-            return self.set_user_mode(chat_id, new_mode)
+        # Intercettazione avvio round con richiesta meteo & vento a 1 tocco
+        start_keywords = [
+            "gara", "training", "allenamento", "meteo", "vento",
+            "start round", "start_round", "inizio round", "avvia giro"
+        ]
+        if clean in ["⚖️ Modalità Gara", "🎯 Modalità Training"] or any(kw in clean_lower for kw in start_keywords):
+            if "gara" in clean_lower:
+                new_mode = "gara"
+            elif any(k in clean_lower for k in ["training", "allenamento"]):
+                new_mode = "training"
+            else:
+                new_mode = self.get_user_mode(chat_id)
+            return self.start_round_flow(chat_id, new_mode)
 
         if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"]:
             return self.handle_command(chat_id, clean)
@@ -595,6 +675,8 @@ class VoiceCaddyTelegramBot:
             cmd = "/gara"
         elif "training" in clean_text.lower() and not clean_text.startswith("/"):
             cmd = "/training"
+        elif any(k in clean_text.lower() for k in ["start_round", "start round", "meteo", "vento"]):
+            cmd = "/start_round"
 
         # Support commands typed without space, e.g. /giocatoreStefano
         for prefix in ["/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo", "/buca", "/h", "/distanza", "/paletto"]:
@@ -641,9 +723,11 @@ class VoiceCaddyTelegramBot:
                 "3️⃣ <b>DOPO IL COLPO:</b>\n"
                 "Mentre cammini verso la palla successiva o verso il green, tieni premuto il microfono per 2 secondi e detta il colpo eseguito (es. <i>'Ferro 7 dal fairway'</i>).\n"
                 "<i>Zero attese, zero rallentamenti per i compagni di gioco!</i>\n\n"
-                "<b>⚖️ MODALITÀ DI GIOCO:</b>\n"
-                "• <code>/gara</code>: <b>Modalità Gara R&A</b> (Regola 4.3: solo distanze, nessun consiglio di bastone)\n"
-                "• <code>/training</code>: <b>Modalità Training</b> (distanza + bastone consigliato dalla sacca)\n"
+                "<b>⚖️ AVVIO ROUND & METEO:</b>\n"
+                "• <code>/start_round</code>: Avvia il giro con rilevamento meteo e vento in tempo reale\n"
+                "• <code>/gara</code>: Avvia il giro in <b>Modalità Gara R&A</b> (Regola 4.3: solo distanze)\n"
+                "• <code>/training</code>: Avvia il giro in <b>Modalità Training</b> (distanza + bastone consigliato)\n"
+                "• <code>/meteo</code> o <code>/vento</code>: Calcola vento e meteo sul percorso via GPS\n"
                 "• <code>/modalita</code>: Mostra la modalità attiva\n\n"
                 "<b>⚙️ ALTRI COMANDI RAPIDI:</b>\n"
                 "• <code>/distanza [metri]</code>: Fallback manuale se leggi un paletto (es. <code>/distanza 138</code>)\n"
@@ -662,10 +746,14 @@ class VoiceCaddyTelegramBot:
             self.send_message(chat_id, help_msg)
 
         elif cmd in ["/gara", "/modalitagara"]:
-            self.set_user_mode(chat_id, "gara")
+            self.start_round_flow(chat_id, "gara")
 
         elif cmd in ["/training", "/allenamento", "/modalitatraining"]:
-            self.set_user_mode(chat_id, "training")
+            self.start_round_flow(chat_id, "training")
+
+        elif cmd in ["/start_round", "/round", "/meteo", "/vento"]:
+            cur_mode = self.get_user_mode(chat_id)
+            self.start_round_flow(chat_id, cur_mode)
 
         elif cmd in ["/modalita", "/mode"]:
             cur_mode = self.get_user_mode(chat_id)
