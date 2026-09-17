@@ -25,3 +25,7 @@ temp/
 # Streamlit secrets
 .streamlit/secrets.toml
 
+# Backups & Test Artifacts
+backups/
+tests/temp_tg_data/
+
