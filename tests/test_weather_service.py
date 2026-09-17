@@ -95,6 +95,17 @@ class TestTelegramBotWeatherFlow(unittest.TestCase):
         self.bot._api_request = MagicMock(return_value={"ok": True})
         self.bot.config_mgr.notify_admin = MagicMock()
 
+    def tearDown(self):
+        mapping = self.bot.config_mgr.load_users_map()
+        modified = False
+        for cid in ["88888", "99999", "12345"]:
+            if str(cid) in mapping:
+                del mapping[str(cid)]
+                modified = True
+        if modified:
+            with open(self.bot.config_mgr.users_map_file, "w", encoding="utf-8") as f:
+                json.dump(mapping, f, indent=4, ensure_ascii=False)
+
     def test_weather_request_keyboard_structure(self):
         kb = self.bot.get_weather_request_keyboard()
         self.assertTrue(kb["resize_keyboard"])

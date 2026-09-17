@@ -1016,7 +1016,7 @@ with st.sidebar:
         with col_qr2:
             st.image(qr_url, caption="📷 Inquadra con la fotocamera", width=170)
 
-        st.caption("Sul telefono si aprirà Telegram: tocca semplicemente **[ AVVIA ]** per sincronizzare la sacca.")
+        st.caption("Sul telefono si aprirà Telegram: tocca semplicemente **[ AVVIA ]** per sincronizzare la sacca. Poi premi il pulsante qui sotto o **F5** per aggiornare:")
 
         # Pulsante nativo per apertura chat diretta 1-clic su Desktop
         st.link_button(
@@ -1026,6 +1026,8 @@ with st.sidebar:
             use_container_width=True,
             help="Apre Telegram con il comando di collegamento preimpostato"
         )
+        if st.button("🔄 Verifica Connessione Smartphone", key="check_tg_link_btn", use_container_width=True, help="Rileva immediatamente il collegamento avvenuto dal cellulare"):
+            st.rerun()
         st.markdown(f"""
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:#64748B; margin-top:4px; margin-bottom:12px;">
                 <span>🤖 @{bot_username}</span>

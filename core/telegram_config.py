@@ -260,10 +260,17 @@ class TelegramConfigManager:
     def get_chat_id_for_user(self, user_id: str) -> Optional[str]:
         """Trova il chat_id associato a un determinato user_id (es. 'strafatti_stefano_pirani')."""
         mapping = self.load_users_map()
+        matches = []
         for cid, data in mapping.items():
             if data.get("user_id") == user_id:
-                return str(cid)
-        return None
+                matches.append(str(cid))
+        if not matches:
+            return None
+        # Preferisci sempre l'ID reale di Telegram (numerico a 8+ cifre) o l'ultimo registrato
+        for cid in reversed(matches):
+            if cid.isdigit() and len(cid) >= 8:
+                return cid
+        return matches[-1]
 
     def unlink_user(self, user_id: str) -> bool:
         """Rimuove l'associazione Telegram per un determinato user_id."""

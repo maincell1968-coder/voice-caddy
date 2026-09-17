@@ -95,6 +95,13 @@ def test_bot_mode_responses():
     kb_text_gara = str(kb_gara)
     assert "Modalità Training" in kb_text_gara
 
+    # Pulizia test chat
+    mapping = bot.config_mgr.load_users_map()
+    if "test_chat_456" in mapping:
+        del mapping["test_chat_456"]
+        with open(bot.config_mgr.users_map_file, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, indent=4, ensure_ascii=False)
+
     print("[OK] VoiceCaddyTelegramBot Gara vs Training logic verified!")
 
 
