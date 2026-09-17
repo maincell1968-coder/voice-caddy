@@ -2,6 +2,7 @@ import os
 import tempfile
 import json
 import urllib.request
+import urllib.parse
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
@@ -993,10 +994,10 @@ with st.sidebar:
     else:
         # GIOCATORE NON ANCORA COLLEGATO: PAIRING SMART A 1-CLIC + QR CODE
         deep_link = f"https://t.me/{bot_username}?start=link_{current_user.user_id}"
-        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={urllib.parse.quote(deep_link)}"
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={urllib.parse.quote(deep_link)}"
 
         st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
+            <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 8px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
                     <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">📱 Smartphone:</span>
                     <span style="font-size:0.75rem; font-weight:bold; color:#F59E0B; background:rgba(245,158,11,0.12); padding:2px 8px; border-radius:4px;">🟡 Non ancora collegato</span>
@@ -1004,25 +1005,31 @@ with st.sidebar:
                 <div style="font-size:0.95rem; font-weight:bold; color:#38BDF8; margin-bottom: 4px;">
                     👤 {current_user.first_name} {current_user.last_name}
                 </div>
-                <div style="font-size:0.80rem; color:#94A3B8; margin-bottom: 10px;">
+                <div style="font-size:0.80rem; color:#94A3B8; margin-bottom: 4px;">
                     Collega il tuo smartphone in <b>1 secondo</b> senza digitare nessun comando:
                 </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-                <!-- QR Code per Smartphone -->
-                <div style="text-align:center; background:#080c14; padding:12px; border-radius:8px; margin-bottom:10px; border:1px solid #1e293b;">
-                    <img src="{qr_url}" width="140" height="140" style="border-radius:6px; border:2px solid #0284C7; display:inline-block; margin-bottom:6px;" alt="QR Code Collegamento Telegram"><br>
-                    <span style="font-size:0.75rem; color:#E2E8F0; font-weight:bold;">📷 Inquadra con la Fotocamera del Telefono</span><br>
-                    <span style="font-size:0.70rem; color:#64748B;">Apri Telegram e tocca <b>[ AVVIA ]</b> per sincronizzare la sacca</span>
-                </div>
+        # Riquadro QR Code nativo Streamlit
+        col_qr1, col_qr2, col_qr3 = st.columns([1, 4, 1])
+        with col_qr2:
+            st.image(qr_url, caption="📷 Inquadra con la fotocamera", width=170)
 
-                <!-- Pulsante Desktop 1-Click -->
-                <a href="{deep_link}" target="_blank" style="display:block; text-align:center; background:#0284C7; color:#FFFFFF; padding:9px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem; text-decoration:none; box-shadow: 0 2px 8px rgba(2,132,199,0.3); margin-bottom: 8px;">
-                    👉 Oppure Clicca qui (Telegram Desktop)
-                </a>
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:#64748B; margin-top:6px;">
-                    <span>🤖 @{bot_username}</span>
-                    {server_badge}
-                </div>
+        st.caption("Sul telefono si aprirà Telegram: tocca semplicemente **[ AVVIA ]** per sincronizzare la sacca.")
+
+        # Pulsante nativo per apertura chat diretta 1-clic su Desktop
+        st.link_button(
+            f"👉 Apri Chat con @{bot_username}",
+            deep_link,
+            type="primary",
+            use_container_width=True,
+            help="Apre Telegram con il comando di collegamento preimpostato"
+        )
+        st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:#64748B; margin-top:4px; margin-bottom:12px;">
+                <span>🤖 @{bot_username}</span>
+                {server_badge}
             </div>
         """, unsafe_allow_html=True)
 
