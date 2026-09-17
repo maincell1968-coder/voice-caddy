@@ -257,31 +257,58 @@ class TelegramConfigManager:
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-    def notify_admin(self, message: str) -> bool:
-        """
-        Invia una notifica Telegram all'Amministratore (Stefano Pirani).
-        Silenzioso e sicuro: non solleva mai eccezioni né blocca l'applicazione se Telegram è offline.
-        """
-        bot_token = self.get_token()
-        admin_chat_id = self.get_admin_chat_id()
-        if not bot_token or not admin_chat_id:
-            return False
+    def get_chat_id_for_user(self, user_id: str) -> Optional[str]:
+        """Trova il chat_id associato a un determinato user_id (es. 'strafatti_stefano_pirani')."""
+        mapping = self.load_users_map()
+        for cid, data in mapping.items():
+            if data.get("user_id") == user_id:
+                return str(cid)
+        return None
 
+    def unlink_user(self, user_id: str) -> bool:
+        """Rimuove l'associazione Telegram per un determinato user_id."""
+        mapping = self.load_users_map()
+        to_remove = [cid for cid, data in mapping.items() if data.get("user_id") == user_id]
+        if to_remove:
+            for cid in to_remove:
+                del mapping[cid]
+            with open(self.users_map_file, "w", encoding="utf-8") as f:
+                json.dump(mapping, f, indent=4, ensure_ascii=False)
+            return True
+        return False
+
+    def send_direct_message(self, chat_id: int | str, text: str) -> Tuple[bool, str]:
+        """Invia un messaggio diretto a una specifica chat Telegram."""
+        bot_token = self.get_token()
+        if not bot_token:
+            return False, "Nessun token Telegram configurato."
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         payload = json.dumps({
-            "chat_id": admin_chat_id,
-            "text": message,
+            "chat_id": str(chat_id),
+            "text": text,
             "parse_mode": "HTML"
         }).encode("utf-8")
-
         try:
             req = urllib.request.Request(
                 url,
                 data=payload,
                 headers={"Content-Type": "application/json", "User-Agent": "VoiceCaddy/1.0"}
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 res = json.loads(resp.read().decode("utf-8"))
-                return bool(res.get("ok"))
-        except Exception:
+                if res.get("ok"):
+                    return True, "Messaggio inviato con successo allo smartphone!"
+                return False, f"Errore Telegram: {res.get('description', 'Sconosciuto')}"
+        except Exception as e:
+            return False, f"Impossibile inviare messaggio a Telegram: {e}"
+
+    def notify_admin(self, message: str) -> bool:
+        """
+        Invia una notifica Telegram all'Amministratore (Stefano Pirani).
+        Silenzioso e sicuro: non solleva mai eccezioni né blocca l'applicazione se Telegram è offline.
+        """
+        admin_chat_id = self.get_admin_chat_id()
+        if not admin_chat_id:
             return False
+        ok, _ = self.send_direct_message(admin_chat_id, message)
+        return ok

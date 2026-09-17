@@ -162,6 +162,10 @@ class AuthManager:
             return UserRecord.model_validate(users[user_id])
         return None
 
+    def get_user(self, user_id: str) -> Optional[UserRecord]:
+        """Alias per get_user_by_id."""
+        return self.get_user_by_id(user_id)
+
     def get_all_users(self) -> List[UserRecord]:
         users = self._load_all_users()
         return [UserRecord.model_validate(u) for u in users.values()]

@@ -23,6 +23,7 @@ from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
 from core.ai_provider import test_ai_connection, AIProviderError
 from core.telegram_config import TelegramConfigManager
+from core.telegram_service import get_telegram_service
 from core.elevation_service import elevation_service, haversine_distance, calculate_plays_like
 from core.live_session import LiveSessionManager
 from golf_rules_module import render_rules_academy
@@ -216,6 +217,14 @@ auth_manager = AuthManager()
 db = DatabaseManager()
 course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
 tg_manager = TelegramConfigManager()
+bot_service = get_telegram_service()
+
+# Avvio automatico in background del Bot Telegram se il token è presente
+if tg_manager.get_token() and not bot_service.is_alive():
+    try:
+        bot_service.start()
+    except Exception:
+        pass
 
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
@@ -887,75 +896,161 @@ with st.sidebar:
     process_btn = st.button("🚀 Analizza Partita con la Tua IA", type="primary", use_container_width=True, disabled=not uploaded_files)
 
     # ---------------------------------------------------------
-    # TELEGRAM BOT LIVE IN CAMPO
+    # TELEGRAM BOT LIVE IN CAMPO (Smart Pairing & Zero-Friction)
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📱 Bot Telegram (Live in Campo)")
     st.caption("Registra o scrivi i colpi buca per buca durante la partita dallo smartphone.")
 
     curr_token = tg_manager.get_token()
+    is_bot_alive = bot_service.is_alive()
     bot_username = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+    linked_chat_id = tg_manager.get_chat_id_for_user(current_user.user_id)
 
-    token_status_color = "#2ECC71" if curr_token else "#E74C3C"
-    token_status_text = "✅ Configurato & Pronto" if curr_token else "⚠️ Da Configurare"
+    # 1. Badge di stato del Server Bot
+    if curr_token and is_bot_alive:
+        server_badge = f'<span style="font-size:0.75rem; font-weight:bold; color:#2ECC71; background:rgba(46,204,113,0.15); padding:2px 8px; border-radius:4px;">🟢 Server Bot: Attivo</span>'
+    elif curr_token:
+        server_badge = f'<span style="font-size:0.75rem; font-weight:bold; color:#F59E0B; background:rgba(245,158,11,0.15); padding:2px 8px; border-radius:4px;">🟡 Server Bot: In Attesa</span>'
+    else:
+        server_badge = f'<span style="font-size:0.75rem; font-weight:bold; color:#EF4444; background:rgba(239,68,68,0.15); padding:2px 8px; border-radius:4px;">⚠️ Token Non Configurato</span>'
 
-    # Box informativo principale con Nome Bot, link diretto e utenza
-    st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">🤖 Bot Telegram:</span>
-                <span style="font-size:0.75rem; font-weight:bold; color:{token_status_color}; background:rgba(46,204,113,0.1); padding:2px 8px; border-radius:4px;">{token_status_text}</span>
-            </div>
-            <div style="font-size:1.15rem; font-weight:bold; color:#38BDF8; margin-bottom: 8px;">
-                @{bot_username}
-            </div>
-            <div style="font-size:0.82rem; color:#94A3B8; line-height:1.5; margin-bottom: 12px; background:#0b0f19; padding:8px; border-radius:6px;">
-                👤 <b>Tua utenza:</b> <span style="color:#F1F5F9;">{current_user.first_name} {current_user.last_name}</span><br>
-                💬 <b>Comando di collegamento:</b><br>
-                <code style="color:#FBBF24; font-weight:bold; font-size:0.88rem;">/giocatore {current_user.first_name}</code>
-            </div>
-            <a href="https://t.me/{bot_username}" target="_blank" style="display:block; text-align:center; background:#0284C7; color:#FFFFFF; padding:9px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem; text-decoration:none; box-shadow: 0 2px 8px rgba(2,132,199,0.3);">
-                👉 Apri Chat con @{bot_username}
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Guida passo-passo chiara
-    with st.expander("ℹ️ Come funziona il salvataggio automatico sul sito", expanded=False):
+    # 2. Sezione Giocatore: Connesso vs Da Connettere
+    if linked_chat_id:
+        # GIOCATORE CONNESSO
         st.markdown(f"""
-            <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
-                <b>1. Avvia il Bot sul PC:</b><br>
-                Fai doppio clic sul file <code>avvia_telegram_bot.bat</code> sul PC. Rimarrà aperta la finestra nera di ascolto.<br><br>
-                <b>2. Collega la chat Telegram:</b><br>
-                Sul cellulare apri <b>@{bot_username}</b> e scrivi:<br>
-                <code>/giocatore {current_user.first_name}</code><br>
-                <i>(Basta farlo la prima volta per associare la chat al tuo profilo e alla tua sacca)</i>.<br><br>
-                <b>3. Invia note vocali o testo durante il gioco:</b><br>
-                Manda note vocali o messaggi descrivendo i colpi buca per buca.<br><br>
-                <b>4. Come si trasferiscono sul sito:</b><br>
-                <b>Il trasferimento è 100% automatico!</b> Il Bot e questo sito condividono lo stesso database SQLite locale. Non devi esportare nulla a mano: appena invii il vocale, il bot calcola lo score e salva il giro. Ti basta aprire la scheda <b>'📈 Storico Partite & Trend'</b> qui sopra per ritrovare la partita e aprirla con un clic!
+            <div style="background: linear-gradient(135deg, #0d2818 0%, #081a10 100%); border: 1px solid #10B981; border-radius: 10px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.15);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                    <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">📱 Smartphone:</span>
+                    <span style="font-size:0.75rem; font-weight:bold; color:#10B981; background:rgba(16,185,129,0.18); padding:2px 8px; border-radius:4px;">🟢 Collegato & Pronto</span>
+                </div>
+                <div style="font-size:1.10rem; font-weight:bold; color:#6EE7B7; margin-bottom: 6px;">
+                    👤 {current_user.first_name} {current_user.last_name}
+                </div>
+                <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5; margin-bottom: 8px; background:#041009; padding:8px; border-radius:6px;">
+                    💬 <b>Chat Telegram:</b> <code>#{linked_chat_id}</code><br>
+                    🏌️ <b>Sacca Personale:</b> 14 Bastoni sincronizzati<br>
+                    ⛳ <b>Percorso:</b> {active_course.name}
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:#94A3B8;">
+                    <span>🤖 @{bot_username}</span>
+                    {server_badge}
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
-    with st.expander("⚙️ Gestione Avanzata Token Telegram", expanded=not bool(curr_token)):
+        col_act_p1, col_act_p2 = st.columns([3, 2])
+        with col_act_p1:
+            if st.button("🧪 Invia Test a Smartphone", key="test_tg_ping_btn", use_container_width=True, help="Invia un messaggio di prova istantaneo al tuo cellulare"):
+                ok_msg, resp_msg = tg_manager.send_direct_message(
+                    linked_chat_id,
+                    f"⛳ <b>Voice Caddy Pro</b>: Ciao {current_user.first_name}! Connessione attiva. Sacca e profilo sincronizzati con il PC. Buon gioco!"
+                )
+                if ok_msg:
+                    st.success("✅ Messaggio di prova inviato con successo al tuo cellulare!")
+                else:
+                    st.error(f"❌ Errore invio: {resp_msg}")
+        with col_act_p2:
+            if st.button("❌ Scollega", key="unlink_tg_btn", use_container_width=True, help="Scollega questo dispositivo"):
+                tg_manager.unlink_user(current_user.user_id)
+                st.info("Dispositivo scollegato.")
+                st.rerun()
+
+    else:
+        # GIOCATORE NON ANCORA COLLEGATO: PAIRING SMART A 1-CLIC + QR CODE
+        deep_link = f"https://t.me/{bot_username}?start=link_{current_user.user_id}"
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={urllib.parse.quote(deep_link)}"
+
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                    <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">📱 Smartphone:</span>
+                    <span style="font-size:0.75rem; font-weight:bold; color:#F59E0B; background:rgba(245,158,11,0.12); padding:2px 8px; border-radius:4px;">🟡 Non ancora collegato</span>
+                </div>
+                <div style="font-size:0.95rem; font-weight:bold; color:#38BDF8; margin-bottom: 4px;">
+                    👤 {current_user.first_name} {current_user.last_name}
+                </div>
+                <div style="font-size:0.80rem; color:#94A3B8; margin-bottom: 10px;">
+                    Collega il tuo smartphone in <b>1 secondo</b> senza digitare nessun comando:
+                </div>
+
+                <!-- QR Code per Smartphone -->
+                <div style="text-align:center; background:#080c14; padding:12px; border-radius:8px; margin-bottom:10px; border:1px solid #1e293b;">
+                    <img src="{qr_url}" width="140" height="140" style="border-radius:6px; border:2px solid #0284C7; display:inline-block; margin-bottom:6px;" alt="QR Code Collegamento Telegram"><br>
+                    <span style="font-size:0.75rem; color:#E2E8F0; font-weight:bold;">📷 Inquadra con la Fotocamera del Telefono</span><br>
+                    <span style="font-size:0.70rem; color:#64748B;">Apri Telegram e tocca <b>[ AVVIA ]</b> per sincronizzare la sacca</span>
+                </div>
+
+                <!-- Pulsante Desktop 1-Click -->
+                <a href="{deep_link}" target="_blank" style="display:block; text-align:center; background:#0284C7; color:#FFFFFF; padding:9px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem; text-decoration:none; box-shadow: 0 2px 8px rgba(2,132,199,0.3); margin-bottom: 8px;">
+                    👉 Oppure Clicca qui (Telegram Desktop)
+                </a>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:#64748B; margin-top:6px;">
+                    <span>🤖 @{bot_username}</span>
+                    {server_badge}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Guida passo-passo chiara
+    with st.expander("ℹ️ Come funziona l'uso in campo e il salvataggio automatico", expanded=False):
+        st.markdown(f"""
+            <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
+                <b>1. Collega lo smartphone in 2 secondi:</b><br>
+                Inquadra il QR Code con la fotocamera del tuo cellulare oppure clicca il pulsante blu su questo PC. Si aprirà Telegram con il bot <b>@{bot_username}</b>: premi semplicemente <b>[ AVVIA ]</b>. Il tuo profilo e la tua sacca da golf sono immediatamente sincronizzati!<br><br>
+                <b>2. Durante il gioco sul percorso:</b><br>
+                Sul telefono avrai il grande tasto <code>[ 📍 Calcola Distanza & Plays Like ]</code> per avere subito la distanza al green, il dislivello orografico e il bastone consigliato dalla tua sacca. Dopo il colpo puoi inviare una breve nota vocale (es. <i>"Ferro 7 dal fairway, finita a 3 metri dal green"</i>).<br><br>
+                <b>3. Salvataggio 100% Automatico sul PC:</b><br>
+                Non devi esportare o caricare file a mano: il bot Telegram e questo sito condividono lo stesso database locale. I colpi e le metriche finiscono direttamente nel tuo profilo sul PC!
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Gestione Server & Token (Avanzata)
+    with st.expander("⚙️ Gestione Server & Token Telegram", expanded=not bool(curr_token)):
+        st.markdown(f"<b>Stato Server Bot:</b> {server_badge}", unsafe_allow_html=True)
+        col_srv1, col_srv2 = st.columns(2)
+        with col_srv1:
+            if is_bot_alive:
+                if st.button("⏹ Ferma Server Bot", key="stop_bot_btn", use_container_width=True):
+                    bot_service.stop()
+                    st.rerun()
+            else:
+                if st.button("▶️ Avvia Server Bot", key="start_bot_btn", type="primary", use_container_width=True, disabled=not bool(curr_token)):
+                    ok_st, msg_st = bot_service.start()
+                    if ok_st:
+                        st.success(msg_st)
+                    else:
+                        st.error(msg_st)
+                    st.rerun()
+        with col_srv2:
+            if st.button("🔄 Riavvia Server Bot", key="restart_bot_btn", use_container_width=True, disabled=not bool(curr_token)):
+                ok_rst, msg_rst = bot_service.restart()
+                if ok_rst:
+                    st.success(msg_rst)
+                else:
+                    st.error(msg_rst)
+                st.rerun()
+
+        st.markdown("---")
         tb_input = st.text_input(
             "Token Telegram (@BotFather):",
             value=curr_token,
             type="password",
             key="sidebar_tg_token",
-            help="Incolla qui il token rilasciato da @BotFather su Telegram"
+            help="Token API generato da @BotFather su Telegram"
         )
         col_tb1, col_tb2 = st.columns(2)
         with col_tb1:
             if st.button("💾 Salva Token", key="save_tg_tok_btn", use_container_width=True):
                 tg_manager.set_token(tb_input)
-                st.success("Token salvato con successo!")
+                bot_service.restart(token=tb_input)
+                st.success("Token salvato e bot riavviato!")
                 st.rerun()
         with col_tb2:
             if st.button("🔌 Verifica Bot", key="test_tg_tok_btn", use_container_width=True):
                 ok_t, msg_t, b_uname = tg_manager.test_token(tb_input)
                 if ok_t:
-                    st.session_state["tg_status_info"] = (True, f"✅ Bot attivo: @{b_uname}", b_uname)
+                    st.session_state["tg_status_info"] = (True, f"✅ Bot verificato: @{b_uname}", b_uname)
                 else:
                     st.session_state["tg_status_info"] = (False, f"❌ {msg_t}", None)
 
@@ -1724,7 +1819,8 @@ if current_user.is_admin and nav_admin:
             new_admin_tok = st.text_input("TELEGRAM_BOT_TOKEN globale:", value=admin_tok, type="password", key="admin_tg_tok_input")
             if st.button("💾 Salva Token Globale", key="admin_save_tg_btn"):
                 tg_manager.set_token(new_admin_tok)
-                st.success("Token salvato nel sistema!")
+                bot_service.restart(token=new_admin_tok)
+                st.success("Token salvato e Bot Server aggiornato!")
                 st.rerun()
 
             ok_adm, msg_adm, adm_uname = tg_manager.test_token(new_admin_tok)
@@ -1738,7 +1834,7 @@ if current_user.is_admin and nav_admin:
             st.markdown("<b>Chat Collegate:</b>", unsafe_allow_html=True)
             users_map = tg_manager.load_users_map()
             if not users_map:
-                st.info("Nessun membro ha ancora collegato la propria chat Telegram. Digiteranno `/giocatore [Nome]` in chat.")
+                st.info("Nessun membro ha ancora collegato la propria chat Telegram. I membri possono collegarsi istantaneamente tramite QR Code o cliccando sul pulsante nella barra laterale.")
             else:
                 for cid, data in users_map.items():
                     st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)

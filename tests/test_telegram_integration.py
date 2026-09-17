@@ -70,6 +70,46 @@ class TestTelegramIntegration(unittest.TestCase):
         self.assertIn("Score Totale", summary_text)
         self.assertIn("Fairway Presi", summary_text)
 
+    def test_get_chat_id_and_unlink(self):
+        user_id = "strafatti_stefano_pirani"
+        self.assertIsNone(self.cfg_mgr.get_chat_id_for_user(user_id))
+
+        self.cfg_mgr.link_chat_user(
+            chat_id=777888,
+            user_id=user_id,
+            group_name="strafatti",
+            first_name="Stefano"
+        )
+        self.assertEqual(self.cfg_mgr.get_chat_id_for_user(user_id), "777888")
+
+        # Unlink
+        res = self.cfg_mgr.unlink_user(user_id)
+        self.assertTrue(res)
+        self.assertIsNone(self.cfg_mgr.get_chat_id_for_user(user_id))
+
+    def test_deep_link_start_command(self):
+        bot = VoiceCaddyTelegramBot(bot_token="TEST_DUMMY_TOKEN")
+        bot.config_mgr = self.cfg_mgr
+        sent_messages = []
+        bot.send_message = lambda chat_id, text, **kwargs: sent_messages.append((chat_id, text))
+
+        # Test deep link pairing
+        bot.handle_command(999111, "/start link_strafatti_stefano_pirani")
+        linked = self.cfg_mgr.get_linked_user(999111)
+        self.assertIsNotNone(linked)
+        self.assertEqual(linked["user_id"], "strafatti_stefano_pirani")
+        self.assertEqual(linked["first_name"], "Stefano")
+        self.assertTrue(len(sent_messages) > 0)
+        self.assertIn("COLLEGAMENTO SMART COMPLETATO", sent_messages[0][1])
+
+    def test_background_service_status(self):
+        from core.telegram_service import get_telegram_service
+        srv = get_telegram_service()
+        status = srv.get_status_info()
+        self.assertIn("is_alive", status)
+        self.assertIn("has_token", status)
+        self.assertIn("bot_username", status)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -968,6 +968,46 @@ class VoiceCaddyTelegramBot:
                 cmd = prefix
                 break
 
+        if cmd == "/start" and args:
+            target_key = args[0]
+            if target_key.startswith("link_"):
+                target_key = target_key[5:]
+            target_key = target_key.strip()
+
+            matched_user = self.auth_mgr.get_user(target_key)
+            if not matched_user:
+                for u in self.auth_mgr.get_all_users():
+                    if (
+                        u.user_id.lower() == target_key.lower()
+                        or u.first_name.lower() == target_key.lower()
+                        or u.username.lower() == target_key.lower()
+                    ):
+                        matched_user = u
+                        break
+
+            if matched_user:
+                self.config_mgr.link_chat_user(
+                    chat_id=chat_id,
+                    user_id=matched_user.user_id,
+                    group_name=matched_user.group,
+                    first_name=matched_user.first_name,
+                    active_course_name="Conero Golf Club"
+                )
+                success_msg = (
+                    f"🎉 <b>COLLEGAMENTO SMART COMPLETATO!</b>\n\n"
+                    f"Benvenuto <b>{matched_user.first_name} {matched_user.last_name}</b>! ⛳\n\n"
+                    f"📱 Il tuo smartphone è ora sincronizzato con Voice Caddy Pro del tuo PC.\n"
+                    f"🏌️ <b>Gruppo:</b> {matched_user.group.upper()}\n"
+                    f"📍 <b>Percorso Attivo:</b> Conero Golf Club\n"
+                    f"🎒 <b>Sacca & Distanze:</b> Sincronizzate in tempo reale\n\n"
+                    f"<i>Sei pronto a scendere in campo! Tocca uno dei pulsanti qui sotto per iniziare il giro o calcolare le distanze.</i>"
+                )
+                return self.send_message(
+                    chat_id,
+                    success_msg,
+                    reply_markup=self.get_on_course_keyboard("training")
+                )
+
         if cmd in ["/start", "/help", "/guida"]:
             all_users = self.auth_mgr.get_all_users()
 
@@ -1441,12 +1481,18 @@ class VoiceCaddyTelegramBot:
                             file_id = message["video"]["file_id"]
                             self.process_voice_message(chat_id, file_id)
 
-                        # 3. Testo o Comandi
                         elif text:
                             if text.startswith("/"):
                                 self.handle_command(chat_id, text)
                             else:
                                 self.process_text_message(chat_id, text)
+                else:
+                    err_desc = str(res.get("description", ""))
+                    if "conflict" in err_desc.lower() or res.get("error_code") == 409:
+                        logging.warning("Avviso Telegram Bot: un'altra istanza è già attiva (409 Conflict). In attesa...")
+                        time.sleep(8)
+                    else:
+                        time.sleep(2)
 
                 time.sleep(0.5)
             except KeyboardInterrupt:
