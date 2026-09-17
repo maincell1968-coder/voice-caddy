@@ -938,17 +938,8 @@ with st.sidebar:
     st.caption("Registra o scrivi i colpi buca per buca durante la partita dallo smartphone.")
 
     curr_token = tg_manager.get_token()
-    is_bot_alive = bot_service.is_alive()
     bot_username = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
-    linked_chat_id = tg_manager.get_chat_id_for_user(current_user.user_id)
-
-    # 1. Badge di stato del Server Bot
-    if curr_token and is_bot_alive:
-        server_badge = f'<span style="font-size:0.75rem; font-weight:bold; color:#2ECC71; background:rgba(46,204,113,0.15); padding:2px 8px; border-radius:4px;">🟢 Server Bot: Attivo</span>'
-    elif curr_token:
-        server_badge = f'<span style="font-size:0.75rem; font-weight:bold; color:#F59E0B; background:rgba(245,158,11,0.15); padding:2px 8px; border-radius:4px;">🟡 Server Bot: In Attesa</span>'
-    else:
-        server_badge = f'<span style="font-size:0.75rem; font-weight:bold; color:#EF4444; background:rgba(239,68,68,0.15); padding:2px 8px; border-radius:4px;">⚠️ Token Non Configurato</span>'
+    linked_chat_id = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
 
     # 2. Sezione Giocatore: Connesso vs Da Connettere
     if linked_chat_id:
@@ -967,9 +958,8 @@ with st.sidebar:
                     🏌️ <b>Sacca Personale:</b> 14 Bastoni sincronizzati<br>
                     ⛳ <b>Percorso:</b> {active_course.name}
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:#94A3B8;">
-                    <span>🤖 @{bot_username}</span>
-                    {server_badge}
+                <div style="text-align:center; font-size:0.75rem; color:#94A3B8;">
+                    🤖 Bot: <b>@{bot_username}</b>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -992,21 +982,17 @@ with st.sidebar:
                 st.rerun()
 
     else:
-        # GIOCATORE NON ANCORA COLLEGATO: PAIRING SMART A 1-CLIC + QR CODE
+        # GIOCATORE: PAIRING SMART A 1-CLIC + QR CODE
         deep_link = f"https://t.me/{bot_username}?start=link_{current_user.user_id}"
         qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={urllib.parse.quote(deep_link)}"
 
         st.markdown(f"""
             <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                    <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">📱 Smartphone:</span>
-                    <span style="font-size:0.75rem; font-weight:bold; color:#F59E0B; background:rgba(245,158,11,0.12); padding:2px 8px; border-radius:4px;">🟡 Non ancora collegato</span>
-                </div>
                 <div style="font-size:0.95rem; font-weight:bold; color:#38BDF8; margin-bottom: 4px;">
                     👤 {current_user.first_name} {current_user.last_name}
                 </div>
-                <div style="font-size:0.80rem; color:#94A3B8; margin-bottom: 4px;">
-                    Collega il tuo smartphone in <b>1 secondo</b> senza digitare nessun comando:
+                <div style="font-size:0.82rem; color:#CBD5E1; margin-bottom: 4px;">
+                    Inquadra il QR Code con lo smartphone per sincronizzare la sacca:
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -1016,7 +1002,7 @@ with st.sidebar:
         with col_qr2:
             st.image(qr_url, caption="📷 Inquadra con la fotocamera", width=170)
 
-        st.caption("Sul telefono si aprirà Telegram: tocca semplicemente **[ AVVIA ]** per sincronizzare la sacca. Poi premi il pulsante qui sotto o **F5** per aggiornare:")
+        st.caption("Sul telefono si aprirà Telegram: tocca semplicemente **[ AVVIA ]** per sincronizzare la sacca.")
 
         # Pulsante nativo per apertura chat diretta 1-clic su Desktop
         st.link_button(
@@ -1029,9 +1015,8 @@ with st.sidebar:
         if st.button("🔄 Verifica Connessione Smartphone", key="check_tg_link_btn", use_container_width=True, help="Rileva immediatamente il collegamento avvenuto dal cellulare"):
             st.rerun()
         st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.72rem; color:#64748B; margin-top:4px; margin-bottom:12px;">
-                <span>🤖 @{bot_username}</span>
-                {server_badge}
+            <div style="text-align:center; font-size:0.75rem; color:#94A3B8; margin-top:6px; margin-bottom:12px;">
+                🤖 Bot: <b>@{bot_username}</b>
             </div>
         """, unsafe_allow_html=True)
 

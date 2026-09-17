@@ -257,12 +257,21 @@ class TelegramConfigManager:
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-    def get_chat_id_for_user(self, user_id: str) -> Optional[str]:
-        """Trova il chat_id associato a un determinato user_id (es. 'strafatti_stefano_pirani')."""
+    def get_chat_id_for_user(self, user_id: str, first_name: Optional[str] = None) -> Optional[str]:
+        """Trova il chat_id associato a un determinato user_id (es. 'strafatti_stefano_pirani' o 'Stefano')."""
         mapping = self.load_users_map()
         matches = []
+        clean_target = str(user_id or "").strip().lower()
+        clean_fn = str(first_name or "").strip().lower()
         for cid, data in mapping.items():
-            if data.get("user_id") == user_id:
+            u_id = str(data.get("user_id", "")).strip().lower()
+            fn = str(data.get("first_name", "")).strip().lower()
+            if (
+                (clean_target and u_id == clean_target)
+                or (clean_target and clean_target in u_id)
+                or (clean_fn and fn == clean_fn)
+                or (clean_target and fn == clean_target)
+            ):
                 matches.append(str(cid))
         if not matches:
             return None
