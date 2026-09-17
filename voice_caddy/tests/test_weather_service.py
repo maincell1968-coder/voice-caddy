@@ -105,7 +105,7 @@ class TestTelegramBotWeatherFlow(unittest.TestCase):
 
     def test_start_round_flow_sets_pending_and_sends_keyboard(self):
         chat_id = 99999
-        self.bot.start_round_flow(chat_id, mode="gara")
+        self.bot.start_round_flow(chat_id, mode="gara", tee_name="gialli")
         self.assertTrue(self.bot.pending_weather[str(chat_id)])
         self.assertEqual(self.bot.get_user_mode(chat_id), "gara")
 
