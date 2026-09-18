@@ -223,6 +223,147 @@ st.markdown("""
             margin-right: 6px;
             margin-top: 6px;
         }
+        /* Guide & Onboarding Banner */
+        .guide-box {
+            background: linear-gradient(145deg, #0d1522 0%, #131f33 100%);
+            border: 1px solid rgba(52, 152, 219, 0.35);
+            border-left: 5px solid #3498DB;
+            border-radius: 14px;
+            padding: 26px 28px;
+            margin: 0 auto 30px auto;
+            box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+        }
+        .guide-header-title {
+            font-size: 1.35rem;
+            font-weight: 800;
+            letter-spacing: -0.2px;
+            background: linear-gradient(90deg, #FFFFFF 0%, #68D391 50%, #F6E05E 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .guide-header-subtitle {
+            font-size: 0.95rem;
+            color: #CBD5E1;
+            line-height: 1.5;
+            margin-bottom: 22px;
+        }
+        .guide-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .guide-card-phase1 {
+            background: rgba(18, 30, 51, 0.75);
+            border: 1px solid rgba(52, 152, 219, 0.35);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .guide-card-phase2 {
+            background: rgba(19, 36, 27, 0.75);
+            border: 1px solid rgba(46, 204, 113, 0.35);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .guide-phase-title-1 {
+            color: #3498DB;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(52, 152, 219, 0.25);
+            padding-bottom: 8px;
+        }
+        .guide-phase-title-2 {
+            color: #2ECC71;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(46, 204, 113, 0.25);
+            padding-bottom: 8px;
+        }
+        .guide-step-item {
+            margin-bottom: 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .guide-step-num {
+            background: rgba(255, 255, 255, 0.12);
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.8rem;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .guide-step-content {
+            font-size: 0.90rem;
+            color: #CBD5E1;
+            line-height: 1.5;
+        }
+        .guide-step-content b {
+            color: #FFFFFF;
+        }
+        .guide-phase-footer {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+        .guide-benefits-strip {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(241, 196, 15, 0.25);
+            border-radius: 10px;
+            padding: 16px 20px;
+        }
+        .guide-benefits-title {
+            color: #F1C40F;
+            font-size: 0.92rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .guide-benefits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 12px;
+        }
+        .guide-benefit-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            color: #E2E8F0;
+        }
+        .guide-benefit-item b {
+            color: #F1C40F;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -384,6 +525,112 @@ if st.session_state.auth_user is None:
             {hero_brand_html}
             <div class="landing-subtitle">Performance Analytics & Club Portal • Accesso Riservato</div>
         </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+<div class="guide-box">
+    <div class="guide-header-title">
+        ⛳ Il tuo caddie digitale, in 2 fasi
+    </div>
+    <div class="guide-header-subtitle">
+        Bastano pochi minuti di configurazione. Poi in campo ci pensa il bot Telegram: tu giochi, lui raccoglie dati, distanze e statistiche.
+    </div>
+    <div class="guide-columns">
+        <div class="guide-card-phase1">
+            <div>
+                <div class="guide-phase-title-1">
+                    🛠️ Fase 1 – Configura il tuo profilo (una volta sola)
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">1</div>
+                    <div class="guide-step-content">
+                        <b>Accedi:</b> Inserisci o seleziona il tuo <b>nome</b> e, come password iniziale, il tuo <b>cognome</b>.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">2</div>
+                    <div class="guide-step-content">
+                        <b>Personalizza la password:</b> Al primo accesso imposta la tua <b>nuova password personale e riservata</b> (minimo 4 caratteri): sarà quella che userai d'ora in avanti.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">3</div>
+                    <div class="guide-step-content">
+                        <b>Componi la tua sacca:</b> Inserisci le mazze che usi abitualmente. Più è precisa la sacca, più saranno accurate le statistiche e i consigli.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">4</div>
+                    <div class="guide-step-content">
+                        <b>Attiva il bot Telegram:</b> Apri Telegram, inquadra il <b>QR Code</b> nel tuo profilo (oppure tocca il link di avvio rapido) e il bot si collegherà automaticamente al tuo account.
+                    </div>
+                </div>
+            </div>
+            <div class="guide-phase-footer" style="color: #60A5FA;">
+                ✅ <b>Fatto.</b> Da questo momento il bot è il tuo assistente personale in campo.
+            </div>
+        </div>
+        <div class="guide-card-phase2">
+            <div>
+                <div class="guide-phase-title-2">
+                    ⛳ Fase 2 – In campo, buca dopo buca
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">1</div>
+                    <div class="guide-step-content">
+                        <b>Al tee della buca 1:</b> Dì al bot se stai giocando in <b>Training</b> o in <b>Gara</b>. Puoi scrivere un messaggio o inviare un vocale.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">2</div>
+                    <div class="guide-step-content">
+                        <b>Prima di ogni colpo:</b> Comunica la <b>mazza che stai usando</b> (es. <em>"Ferro 7"</em>). Poi gioca normalmente il tuo colpo.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">3</div>
+                    <div class="guide-step-content">
+                        <b>Dopo il colpo:</b> Raggiungi la palla e invia la tua <b>posizione</b> al bot (icona 📎 <em>Posizione</em> di Telegram). Ti risponderà subito con la distanza percorsa e le indicazioni per arrivare al green.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">4</div>
+                    <div class="guide-step-content">
+                        <b>Sul green:</b> Comunica il <b>numero di putt</b> (es. <em>"2 putt"</em>). La buca è registrata e chiusa!
+                    </div>
+                </div>
+            </div>
+            <div class="guide-phase-footer" style="color: #4ADE80;">
+                🔄 <b>Ripeti dalla 1 alla 18.</b> Nessun taccuino, nessun calcolo: al bot basta un messaggio o un vocale.
+            </div>
+        </div>
+    </div>
+    <div class="guide-benefits-strip">
+        <div class="guide-benefits-title">
+            ⭐ Perché ti conviene
+        </div>
+        <div class="guide-benefits-grid">
+            <div class="guide-benefit-item">
+                <span>📏</span> <span><b>Distanze reali:</b> calcolo metrico GPS dopo ogni colpo, senza telemetri o orologi dedicati</span>
+            </div>
+            <div class="guide-benefit-item">
+                <span>🏌️</span> <span><b>Statistiche per mazza:</b> scopri quanto tiri davvero con ogni ferro</span>
+            </div>
+            <div class="guide-benefit-item">
+                <span>📊</span> <span><b>Storico di partite:</b> archivio allenamenti e gare sempre a portata di mano sul portale</span>
+            </div>
+            <div class="guide-benefit-item">
+                <span>🎙️</span> <span><b>Zero attrito:</b> un vocale o un messaggio rapido, e sei già al colpo successivo</span>
+            </div>
+        </div>
+        <div style="text-align: right; margin-top: 10px; font-size: 0.92rem; font-weight: 700; color: #2ECC71;">
+            🏌️‍♂️ Buon golf!
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown(f"""
         <div class="legal-disclaimer-box">
             <div class="disclaimer-title">
                 ⚖️ Note Legali, Origine del Software & Esonero di Responsabilità
