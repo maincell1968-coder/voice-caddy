@@ -174,8 +174,9 @@ class VoiceCaddyTelegramBot:
             "keyboard": [
                 [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
                 [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
+                [{"text": "🎭 Tono Caddie"}, {"text": "🎒 Profilo & Sacca"}],
                 [{"text": "🎯 Modalità Training"}, {"text": "⚖️ Modalità Gara"}],
-                [{"text": "🎒 Profilo & Sacca"}, {"text": "🔄 Nuovo Giro"}]
+                [{"text": "🔄 Nuovo Giro"}]
             ],
             "resize_keyboard": True,
             "is_persistent": True
@@ -737,7 +738,7 @@ class VoiceCaddyTelegramBot:
                 new_mode = self.get_user_mode(chat_id)
             return self.start_round_flow(chat_id, new_mode)
 
-        if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"]:
+        if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎭 Tono Caddie", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"] or any(t in clean_lower for t in ["tono caddie", "tono professionale", "tono arrabbiato", "tono spensierato", "tono psicologo", "torna in campo"]):
             return self.handle_command(chat_id, clean)
 
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
@@ -953,6 +954,22 @@ class VoiceCaddyTelegramBot:
             cmd = "/gara"
         elif "training" in clean_text.lower() and not clean_text.startswith("/"):
             cmd = "/training"
+        elif "tono caddie" in clean_text.lower() or "personalità" in clean_text.lower():
+            cmd = "/tono"
+        elif "tono professionale" in clean_text.lower():
+            cmd = "/tono"
+            args = ["professionale"]
+        elif "tono arrabbiato" in clean_text.lower():
+            cmd = "/tono"
+            args = ["arrabbiato"]
+        elif "tono spensierato" in clean_text.lower():
+            cmd = "/tono"
+            args = ["spensierato"]
+        elif "tono psicologo" in clean_text.lower():
+            cmd = "/tono"
+            args = ["psicologo"]
+        elif "torna in campo" in clean_text.lower():
+            return self.send_message(chat_id, "⛳ Di nuovo sul percorso!", reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
         elif any(k in clean_text.lower() for k in ["start_round", "start round", "meteo", "vento"]):
             cmd = "/start_round"
 
@@ -960,7 +977,7 @@ class VoiceCaddyTelegramBot:
         for prefix in [
             "/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo",
             "/buca", "/h", "/distanza", "/paletto", "/tee", "/whs", "/handicap",
-            "/hcp", "/formato", "/score", "/punti"
+            "/hcp", "/formato", "/score", "/punti", "/tono", "/caddy", "/personalita"
         ]:
             if cmd.startswith(prefix) and cmd != prefix and not args:
                 args = [text.strip()[len(prefix):].strip()]
@@ -1405,7 +1422,58 @@ class VoiceCaddyTelegramBot:
 
             c_query = " ".join(args).strip()
             self.config_mgr.set_active_course(chat_id, c_query)
-            self.send_message(chat_id, f"✅ Campo da gioco impostato su: <b>{c_query}</b>")
+        elif cmd in ["/tono", "/caddy", "/personalita"]:
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
+            caddy_eng = CaddyPersonalityEngine.get_instance()
+
+            if args:
+                raw_arg = " ".join(args).lower().strip()
+                matched_tone = None
+                for t in CaddyTone:
+                    if t.value in raw_arg or t.name.lower() in raw_arg:
+                        matched_tone = t
+                        break
+                if matched_tone:
+                    user_profile.caddy_tone = matched_tone.value
+                    user_profile.save_for_user(user_rec.user_id if user_rec else "default")
+                    phrase = caddy_eng.get_phrase(
+                        "START_ROUND",
+                        tone=matched_tone.value,
+                        session_id=str(chat_id),
+                        buca="1",
+                        nome=user_profile.player_name
+                    )
+                    return self.send_message(
+                        chat_id,
+                        f"🎭 <b>Stile Caddie Impostato:</b> {matched_tone.display_name}\n\n"
+                        f"🗣️ <i>«{phrase}»</i>\n\n"
+                        f"Il tuo caddie manterrà questo tono per tutte le reazioni in campo!",
+                        reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id))
+                    )
+
+            # Se nessun argomento, mostra la tastiera rapida con i 4 stili
+            tone_keyboard = {
+                "keyboard": [
+                    [{"text": "👔 Tono Professionale"}, {"text": "🤬 Tono Arrabbiato"}],
+                    [{"text": "🍻 Tono Spensierato"}, {"text": "🧘 Tono Psicologo"}],
+                    [{"text": "🔙 Torna in Campo"}]
+                ],
+                "resize_keyboard": True
+            }
+            curr_tone_str = getattr(user_profile, "caddy_tone", "professionale") or "professionale"
+            try:
+                curr_label = CaddyTone(curr_tone_str).display_name
+            except Exception:
+                curr_label = curr_tone_str.title()
+
+            return self.send_message(
+                chat_id,
+                f"🎭 <b>Personalità & Tono del Caddie</b>\n"
+                f"Stile attuale: <b>{curr_label}</b>\n\n"
+                f"Tocca uno stile per cambiare immediatamente l'atteggiamento del tuo caddie:",
+                reply_markup=tone_keyboard
+            )
 
         elif cmd in ["/demo", "/test"]:
             user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)

@@ -126,6 +126,7 @@ class UserProfile(BaseModel):
     category: PlayerCategory = Field(default=PlayerCategory.CATEGORY_2, description="Categoria del giocatore")
     preferred_ball: Optional[str] = Field(default="Titleist Pro V1", description="Marca/modello di palla preferita")
     clubs_in_bag: List[ClubDetail] = Field(default_factory=get_default_bag, description="Lista completa delle mazze presenti in sacca con dettagli e distanze")
+    caddy_tone: str = Field(default="professionale", description="Stile e tono del caddy: professionale, arrabbiato, spensierato, psicologo")
     notes: Optional[str] = Field(default="", description="Note tattiche personali o obiettivi di stagione")
 
     def sort_clubs(self) -> None:

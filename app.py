@@ -21,6 +21,7 @@ from core.pdf_export import PDFReportGenerator
 from core.course import CourseRegistry, CONERO_GOLF_CLUB, GolfCourse
 from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex, get_default_bag, sort_clubs_by_distance
 from core.visualizer import GolfHoleVisualizer
+from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
 from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
 from datetime import datetime
@@ -1480,6 +1481,7 @@ def render_strokes_lost_radar(strokes_lost):
 # =========================================================
 tab_titles = [
     "📊 Live Dashboard & Diagnosi PGA",
+    "💬 Chat con il Caddie",
     "📍 Pin Position & Plays Like GPS",
     "🏌️‍♂️ Profilo Personale & Sacca Mazze",
     "📈 Storico Partite & Trend",
@@ -1491,12 +1493,13 @@ if current_user.is_admin:
 
 all_tabs = st.tabs(tab_titles)
 nav_tab1 = all_tabs[0]
-nav_pin_gps = all_tabs[1]
-nav_tab2 = all_tabs[2]
-nav_tab3 = all_tabs[3]
-nav_tab4 = all_tabs[4]
-nav_rules = all_tabs[5]
-nav_admin = all_tabs[6] if current_user.is_admin else None
+nav_chat = all_tabs[1]
+nav_pin_gps = all_tabs[2]
+nav_tab2 = all_tabs[3]
+nav_tab3 = all_tabs[4]
+nav_tab4 = all_tabs[5]
+nav_rules = all_tabs[6]
+nav_admin = all_tabs[7] if current_user.is_admin else None
 
 
 # ---------------------------------------------------------
@@ -1581,7 +1584,10 @@ with nav_tab1:
                     map_col, table_col = st.columns([2, 3])
 
                     with map_col:
-                        fig_map = GolfHoleVisualizer.create_hole_trajectory_map(h)
+                        fig_map = GolfHoleVisualizer.create_hole_trajectory_map(
+                            h,
+                            course_id=active_course.course_id if active_course else None
+                        )
                         st.plotly_chart(fig_map, use_container_width=True)
 
                     with table_col:
@@ -1647,6 +1653,127 @@ with nav_tab1:
 
     else:
         st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
+
+
+# ---------------------------------------------------------
+# TAB: CHAT CON IL CADDIE (CLOUD AI & PERSONALITÀ)
+# ---------------------------------------------------------
+with nav_chat:
+    st.subheader("💬 Chat con il tuo Caddie Personale (Cloud AI)")
+    st.caption("Consulenza strategica e caddie virtuale in tempo reale: chiedi consigli sui bastoni da tirare, gestione del vento, strategie di percorso o supporto mentale.")
+
+    if "caddy_chat_history" not in st.session_state:
+        st.session_state.caddy_chat_history = []
+    if "active_chat_tone" not in st.session_state:
+        st.session_state.active_chat_tone = getattr(st.session_state.user_profile, "caddy_tone", "professionale") or "professionale"
+
+    # Tone Selector Bar (Pill buttons)
+    top_col1, top_col2 = st.columns([3.2, 0.8])
+    with top_col1:
+        st.markdown("<div style='font-size:0.85rem; font-weight:bold; color:#94A3B8; margin-bottom:4px;'>🎭 PERSONALITÀ ATTIVA DEL CADDIE:</div>", unsafe_allow_html=True)
+        tone_cols = st.columns(4)
+        for idx, t_enum in enumerate(CaddyTone):
+            is_active = (st.session_state.active_chat_tone == t_enum.value)
+            btn_type = "primary" if is_active else "secondary"
+            with tone_cols[idx]:
+                if st.button(t_enum.short_label, key=f"chat_tone_btn_{t_enum.value}", type=btn_type, use_container_width=True):
+                    st.session_state.active_chat_tone = t_enum.value
+                    # Welcome reaction in new tone
+                    phrase = CaddyPersonalityEngine.get_instance().get_phrase(
+                        "START_ROUND",
+                        tone=t_enum.value,
+                        buca="1",
+                        nome=st.session_state.user_profile.player_name
+                    )
+                    st.session_state.caddy_chat_history.append({
+                        "role": "assistant",
+                        "content": f"🎭 <i>Personalità impostata su {t_enum.display_name}</i>\n\n«{phrase}»",
+                        "tone": t_enum.value
+                    })
+                    st.rerun()
+
+    with top_col2:
+        st.write("")
+        st.write("")
+        if st.button("🧹 Pulisci", key="btn_clear_caddy_chat", use_container_width=True):
+            st.session_state.caddy_chat_history = []
+            st.rerun()
+
+    active_tone_enum = CaddyTone(st.session_state.active_chat_tone)
+    st.markdown(f"""
+        <div style="background:#1E293B; border-left:4px solid {active_tone_enum.badge_color}; border-radius:6px; padding:8px 12px; margin-bottom:14px; font-size:0.85rem; color:#CBD5E1;">
+            <b style="color:{active_tone_enum.badge_color};">{active_tone_enum.display_name}</b> — <i>{active_tone_enum.description}</i>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Quick Suggestion Chips
+    st.markdown("<div style='font-size:0.82rem; color:#94A3B8; margin-bottom:6px;'>⚡ <i>Domande rapide:</i></div>", unsafe_allow_html=True)
+    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+    quick_prompt = None
+    with q_col1:
+        if st.button("🏌️ Bastone da 145m?", key="qp_dist", use_container_width=True):
+            quick_prompt = "Ho 145 metri alla bandiera in leggera salita con un po' di vento contrario. Quale bastone mi consigli dalla mia sacca?"
+    with q_col2:
+        if st.button("⛳ Strategia Buca 1", key="qp_h1", use_container_width=True):
+            quick_prompt = f"Dammi la strategia di gioco migliore per affrontare la buca 1 di {active_course.name} considerando il mio handicap."
+    with q_col3:
+        if st.button("🌊 Palla in Acqua", key="qp_water", use_container_width=True):
+            quick_prompt = "Ho appena mandato la palla in acqua dal tee! Come affronto il colpo successivo per limitare i danni ed evitare il disastro?"
+    with q_col4:
+        if st.button("🧘 Focus Mentale", key="qp_zen", use_container_width=True):
+            quick_prompt = "Sento tensione prima di questo tee shot delicato. Dammi un consiglio mentale per ritrovare ritmo, fiducia e calma."
+
+    # Initial Welcome message if history is empty
+    if not st.session_state.caddy_chat_history:
+        welcome_phrase = CaddyPersonalityEngine.get_instance().get_phrase(
+            "START_ROUND",
+            tone=st.session_state.active_chat_tone,
+            buca="1",
+            nome=st.session_state.user_profile.player_name
+        )
+        st.session_state.caddy_chat_history.append({
+            "role": "assistant",
+            "content": welcome_phrase,
+            "tone": st.session_state.active_chat_tone
+        })
+
+    # Render chat messages
+    for msg in st.session_state.caddy_chat_history:
+        if msg["role"] == "user":
+            with st.chat_message("user", avatar="🏌️‍♂️"):
+                st.markdown(msg["content"])
+        else:
+            msg_tone = msg.get("tone", st.session_state.active_chat_tone)
+            tone_avatar = {
+                "professionale": "👔",
+                "arrabbiato": "🤬",
+                "spensierato": "🍻",
+                "psicologo": "🧘"
+            }.get(msg_tone, "⛳")
+            with st.chat_message("assistant", avatar=tone_avatar):
+                st.markdown(msg["content"])
+
+    # Chat Input Box
+    user_input = st.chat_input("Scrivi al caddie (es. 'che bastone tiro da 130m?', 'come gioco questa buca?')...")
+    prompt_to_process = quick_prompt or user_input
+
+    if prompt_to_process:
+        st.session_state.caddy_chat_history.append({"role": "user", "content": prompt_to_process})
+        with st.spinner(f"Il caddie ({active_tone_enum.short_label}) sta valutando..."):
+            reply = CaddyPersonalityEngine.get_instance().chat_with_caddy(
+                message=prompt_to_process,
+                tone=st.session_state.active_chat_tone,
+                history=[{"role": m["role"], "content": m["content"]} for m in st.session_state.caddy_chat_history[:-1]],
+                user_profile=st.session_state.user_profile,
+                ai_config=user_ai,
+                active_course=active_course
+            )
+        st.session_state.caddy_chat_history.append({
+            "role": "assistant",
+            "content": reply,
+            "tone": st.session_state.active_chat_tone
+        })
+        st.rerun()
 
 
 # ---------------------------------------------------------
@@ -1837,6 +1964,28 @@ with nav_tab2:
         st.info(f"**Categoria Assegnata:** {new_cat.value}")
 
         st.markdown("---")
+        st.markdown("### 🎭 Personalità & Tono del Caddie")
+        st.caption("Scegli come il tuo caddie si relazionerà con te durante il giro e nelle chat.")
+        tone_options = [t.value for t in CaddyTone]
+        curr_tone = getattr(prof, "caddy_tone", "professionale") or "professionale"
+        curr_idx = tone_options.index(curr_tone) if curr_tone in tone_options else 0
+        m_caddy_tone = st.selectbox(
+            "Stile Predefinito Caddie",
+            options=tone_options,
+            format_func=lambda k: CaddyTone(k).display_name,
+            index=curr_idx,
+            key="profile_caddy_tone_select"
+        )
+        sel_enum = CaddyTone(m_caddy_tone)
+        st.markdown(f"""
+            <div style="background:#1E293B; border-left:4px solid {sel_enum.badge_color}; border-radius:6px; padding:10px 14px; margin-top:6px; margin-bottom:12px; font-size:0.85rem; color:#CBD5E1;">
+                <b style="color:{sel_enum.badge_color};">{sel_enum.display_name}</b><br>
+                <i>{sel_enum.description}</i><br>
+                <span style="color:#94A3B8; font-size:0.80rem; margin-top:4px; display:inline-block;">{sel_enum.sample_quote}</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("---")
         st.markdown("### 🎙️ In alternativa: Importa Profilo da Nota Vocale")
         setup_audio_file = st.file_uploader("Carica Audio Presentazione Sacca", type=["m4a", "mp3", "wav", "opus", "aac"])
         if st.button("🪄 Estrai Profilo da Audio", type="primary", disabled=not setup_audio_file):
@@ -1919,6 +2068,7 @@ with nav_tab2:
             st.session_state.user_profile.category = new_cat
             st.session_state.user_profile.preferred_ball = m_ball
             st.session_state.user_profile.clubs_in_bag = updated_clubs
+            st.session_state.user_profile.caddy_tone = m_caddy_tone
 
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"

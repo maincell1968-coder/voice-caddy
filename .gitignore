@@ -12,6 +12,7 @@ ENV/
 data/*
 !data/golf_rules_db.json
 !data/golf_courses.json
+!data/caddy_phrases.json
 !data/users.json
 !data/profiles/
 !data/profiles/*.json
