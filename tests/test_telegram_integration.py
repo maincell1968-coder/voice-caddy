@@ -15,10 +15,14 @@ class TestTelegramIntegration(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.cfg_mgr = TelegramConfigManager(data_dir=self.test_dir)
+        self.test_db = DatabaseManager(db_path=self.test_dir / "test_tg.db")
+        self.test_auth = AuthManager(data_file=self.test_dir / "test_users.json")
 
     def tearDown(self):
+        import gc
+        gc.collect()
         if self.test_dir.exists():
-            shutil.rmtree(self.test_dir)
+            shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_config_manager_token(self):
         test_tok = "123456789:TEST_ABC_TOKEN_XYZ"
@@ -45,7 +49,7 @@ class TestTelegramIntegration(unittest.TestCase):
         self.assertEqual(updated["active_course_name"], "Golf Club Ancona")
 
     def test_bot_context_and_summary(self):
-        bot = VoiceCaddyTelegramBot(bot_token="TEST_DUMMY_TOKEN")
+        bot = VoiceCaddyTelegramBot(bot_token="TEST_DUMMY_TOKEN", db=self.test_db, auth_mgr=self.test_auth)
         bot.config_mgr = self.cfg_mgr
 
         # Link chat

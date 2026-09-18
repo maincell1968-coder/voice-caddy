@@ -906,6 +906,12 @@ if "user_profile" not in st.session_state or st.session_state.user_profile.playe
         default_name=f"{current_user.first_name} {current_user.last_name}"
     )
 
+# Auto-ripristino trasparente dell'ultima partita registrata nel database se non ancora in memoria
+if st.session_state.round_data is None:
+    latest_saved = db.get_latest_round(user_id=current_user.user_id)
+    if latest_saved:
+        st.session_state.round_data = latest_saved
+
 # Header Bar with User Badge, Info Popover & Logout
 header_left, header_info, header_right = st.columns([3, 1.3, 1])
 with header_left:

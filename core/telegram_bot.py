@@ -41,7 +41,7 @@ class VoiceCaddyTelegramBot:
     5. Fallback trasparente su distanze piane se GPS o elevazione sono disattivati.
     """
 
-    def __init__(self, bot_token: Optional[str] = None):
+    def __init__(self, bot_token: Optional[str] = None, db: Optional[DatabaseManager] = None, auth_mgr: Optional[AuthManager] = None):
         self.config_mgr = TelegramConfigManager()
         self.bot_token = bot_token or self.config_mgr.get_token()
         if not self.bot_token:
@@ -49,8 +49,8 @@ class VoiceCaddyTelegramBot:
 
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}"
         self.audio_engine = VoiceCaddyAudioEngine(model_size="base")
-        self.db = DatabaseManager()
-        self.auth_mgr = AuthManager()
+        self.db = db or DatabaseManager()
+        self.auth_mgr = auth_mgr or AuthManager()
         self.course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
         self.session_mgr = LiveSessionManager()
         self.user_modes: Dict[str, str] = {}

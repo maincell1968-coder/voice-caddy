@@ -154,6 +154,18 @@ class DatabaseManager:
                 return GolfRoundData.model_validate_json(row["json_data"])
             return None
 
+    def get_latest_round(self, user_id: Optional[str] = None) -> Optional[GolfRoundData]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id:
+                cursor.execute("SELECT json_data FROM rounds WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,))
+            else:
+                cursor.execute("SELECT json_data FROM rounds ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                return GolfRoundData.model_validate_json(row["json_data"])
+            return None
+
     def delete_round(self, round_id: int) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
