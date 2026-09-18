@@ -233,7 +233,7 @@ class LiveSessionManager:
         self,
         chat_id: int | str,
         hole_number: int,
-        shot_index: int,
+        shot_index: Optional[int] = None,
         club: Optional[str] = None,
         lie: Optional[str] = None,
         latitude: Optional[float] = None,
@@ -248,6 +248,10 @@ class LiveSessionManager:
         c_id = str(chat_id)
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            if not shot_index:
+                cursor.execute("SELECT COALESCE(MAX(shot_index), 0) + 1 FROM live_shots WHERE chat_id = ? AND hole_number = ?", (c_id, hole_number))
+                row_idx = cursor.fetchone()
+                shot_index = row_idx[0] if row_idx else 1
             cursor.execute("""
                 INSERT INTO live_shots (
                     chat_id, hole_number, shot_index, club, lie,
@@ -455,10 +459,11 @@ class LiveSessionManager:
         net_par: int,
         stableford_points: int,
         net_strokes: int,
-        score_label: str = ""
+        score_label: str = "",
+        advance_hole: bool = True
     ) -> Dict[str, Any]:
         """
-        Registra la buca completata, aggiorna i totali progressivi e avanza automaticamente alla buca successiva.
+        Registra la buca completata, aggiorna i totali progressivi e, se advance_hole è True, avanza alla buca successiva.
         """
         c_id = str(chat_id)
         self.get_or_create_session(c_id, user_id="default_user")
@@ -495,15 +500,22 @@ class LiveSessionManager:
                 scores_list.append(hole_entry)
             scores_list.sort(key=lambda x: x.get("hole_number", 0))
 
-            next_h = 1 if hole_number >= 18 else hole_number + 1
-
-            cursor.execute("""
-                UPDATE live_sessions
-                SET completed_scores_json = ?, current_hole = ?, current_shot_index = 1,
-                    last_latitude = NULL, last_longitude = NULL, last_altitude = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE chat_id = ?
-            """, (json.dumps(scores_list), next_h, c_id))
+            if advance_hole:
+                next_h = 1 if hole_number >= 18 else hole_number + 1
+                cursor.execute("""
+                    UPDATE live_sessions
+                    SET completed_scores_json = ?, current_hole = ?, current_shot_index = 1,
+                        last_latitude = NULL, last_longitude = NULL, last_altitude = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE chat_id = ?
+                """, (json.dumps(scores_list), next_h, c_id))
+            else:
+                cursor.execute("""
+                    UPDATE live_sessions
+                    SET completed_scores_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE chat_id = ?
+                """, (json.dumps(scores_list), c_id))
             conn.commit()
 
         return self.get_round_scorecard(c_id)

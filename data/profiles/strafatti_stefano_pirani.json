@@ -54,6 +54,13 @@
       "carry_meters": 110.0
     },
     {
+      "club_name": "Approach Wedge (AW)",
+      "brand": "TaylorMade",
+      "model_type": "Qi / Stealth (AW)",
+      "shaft_flex": "Stiff",
+      "carry_meters": 98.0
+    },
+    {
       "club_name": "Sand Wedge (56°)",
       "brand": "Titleist",
       "model_type": "Vokey SM9",

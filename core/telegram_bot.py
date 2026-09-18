@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 from core.audio import VoiceCaddyAudioEngine
-from core.parser import parse_golf_audio_transcript, parse_quick_shot_update, parse_hole_closure_intent
+from core.parser import parse_golf_audio_transcript, parse_quick_shot_update, parse_hole_closure_intent, parse_retroactive_correction
 from core.metrics import GolfMetricsCalculator
 from core.db import DatabaseManager
 from core.auth import AuthManager, AIUserConfig, UserRecord

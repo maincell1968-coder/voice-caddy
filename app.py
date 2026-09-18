@@ -1885,7 +1885,7 @@ with nav_tab2:
             num_rows="dynamic",
             use_container_width=True,
             column_config={
-                "Mazza": st.column_config.SelectboxColumn("Mazza", options=["Driver", "Legno 3", "Legno 5", "Ibrido 3", "Ibrido 4", "Ferro 4", "Ferro 5", "Ferro 6", "Ferro 7", "Ferro 8", "Ferro 9", "Pitching Wedge", "Gap Wedge (50°/52°)", "Sand Wedge (56°)", "Lob Wedge (60°)", "Putter"], required=True),
+                "Mazza": st.column_config.SelectboxColumn("Mazza", options=["Driver", "Legno 3", "Legno 5", "Ibrido 3", "Ibrido 4", "Ferro 4", "Ferro 5", "Ferro 6", "Ferro 7", "Ferro 8", "Ferro 9", "Pitching Wedge", "Approach Wedge (AW)", "Gap Wedge (50°/52°)", "Sand Wedge (56°)", "Lob Wedge (60°)", "Putter"], required=True),
                 "Marca": st.column_config.SelectboxColumn("Marca", options=["TaylorMade", "Callaway", "Titleist", "Ping", "Cobra", "Mizuno", "Wilson", "Cleveland", "PXG", "Srixon", "Generica"]),
                 "Modello / Tipo": st.column_config.TextColumn("Modello / Tipo"),
                 "Shaft": st.column_config.SelectboxColumn("Shaft", options=["Regular", "Stiff", "Extra Stiff (X-Stiff)", "Senior / Lite", "Ladies"]),

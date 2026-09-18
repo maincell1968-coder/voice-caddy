@@ -144,7 +144,7 @@ def parse_quick_shot_update(text: str) -> Dict[str, Any]:
         (r"\bf([3-9])\b", lambda m: f"Ferro {m.group(1)}"),
         (r"\b(pitching\s*wedge|pw|pitch)\b", "Pitching Wedge"),
         (r"\b(gap\s*wedge|gw)\b", "Gap Wedge"),
-        (r"\b(approach\s*wedge|aw)\b", "Approach Wedge"),
+        (r"\b((?:ferro\s*)?approach(?:\s*wedge)?|aw)\b", "Approach Wedge"),
         (r"\b(sand\s*wedge|sw|sand)\b", "Sand Wedge"),
         (r"\b(lob\s*wedge|lw|lob)\b", "Lob Wedge"),
         (r"\b(wedge)\b", "Wedge"),
@@ -322,4 +322,201 @@ def parse_hole_closure_intent(text: str) -> Dict[str, Any]:
         "putts": None,
         "error": None
     }
+
+
+def parse_retroactive_correction(text: str) -> Dict[str, Any]:
+    """
+    Riconosce l'intenzione di correggere a posteriori lo score e/o registrare un colpo dimenticato
+    su una buca specifica (es. "correggi buca 5: 5 colpi, 2 putt, ferro 7 da 130m",
+    oppure comando "/correggi 5 5 2 Ferro 7 130").
+
+    Restituisce:
+    - is_correction: bool
+    - valid: bool
+    - hole_number: Optional[int]
+    - gross_strokes: Optional[int]
+    - putts: Optional[int] (default 2 se non specificato)
+    - club: Optional[str] (es. "Ferro 7")
+    - distance: Optional[float] (es. 130.0)
+    - error: Optional[str]
+    """
+    cleaned = text.strip()
+    lower = cleaned.lower()
+
+    # Trigger di correzione
+    correction_triggers = ["/correggi", "/modifica", "/fix", "correggi", "correzione", "modifica", "dimenticato", "rettifica", "rettifico"]
+    is_triggered = any(tr in lower for tr in correction_triggers)
+
+    if not is_triggered:
+        return {
+            "is_correction": False,
+            "valid": False,
+            "hole_number": None,
+            "gross_strokes": None,
+            "putts": 2,
+            "club": None,
+            "distance": None,
+            "error": None
+        }
+
+    # Rimuovi prefisso comando se presente
+    working_text = cleaned
+    for cmd in ["/correggi", "/modifica", "/fix"]:
+        if working_text.lower().startswith(cmd):
+            working_text = working_text[len(cmd):].strip()
+            break
+
+    working_lower = working_text.lower()
+
+    # 1. Riconoscimento numero buca (1-18)
+    hole_number = None
+    hole_match = re.search(r"\b(?:buca|hole|b)\s*(\d{1,2})\b", working_lower)
+    if hole_match:
+        hole_number = int(hole_match.group(1))
+
+    # 2. Riconoscimento score lordo (colpi totali)
+    gross_strokes = None
+    gross_match = re.search(r"\b(?:score|colpi|chiuso(?:\s+in)?|chiusa(?:\s+in)?|totale|fatto|in)\s*(\d+)\b", working_lower)
+    if gross_match:
+        gross_strokes = int(gross_match.group(1))
+
+    # 3. Riconoscimento putt
+    putts = None
+    putt_match = re.search(r"\b(\d+)\s*(?:putt|pt)\b", working_lower)
+    if putt_match:
+        putts = int(putt_match.group(1))
+
+    # 4. Riconoscimento bastone / mazza
+    club_name = None
+    club_aliases = [
+        (r"\b(?:driver|legno\s*1)\b", "Driver"),
+        (r"\b(?:legno\s*3|3\s*wood)\b", "Legno 3"),
+        (r"\b(?:legno\s*5|5\s*wood)\b", "Legno 5"),
+        (r"\b(?:ibrido\s*3|rescue\s*3|3\s*hybrid)\b", "Ibrido 3"),
+        (r"\b(?:ibrido\s*4|rescue\s*4|4\s*hybrid)\b", "Ibrido 4"),
+        (r"\b(?:ibrido|rescue|hybrid)\b", "Ibrido"),
+        (r"\b(?:ferro\s*3|3\s*iron)\b", "Ferro 3"),
+        (r"\b(?:ferro\s*4|4\s*iron)\b", "Ferro 4"),
+        (r"\b(?:ferro\s*5|5\s*iron)\b", "Ferro 5"),
+        (r"\b(?:ferro\s*6|6\s*iron)\b", "Ferro 6"),
+        (r"\b(?:ferro\s*7|7\s*iron)\b", "Ferro 7"),
+        (r"\b(?:ferro\s*8|8\s*iron)\b", "Ferro 8"),
+        (r"\b(?:ferro\s*9|9\s*iron)\b", "Ferro 9"),
+        (r"\b(?:pitching\s*wedge|pw|pitching)\b", "Pitching Wedge"),
+        (r"\b(?:sand\s*wedge|sw|sand)\b", "Sand Wedge"),
+        (r"\b(?:gap\s*wedge|gw)\b", "Gap Wedge (52°)"),
+        (r"\b(?:(?:ferro\s*)?approach(?:\s*wedge)?|aw)\b", "Approach Wedge (AW)"),
+        (r"\b(?:lob\s*wedge|lw|60\b|60°)\b", "Lob Wedge (60°)"),
+        (r"\b(?:putter)\b", "Putter"),
+    ]
+    for pattern, name in club_aliases:
+        if re.search(pattern, working_lower):
+            club_name = name
+            break
+
+    # 5. Riconoscimento distanza
+    distance = None
+    dist_match = re.search(r"\b(\d+(?:[\.,]\d+)?)\s*(?:metri|metro|m|mt)\b", working_lower)
+    if dist_match:
+        distance = float(dist_match.group(1).replace(",", "."))
+
+    # 6. Fallback posizionale da comando numerico (es. "/correggi 5 5 2" oppure "/correggi 5 5 2 Ferro 7 130")
+    tokens = working_text.split()
+    numeric_tokens = []
+    for tok in tokens:
+        clean_tok = tok.strip(":,.;")
+        if clean_tok.isdigit():
+            numeric_tokens.append(int(clean_tok))
+
+    # Se la buca non è stata trovata con keyword 'buca', usa il primo intero se è 1..18
+    if hole_number is None and numeric_tokens:
+        candidate_hole = numeric_tokens[0]
+        if 1 <= candidate_hole <= 18:
+            hole_number = candidate_hole
+            numeric_tokens = numeric_tokens[1:]
+
+    # Se lo score lordo non è stato trovato con keyword, usa il successivo intero
+    if gross_strokes is None and numeric_tokens:
+        candidate_gross = numeric_tokens[0]
+        if 1 <= candidate_gross <= 20:
+            gross_strokes = candidate_gross
+            numeric_tokens = numeric_tokens[1:]
+
+    # Se i putt non sono stati trovati con keyword, usa il successivo intero
+    if putts is None and numeric_tokens:
+        candidate_putt = numeric_tokens[0]
+        if 0 <= candidate_putt <= 10:
+            putts = candidate_putt
+            numeric_tokens = numeric_tokens[1:]
+
+    # Se la distanza non è stata trovata con keyword, e rimane un numero > 20, consideralo distanza
+    if distance is None and numeric_tokens:
+        candidate_dist = numeric_tokens[0]
+        if 15 <= candidate_dist <= 400:
+            distance = float(candidate_dist)
+
+    # Default putt se omesso
+    if putts is None:
+        putts = 2
+
+    # Validazione finale
+    if hole_number is None:
+        return {
+            "is_correction": True,
+            "valid": False,
+            "hole_number": None,
+            "gross_strokes": gross_strokes,
+            "putts": putts,
+            "club": club_name,
+            "distance": distance,
+            "error": "Specifica la buca da correggere (es. 'buca 5')."
+        }
+
+    if not (1 <= hole_number <= 18):
+        return {
+            "is_correction": True,
+            "valid": False,
+            "hole_number": hole_number,
+            "gross_strokes": gross_strokes,
+            "putts": putts,
+            "club": club_name,
+            "distance": distance,
+            "error": f"Il numero della buca ({hole_number}) deve essere compreso tra 1 e 18."
+        }
+
+    if gross_strokes is not None:
+        if gross_strokes < 1:
+            return {
+                "is_correction": True,
+                "valid": False,
+                "hole_number": hole_number,
+                "gross_strokes": gross_strokes,
+                "putts": putts,
+                "club": club_name,
+                "distance": distance,
+                "error": f"I colpi totali ({gross_strokes}) devono essere almeno 1."
+            }
+        if putts > gross_strokes:
+            return {
+                "is_correction": True,
+                "valid": False,
+                "hole_number": hole_number,
+                "gross_strokes": gross_strokes,
+                "putts": putts,
+                "club": club_name,
+                "distance": distance,
+                "error": f"I putt ({putts}) non possono superare i colpi totali ({gross_strokes})."
+            }
+
+    return {
+        "is_correction": True,
+        "valid": True,
+        "hole_number": hole_number,
+        "gross_strokes": gross_strokes,
+        "putts": putts,
+        "club": club_name,
+        "distance": distance,
+        "error": None
+    }
+
 

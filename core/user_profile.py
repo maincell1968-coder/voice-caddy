@@ -64,6 +64,8 @@ CLUB_HIERARCHY_RANK = {
     "gap wedge": 26,
     "gw": 26,
     "approach wedge": 27,
+    "approach wedge (aw)": 27,
+    "approach": 27,
     "aw": 27,
     "sand wedge": 28,
     "sw": 28,
