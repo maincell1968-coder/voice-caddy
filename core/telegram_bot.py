@@ -169,14 +169,13 @@ class VoiceCaddyTelegramBot:
         )
 
     def get_on_course_keyboard(self, mode: str = "training") -> dict:
-        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e toggle Modalità Gara/Training."""
-        mode_btn = "⚖️ Modalità Gara" if mode == "training" else "🎯 Modalità Training"
+        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e pulsanti separati Modalità Training e Gara."""
         return {
             "keyboard": [
                 [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
                 [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
-                [{"text": mode_btn}, {"text": "🎒 Profilo & Sacca"}],
-                [{"text": "🔄 Nuovo Giro"}]
+                [{"text": "🎯 Modalità Training"}, {"text": "⚖️ Modalità Gara"}],
+                [{"text": "🎒 Profilo & Sacca"}, {"text": "🔄 Nuovo Giro"}]
             ],
             "resize_keyboard": True,
             "is_persistent": True
