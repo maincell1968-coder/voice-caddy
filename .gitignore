@@ -8,11 +8,14 @@ __pycache__/
 venv/
 ENV/
 
-# Voice Caddy Local Data & Temp (Users, Passwords, Profiles, DB)
+# Voice Caddy Data Tracking (Persist profiles & database on Streamlit Cloud)
 data/*
 !data/golf_rules_db.json
 !data/golf_courses.json
-*.db
+!data/users.json
+!data/profiles/
+!data/profiles/*.json
+!voice_caddy.db
 *.wav
 *.m4a
 *.mp3

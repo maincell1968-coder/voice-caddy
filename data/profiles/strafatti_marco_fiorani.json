@@ -1,0 +1,72 @@
+{
+  "player_name": "Giocatore",
+  "handicap": 14.0,
+  "category": "Seconda Categoria (HCP 10 - 18)",
+  "preferred_ball": "Titleist Pro V1",
+  "clubs_in_bag": [
+    {
+      "club_name": "Driver",
+      "brand": "TaylorMade",
+      "model_type": "Qi10 / Stealth 2",
+      "shaft_flex": "Stiff",
+      "carry_meters": 220.0
+    },
+    {
+      "club_name": "Legno 3",
+      "brand": "Callaway",
+      "model_type": "Paradym Ai Smoke",
+      "shaft_flex": "Stiff",
+      "carry_meters": 195.0
+    },
+    {
+      "club_name": "Ibrido 4",
+      "brand": "Ping",
+      "model_type": "G430",
+      "shaft_flex": "Regular",
+      "carry_meters": 175.0
+    },
+    {
+      "club_name": "Ferro 5",
+      "brand": "Titleist",
+      "model_type": "T200",
+      "shaft_flex": "Stiff",
+      "carry_meters": 160.0
+    },
+    {
+      "club_name": "Ferro 7",
+      "brand": "Titleist",
+      "model_type": "T200",
+      "shaft_flex": "Stiff",
+      "carry_meters": 145.0
+    },
+    {
+      "club_name": "Ferro 9",
+      "brand": "Titleist",
+      "model_type": "T200",
+      "shaft_flex": "Stiff",
+      "carry_meters": 125.0
+    },
+    {
+      "club_name": "Pitching Wedge",
+      "brand": "Titleist",
+      "model_type": "Vokey SM9",
+      "shaft_flex": "Stiff",
+      "carry_meters": 110.0
+    },
+    {
+      "club_name": "Sand Wedge (56°)",
+      "brand": "Titleist",
+      "model_type": "Vokey SM9",
+      "shaft_flex": "Stiff",
+      "carry_meters": 85.0
+    },
+    {
+      "club_name": "Putter",
+      "brand": "Scotty Cameron",
+      "model_type": "Phantom X",
+      "shaft_flex": "Regular",
+      "carry_meters": 0.0
+    }
+  ],
+  "notes": ""
+}
