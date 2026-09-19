@@ -520,3 +520,391 @@ def parse_retroactive_correction(text: str) -> Dict[str, Any]:
     }
 
 
+def parse_round_sequence_intent(text: str, total_course_holes: int = 18) -> Dict[str, Any]:
+    """
+    Riconosce l'intenzione dell'utente di impostare la sequenza di buche giocate:
+    - Giro standard 18 buche (1..18)
+    - Shotgun da qualsiasi buca (es. da buca 7: [7..18, 1..6])
+    - Partenza da buca diversa dalla 1 (es. buca 10: [10..18, 1..9])
+    - Giro 9 buche: Front 9 (1..9) o Back 9 (10..18)
+    - Giro parziale o buche non consecutive (es. "1-6 e 15-18", "1,2,3,4,5")
+    - Riconosce inoltre eventuale preferenza di Tee ("gialli", "rossi", "bianchi", "verdi") o genere ("uomo", "donna").
+    """
+    cleaned = text.strip()
+    lower = cleaned.lower()
+
+    # Riconoscimento eventuale tee
+    tee_detected = None
+    for t in ["gialli", "rossi", "bianchi", "verdi", "neri", "arancioni"]:
+        if t in lower:
+            tee_detected = t
+            break
+
+    # Riconoscimento eventuale genere
+    gender_detected = None
+    if any(w in lower for w in ["donna", "donne", "femminile", "lady", "ladies"]):
+        gender_detected = "Donne"
+        if not tee_detected:
+            tee_detected = "rossi"
+    elif any(w in lower for w in ["uomo", "uomini", "maschile"]):
+        gender_detected = "Uomini"
+        if not tee_detected:
+            tee_detected = "gialli"
+
+    # 1. Shotgun da buca X o partenza da buca X
+    shotgun_match = re.search(
+        r"\b(?:shotgun|partenza|partito|partiti|iniziato|iniziat[ao]|start|start\s*from)\s*(?:dalla|da|dalle)?\s*(?:buca|hole|b)?\s*(\d{1,2})\b",
+        lower
+    )
+    if shotgun_match:
+        start_h = int(shotgun_match.group(1))
+        if 1 <= start_h <= total_course_holes:
+            seq = list(range(start_h, total_course_holes + 1)) + list(range(1, start_h))
+            return {
+                "is_sequence_intent": True,
+                "sequence": seq,
+                "sequence_type": "shotgun",
+                "start_hole": start_h,
+                "total_holes": len(seq),
+                "tee": tee_detected,
+                "gender": gender_detected,
+                "description": f"Shotgun da buca {start_h} ({start_h}➔{total_course_holes}, poi 1➔{start_h - 1})"
+            }
+
+    # 2. Giro 9 buche: Front 9 (1-9)
+    if any(k in lower for k in ["prime 9", "front 9", "front nine", "1-9", "1 a 9", "prime nove", "9 buche prime"]):
+        seq = list(range(1, 10))
+        return {
+            "is_sequence_intent": True,
+            "sequence": seq,
+            "sequence_type": "front_9",
+            "start_hole": 1,
+            "total_holes": len(seq),
+            "tee": tee_detected,
+            "gender": gender_detected,
+            "description": "Giro 9 buche: Front 9 (Buche 1➔9)"
+        }
+
+    # 3. Giro 9 buche: Back 9 (10-18)
+    if any(k in lower for k in ["seconde 9", "back 9", "back nine", "10-18", "10 a 18", "ultime 9", "seconde nove"]):
+        seq = list(range(10, min(19, total_course_holes + 1)))
+        return {
+            "is_sequence_intent": True,
+            "sequence": seq,
+            "sequence_type": "back_9",
+            "start_hole": 10,
+            "total_holes": len(seq),
+            "tee": tee_detected,
+            "gender": gender_detected,
+            "description": "Giro 9 buche: Back 9 (Buche 10➔18)"
+        }
+
+    # 4. Intervalli multipli o parziali (es. "1-6 e 15-18", "1-6, 15-18", "buche 1, 2, 3, 4, 5")
+    range_matches = re.findall(r"(\d{1,2})\s*[-–a]\s*(\d{1,2})", lower)
+    if range_matches:
+        # Se c'è solo un intervallo ed è 1-18 o 1-9 o 10-18, è già gestito altrove
+        seq = []
+        for start_s, end_s in range_matches:
+            s_val = int(start_s)
+            e_val = int(end_s)
+            if 1 <= s_val <= total_course_holes and 1 <= e_val <= total_course_holes:
+                step = 1 if e_val >= s_val else -1
+                for h in range(s_val, e_val + step, step):
+                    if h not in seq:
+                        seq.append(h)
+        if seq and (len(range_matches) > 1 or (seq != list(range(1, total_course_holes + 1)) and seq != list(range(1, 10)) and seq != list(range(10, min(19, total_course_holes + 1))))):
+            return {
+                "is_sequence_intent": True,
+                "sequence": seq,
+                "sequence_type": "custom_partial",
+                "start_hole": seq[0],
+                "total_holes": len(seq),
+                "tee": tee_detected,
+                "gender": gender_detected,
+                "description": f"Giro parziale ({len(seq)} buche: {', '.join(str(h) for h in seq)})"
+            }
+
+    # 5. Giro standard 18 buche (o intero campo)
+    standard_triggers = [
+        r"\b1-18\b", r"\b1\s*a\s*18\b", r"\b18\s*buche\b", r"\bgiro\s*standard\b",
+        r"\bgiro\s*completo\b", r"\btutte\s*le\s*buche\b", r"\btutto\s*il\s*giro\b",
+        r"\bcompleto\b"
+    ]
+    if any(re.search(tr, lower) for tr in standard_triggers):
+        seq = list(range(1, total_course_holes + 1))
+        return {
+            "is_sequence_intent": True,
+            "sequence": seq,
+            "sequence_type": "standard_18",
+            "start_hole": 1,
+            "total_holes": len(seq),
+            "tee": tee_detected,
+            "gender": gender_detected,
+            "description": f"Giro standard {total_course_holes} buche (1➔{total_course_holes})"
+        }
+
+    # Se il messaggio descrive colpi, score o chiusura buca, non è un intento di sequenza giro
+    if any(w in lower for w in ["colpi", "colpo", "putt", "fatto", "chiuso", "chiusa", "score", "finita"]):
+        return {
+            "is_sequence_intent": False,
+            "sequence": list(range(1, total_course_holes + 1)),
+            "sequence_type": "unknown",
+            "start_hole": 1,
+            "total_holes": total_course_holes,
+            "tee": tee_detected,
+            "gender": gender_detected,
+            "description": "Non riconosciuto"
+        }
+
+    # 6. Lista esplicita di numeri separati da virgole o spazi (es. "buche 1, 2, 3, 7, 8")
+    if "buche" in lower or "sequenza" in lower or "giocate" in lower:
+        num_candidates = [int(x) for x in re.findall(r"\b(\d{1,2})\b", lower) if 1 <= int(x) <= total_course_holes]
+        if len(num_candidates) >= 2:
+            return {
+                "is_sequence_intent": True,
+                "sequence": num_candidates,
+                "sequence_type": "custom_partial",
+                "start_hole": num_candidates[0],
+                "total_holes": len(num_candidates),
+                "tee": tee_detected,
+                "gender": gender_detected,
+                "description": f"Buche personalizzate ({len(num_candidates)} buche: {', '.join(str(h) for h in num_candidates)})"
+            }
+
+    return {
+        "is_sequence_intent": False,
+        "sequence": list(range(1, total_course_holes + 1)),
+        "sequence_type": "unknown",
+        "start_hole": 1,
+        "total_holes": total_course_holes,
+        "tee": tee_detected,
+        "gender": gender_detected,
+        "description": "Non riconosciuto"
+    }
+
+
+def detect_hole_anomalies(hole_data: Dict[str, Any]) -> List[str]:
+    """
+    Analizza i colpi e lo score di una buca registrata ed evidenzia incongruenze:
+    1. Palla in acqua / ostacolo senza penalità (Regola 17).
+    2. Fuori limite / palla persa senza penalità (Regola 18).
+    3. Par 4/5 chiuso in 2 colpi senza menzione di chip-in / eagle / imbucata dal fairway.
+    4. Salto diretto da tee shot a putt senza approccio/green su un Par 4/5.
+    5. Palla in green senza putt registrati per chiudere la buca.
+    """
+    anomalies: List[str] = []
+    hole_num = hole_data.get("hole_number", 1)
+    par = hole_data.get("par", 4)
+    shots = hole_data.get("shots", [])
+    penalties = hole_data.get("penalties", 0)
+    gross_strokes = hole_data.get("gross_strokes") or hole_data.get("score") or len(shots)
+    putts = hole_data.get("putts", 0)
+    notes_combined = " ".join([
+        str(s.get("notes", "")) + " " + str(s.get("result", "")) + " " + str(s.get("lie", ""))
+        for s in shots
+    ]).lower()
+    raw_desc = str(hole_data.get("description", "")).lower() + " " + notes_combined
+
+    # 1. Palla in acqua senza penalità
+    has_water = any(
+        s.get("result") == "water" or s.get("lie") == "hazard" or "acqua" in s.get("notes", "").lower() or "lago" in s.get("notes", "").lower()
+        for s in shots
+    ) or ("acqua" in raw_desc or "lago" in raw_desc or "ostacolo" in raw_desc)
+    if has_water and penalties == 0:
+        anomalies.append(
+            f"💧 <b>Buca {hole_num}:</b> Risulta palla finita in ostacolo d'acqua, ma non è stata registrata alcuna penalità di 1 colpo (Regola 17)."
+        )
+
+    # 2. Fuori limite / palla persa senza penalità
+    has_ob_lost = any(
+        s.get("result") in ["out_of_bounds", "lost"] or s.get("lie") == "out_of_bounds" or "fuori limite" in s.get("notes", "").lower() or "persa" in s.get("notes", "").lower()
+        for s in shots
+    ) or ("fuori limite" in raw_desc or "palla persa" in raw_desc or "lost ball" in raw_desc)
+    if has_ob_lost and penalties == 0:
+        anomalies.append(
+            f"🚫 <b>Buca {hole_num}:</b> Risulta una palla persa o fuori limite senza colpo di penalità registrato (Regola 18 - colpo e distanza)."
+        )
+
+    # 3. Par 4 o 5 chiuso in 2 colpi senza eagle o chip-in
+    if par >= 4 and gross_strokes <= 2:
+        has_holeout = any(k in raw_desc for k in ["chip-in", "chip in", "eagle", "albatross", "imbucat", "hole in one", "ace", "dal fairway", "imbucata"])
+        if not has_holeout:
+            anomalies.append(
+                f"🦅 <b>Buca {hole_num} (Par {par}):</b> Buca chiusa con soli {gross_strokes} colpi senza indicazione di eagle o imbucata diretta da fuori green."
+            )
+
+    # 4. Salto diretto da tee a putt su Par 4 o Par 5
+    if par >= 4 and len(shots) >= 2:
+        s1 = shots[0]
+        s2 = shots[1]
+        is_s1_tee = s1.get("lie") in ["tee", None] or s1.get("shot_index") == 1
+        is_s2_putt = ("putt" in str(s2.get("club", "")).lower()) or s2.get("lie") == "green"
+        if is_s1_tee and is_s2_putt and len(shots) <= 2:
+            if not any(k in raw_desc for k in ["green dal tee", "green in 1", "drive sul green", "imbucat"]):
+                anomalies.append(
+                    f"🏌️ <b>Buca {hole_num} (Par {par}):</b> Risulta un passaggio diretto dal tee al putt senza colpo di avvicinamento al green."
+                )
+
+    # 5. Palla in green senza putt registrati
+    reached_green = any(s.get("lie") == "green" or s.get("result") == "green" for s in shots) or "in green" in raw_desc
+    has_direct_holeout = any(k in raw_desc for k in ["imbucat", "chip-in", "chip in"])
+    if reached_green and putts == 0 and not has_direct_holeout:
+        anomalies.append(
+            f"⛳ <b>Buca {hole_num}:</b> La palla ha raggiunto il green, ma non sono stati registrati putt per la chiusura della buca."
+        )
+
+    return anomalies
+
+
+def parse_audit_correction(text: str) -> Dict[str, Any]:
+    """
+    Riconosce ed estrae le correzioni espresse in linguaggio naturale dall'utente durante l'audit:
+    Esempi:
+    - "Buca 4: manca un colpo con ferro 7 verso il green"
+    - "Buca 8: aggiungi una penalità per palla in acqua"
+    - "Buca 12: il secondo colpo era con ibrido, non con ferro 5"
+    - "Buca 10: ho fatto 3 putt, non 2"
+    - "Buca 5: mancava un approccio con sand wedge"
+    - "Buca 7 tutto ok" o "Tutto corretto"
+    """
+    cleaned = text.strip()
+    lower = cleaned.lower()
+
+    # Riconoscimento intenzione di conferma globale
+    confirmation_triggers = [
+        "tutto corretto", "tutto ok", "confermo", "conferma", "procedi",
+        "analizza", "puoi analizzare", "tutto giusto", "ok così", "va bene così",
+        "confermo tutto", "/conferma"
+    ]
+    if any(re.search(rf"\b{re.escape(tr)}\b", lower) for tr in confirmation_triggers):
+        return {
+            "is_correction": False,
+            "is_confirmation": True,
+            "hole_number": None,
+            "action": "confirm_all",
+            "details": {}
+        }
+
+    # Riconoscimento numero buca
+    hole_match = re.search(r"\b(?:buca|hole|b)\s*(\d{1,2})\b", lower)
+    hole_num = int(hole_match.group(1)) if hole_match else None
+
+    # Se non c'è una buca esplicita, controlla se inizia con un numero (es. "4: manca ferro 7")
+    if hole_num is None:
+        leading_num = re.match(r"^(\d{1,2})[\s:\.-]", cleaned)
+        if leading_num:
+            hole_num = int(leading_num.group(1))
+
+    # 1. Riconoscimento penalità
+    if any(k in lower for k in ["penalità", "penalita", "acqua", "fuori limite", "palla persa", "drop", "ostacolo"]):
+        p_strokes = 1
+        strokes_match = re.search(r"(\d+)\s*(?:colpi|colpo)?\s*(?:di\s*)?penalit", lower)
+        if strokes_match:
+            p_strokes = int(strokes_match.group(1))
+        elif "2 penalità" in lower or "due penalità" in lower:
+            p_strokes = 2
+
+        pen_type = "Generica"
+        if "acqua" in lower or "lago" in lower or "ostacolo" in lower:
+            pen_type = "Palla in Acqua (Regola 17)"
+        elif "fuori limite" in lower or "fl" in lower:
+            pen_type = "Fuori Limite (Regola 18)"
+        elif "palla persa" in lower:
+            pen_type = "Palla Persa (Regola 18)"
+        elif "drop" in lower:
+            pen_type = "Droppaggio (Regola 16/19)"
+
+        return {
+            "is_correction": True,
+            "is_confirmation": False,
+            "hole_number": hole_num,
+            "action": "add_penalty",
+            "details": {
+                "penalty_type": pen_type,
+                "penalty_strokes": p_strokes
+            }
+        }
+
+    # 2. Riconoscimento correzione putt
+    putt_match = re.search(r"\b(\d+)\s*(?:putt|pt)\b", lower)
+    if putt_match:
+        putts_val = int(putt_match.group(1))
+        return {
+            "is_correction": True,
+            "is_confirmation": False,
+            "hole_number": hole_num,
+            "action": "update_putts",
+            "details": {
+                "putts": putts_val
+            }
+        }
+
+    # 3. Riconoscimento colpo mancante o correzione bastone
+    # Individua bastone
+    club_candidates = [
+        "driver", "legno 3", "legno 5", "legno", "ibrido 3", "ibrido 4", "ibrido",
+        "ferro 3", "ferro 4", "ferro 5", "ferro 6", "ferro 7", "ferro 8", "ferro 9",
+        "pitching wedge", "pw", "gap wedge", "gw", "sand wedge", "sw", "lob wedge", "lw",
+        "putter", "approccio"
+    ]
+    detected_club = None
+    for cb in club_candidates:
+        if re.search(rf"\b{re.escape(cb)}\b", lower):
+            detected_club = cb.title()
+            break
+
+    # Individua indice colpo (es. "secondo colpo", "colpo 3")
+    shot_idx = None
+    num_m = re.search(r"\b(?:colpo|tiro)\s*(\d+)\b", lower)
+    if num_m:
+        shot_idx = int(num_m.group(1))
+    elif "secondo" in lower or "2°" in lower:
+        shot_idx = 2
+    elif "terzo" in lower or "3°" in lower:
+        shot_idx = 3
+    elif "quarto" in lower or "4°" in lower:
+        shot_idx = 4
+    elif "primo" in lower or "1°" in lower:
+        shot_idx = 1
+
+    # Individua esito o lie
+    result_cand = "fairway"
+    if "green" in lower:
+        result_cand = "green"
+    elif "rough" in lower:
+        result_cand = "rough"
+    elif "bunker" in lower:
+        result_cand = "bunker"
+    elif "corto" in lower:
+        result_cand = "short"
+    elif "lungo" in lower:
+        result_cand = "long"
+    elif "destra" in lower:
+        result_cand = "miss_right"
+    elif "sinistra" in lower:
+        result_cand = "miss_left"
+
+    if "manca" in lower or "aggiungi" in lower or "inserisci" in lower or detected_club:
+        return {
+            "is_correction": True,
+            "is_confirmation": False,
+            "hole_number": hole_num,
+            "action": "add_or_update_shot",
+            "details": {
+                "shot_index": shot_idx,
+                "club": detected_club or "Bastone non specificato",
+                "result": result_cand,
+                "description": cleaned
+            }
+        }
+
+    return {
+        "is_correction": True if hole_num is not None else False,
+        "is_confirmation": False,
+        "hole_number": hole_num,
+        "action": "unknown",
+        "details": {"raw_text": cleaned}
+    }
+
+
+

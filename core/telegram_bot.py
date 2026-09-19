@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 from core.audio import VoiceCaddyAudioEngine
-from core.parser import parse_golf_audio_transcript, parse_quick_shot_update, parse_hole_closure_intent, parse_retroactive_correction
+from core.parser import (
+    parse_golf_audio_transcript,
+    parse_quick_shot_update,
+    parse_hole_closure_intent,
+    parse_retroactive_correction,
+    parse_round_sequence_intent,
+    detect_hole_anomalies,
+    parse_audit_correction
+)
 from core.metrics import GolfMetricsCalculator
 from core.db import DatabaseManager
 from core.auth import AuthManager, AIUserConfig, UserRecord
@@ -116,6 +124,47 @@ class VoiceCaddyTelegramBot:
             "one_time_keyboard": True
         }
 
+    def get_round_sequence_keyboard(self) -> dict:
+        """Tastiera rapida per confermare la sequenza delle buche giocate (Prompt 1)."""
+        return {
+            "keyboard": [
+                [{"text": "⛳ 18 Buche (1-18)"}, {"text": "⛳ Prime 9 (1-9)"}],
+                [{"text": "⛳ Seconde 9 (10-18)"}, {"text": "🎯 Shotgun da Buca 7"}],
+                [{"text": "🟡 Tee Gialli (Uomo)"}, {"text": "🔴 Tee Rossi (Donna)"}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+
+    def get_audit_keyboard(self) -> dict:
+        """Tastiera rapida per confermare o correggere lo score buca per buca (Prompt 2)."""
+        return {
+            "keyboard": [
+                [{"text": "✅ Tutto Corretto, Analizza!"}],
+                [{"text": "💧 Aggiungi Penalità Acqua"}, {"text": "🚫 Aggiungi Fuori Limite"}],
+                [{"text": "🔄 Nuovo Giro"}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+
+    def _resolve_default_tee_for_gender(self, chat_id: int | str, gender: Optional[str] = None) -> Tuple[str, str]:
+        """
+        Determina il tee di default:
+        - Donna = tee rossi
+        - Uomo = tee gialli
+        """
+        user_rec, _, _, _ = self._resolve_context(chat_id)
+        resolved_gender = "Uomini"
+        if gender:
+            resolved_gender = "Donne" if any(w in gender.lower() for w in ["donna", "donne", "femm", "lady", "ladies"]) else "Uomini"
+        elif user_rec and getattr(user_rec, "gender", None):
+            g = str(user_rec.gender).lower()
+            resolved_gender = "Donne" if g in ["female", "donna", "donne"] else "Uomini"
+
+        default_tee = "rossi" if resolved_gender == "Donne" else "gialli"
+        return default_tee, resolved_gender
+
     def get_weather_request_keyboard(self) -> dict:
         """Restituisce la tastiera temporanea a 1 tocco per inviare la posizione all'avvio del round."""
         return {
@@ -138,6 +187,8 @@ class VoiceCaddyTelegramBot:
             self.user_modes[cid] = clean
             self.config_mgr.set_user_mode(cid, clean)
 
+        def_tee, resolved_gender = self._resolve_default_tee_for_gender(chat_id)
+
         # Se il tee è stato indicato esplicitamente (o appena scelto dal pulsante rapido)
         if tee_name:
             self.session_mgr.set_selected_tee(chat_id, tee_name)
@@ -147,7 +198,7 @@ class VoiceCaddyTelegramBot:
             self.pending_weather[cid] = True
             msg = (
                 f"{whs_profile.format_summary_card()}\n"
-                f"🌤️ <b>Tee {tee_name.title()} confermato!</b>\n"
+                f"🌤️ <b>Tee {tee_name.title()} ({resolved_gender}) confermato!</b>\n"
                 f"Tocca il pulsante qui sotto per rilevare il campo e calcolare vento e meteo sul percorso."
             )
             return self.send_message(
@@ -156,16 +207,18 @@ class VoiceCaddyTelegramBot:
                 reply_markup=self.get_weather_request_keyboard()
             )
 
-        # Se il tee non è stato specificato, chiedi una sola volta all'utente
+        # Se il tee non è stato specificato, chiedi una sola volta all'utente suggerendo il default in base al sesso
         self.session_mgr.set_awaiting_tee_choice(chat_id, True)
+        self.session_mgr.set_round_state(chat_id, "AWAITING_SETUP")
         msg = (
             "🏌️‍♂️ <b>Avvio Nuovo Giro!</b>\n\n"
-            "Da quali tee parti oggi? (es. Gialli, Bianchi, Rossi)"
+            f"Da quali tee parti oggi? (Default per <b>{resolved_gender}</b>: <b>Tee {def_tee.title()}</b>)\n"
+            "Conferma anche la sequenza di buche giocate (es. 1-18, Prime 9, Shotgun da buca X, o giro parziale)."
         )
         return self.send_message(
             chat_id,
             msg,
-            reply_markup=self.get_tee_selection_keyboard()
+            reply_markup=self.get_round_sequence_keyboard()
         )
 
     def get_on_course_keyboard(self, mode: str = "training") -> dict:
@@ -593,6 +646,223 @@ class VoiceCaddyTelegramBot:
         return reply_msg
 
     # ---------------------------------------------------------
+    # Round Audit Gate & Interactive Verification (Prompt 1 & 2)
+    # ---------------------------------------------------------
+    def initiate_round_audit_flow(self, chat_id: int | str, transcript_or_text: str):
+        """
+        Fase 2 & 3: Elabora la trascrizione del round, associa le buche secondo la sequenza confermata
+        (Prompt 1), rileva automaticamente le anomalie (Prompt 2) e presenta il riepilogo
+        interattivo prima dell'analisi definitiva e del salvataggio.
+        """
+        user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
+        player_name = f"{user_rec.first_name} {user_rec.last_name}"
+
+        # Verifica se la sequenza o il tee sono specificati nel testo stesso
+        seq_intent = parse_round_sequence_intent(transcript_or_text, active_course.holes_count)
+        if seq_intent["is_sequence_intent"]:
+            self.session_mgr.set_round_sequence(chat_id, seq_intent["sequence"])
+            if seq_intent["tee"]:
+                self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
+
+        confirmed_sequence = self.session_mgr.get_round_sequence(chat_id)
+        selected_tee = self.session_mgr.get_selected_tee(chat_id)
+
+        self.send_message(
+            chat_id,
+            f"🧠 <i>Trascrizione completata:</i>\n«<i>{transcript_or_text[:180]}...</i>»\n\n"
+            f"⛳ <i>Ricostruzione sequenza buche ({len(confirmed_sequence)} buche, Tee {selected_tee.title()}) in corso...</i>"
+        )
+
+        try:
+            raw_data = parse_golf_audio_transcript(
+                transcript_text=transcript_or_text,
+                user_profile=user_profile,
+                course=active_course,
+                ai_config=ai_cfg
+            )
+
+            raw_dict = raw_data.model_dump()
+            holes_dict = {h["hole_number"]: h for h in raw_dict.get("holes", [])}
+
+            ordered_holes = []
+            for h_num in confirmed_sequence:
+                if h_num in holes_dict:
+                    h_obj = holes_dict[h_num]
+                else:
+                    course_hole = next((ch for ch in active_course.holes if ch.hole_number == h_num), None)
+                    par_val = course_hole.par if course_hole else 4
+                    h_obj = {
+                        "hole_number": h_num,
+                        "par": par_val,
+                        "score": par_val,
+                        "fairway_hit": None,
+                        "gir": False,
+                        "putts": 2,
+                        "penalties": 0,
+                        "shots": [],
+                        "target_landing_analysis": None,
+                        "root_cause_error": None
+                    }
+
+                # Anomaly detection (Prompt 2)
+                h_obj["anomalies"] = detect_hole_anomalies(h_obj)
+                ordered_holes.append(h_obj)
+
+            raw_dict["holes"] = ordered_holes
+            raw_dict["round_info"]["holes_played"] = len(ordered_holes)
+
+            # Salva nella sessione provvisoria (Gate di Audit)
+            self.session_mgr.set_pending_round(chat_id, raw_dict, state="AWAITING_VERIFICATION")
+
+            # Messaggio con tono da maestro PGA e marcatore
+            msg = (
+                "🏌️‍♂️ <b>CONTROLLO SCORE & VERIFICA COLPI (MAESTRO PGA)</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "Prima di procedere con l'analisi definitiva, facciamo un controllo da maestro e da marcatore.\n\n"
+                "Durante una gara o un giro impegnativo, la tensione o la stanchezza possono far dimenticare "
+                "di comunicare un colpo, un ferro usato o una penalità. È assolutamente normale.\n\n"
+                f"📍 <b>Tee:</b> {selected_tee.title()} | <b>Buche giocate:</b> {len(ordered_holes)}\n\n"
+            )
+
+            for h in ordered_holes:
+                h_num = h.get("hole_number")
+                par = h.get("par", 4)
+                gross = h.get("score") or len(h.get("shots", []))
+                putts = h.get("putts", 0)
+                pen = h.get("penalties", 0)
+                shots = h.get("shots", [])
+                anomalies = h.get("anomalies", [])
+
+                msg += f"⛳ <b>Buca {h_num}</b> (Par {par}) ➔ <b>{gross} colpi</b> ({putts} putt, {pen} pen.)\n"
+                for s in shots:
+                    s_idx = s.get("shot_index", 1)
+                    cb = s.get("club") or "Bastone N/D"
+                    lie = s.get("lie", "fairway")
+                    res = s.get("result", "")
+                    msg += f"  • Colpo {s_idx}: {cb} ({lie} ➔ {res})\n"
+
+                for anom in anomalies:
+                    msg += f"  {anom}\n"
+                msg += "\n"
+
+            msg += (
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "✏️ <b>Se manca qualcosa, indicamelo così:</b>\n"
+                "• <i>«Buca 4: manca un colpo con ferro 7 verso il green»</i>\n"
+                "• <i>«Buca 8: aggiungi una penalità per palla in acqua»</i>\n"
+                "• <i>«Buca 12: ho fatto 3 putt, non 2»</i>\n"
+                "• <i>«Buca 15: il secondo colpo era con ibrido, non ferro 5»</i>\n\n"
+                "✅ <i>Se invece è tutto a posto, tocca <b>[✅ Tutto Corretto, Analizza!]</b> o scrivi «Confermo» per lanciare l'analisi completa!</i>"
+            )
+
+            return self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+
+        except Exception as e:
+            logging.error(f"Errore durante l'avvio dell'audit: {e}", exc_info=True)
+            return self.send_message(chat_id, f"❌ Errore durante l'elaborazione del giro: {str(e)}")
+
+    def handle_audit_correction(self, chat_id: int | str, text: str) -> bool:
+        """
+        Gestisce le correzioni inviate dall'utente durante lo stato AWAITING_VERIFICATION.
+        Riconosce colpi mancanti, penalità, rettifiche bastone o putt.
+        """
+        corr = parse_audit_correction(text)
+        if corr.get("is_confirmation") or text.strip() == "✅ Tutto Corretto, Analizza!":
+            self.complete_pending_round_analysis(chat_id)
+            return True
+
+        if not corr.get("is_correction"):
+            return False
+
+        hole_num = corr.get("hole_number")
+        if not hole_num:
+            self.send_message(
+                chat_id,
+                "⚠️ <b>Specifica il numero della buca da correggere.</b>\n"
+                "Esempio: <i>«Buca 4: manca un colpo con ferro 7»</i> o <i>«Buca 8: aggiungi una penalità per acqua»</i>."
+            )
+            return True
+
+        action = corr.get("action")
+        details = corr.get("details", {})
+
+        if action == "add_penalty":
+            p_type = details.get("penalty_type", "Penalità")
+            p_strokes = details.get("penalty_strokes", 1)
+            self.session_mgr.add_pending_hole_penalty(chat_id, hole_num, p_type, p_strokes)
+            msg = (
+                f"💧 <b>Buca {hole_num}:</b> Aggiunta penalità di {p_strokes} colpo/i ({p_type}).\n"
+                f"Il totale della buca è stato ricalcolato.\n\n"
+                f"<i>Confermi o ci sono altre modifiche? Tocca [✅ Tutto Corretto, Analizza!] se è tutto ok.</i>"
+            )
+            self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+            return True
+
+        elif action == "update_putts":
+            putts_val = details.get("putts", 2)
+            self.session_mgr.update_pending_hole_putts(chat_id, hole_num, putts_val)
+            msg = (
+                f"⛳ <b>Buca {hole_num}:</b> Conteggio putt aggiornato a {putts_val}.\n\n"
+                f"<i>Confermi o ci sono altre modifiche? Tocca [✅ Tutto Corretto, Analizza!] se è tutto ok.</i>"
+            )
+            self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+            return True
+
+        elif action == "add_or_update_shot":
+            self.session_mgr.update_pending_hole_shot(chat_id, hole_num, details)
+            cb = details.get("club", "Bastone")
+            msg = (
+                f"🏌️‍♂️ <b>Buca {hole_num}:</b> Registrato colpo ({cb}).\n"
+                f"Il totale della buca è stato aggiornato.\n\n"
+                f"<i>Ci sono altri colpi da inserire o confermi? Tocca [✅ Tutto Corretto, Analizza!] se è tutto ok.</i>"
+            )
+            self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+            return True
+
+        return False
+
+    def complete_pending_round_analysis(self, chat_id: int | str):
+        """
+        Fase 4: Convalida finale dell'utente ricevuta. Esegue il calcolo metriche WHS,
+        salva la partita nel database protetto (SafeVault) e invia il giudizio finale del Maestro PGA.
+        """
+        pending = self.session_mgr.get_pending_round(chat_id)
+        if not pending:
+            return self.send_message(chat_id, "ℹ️ Nessun giro in attesa di conferma. Avvia un nuovo giro con <code>/nuovo_giro</code>.")
+
+        user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+        player_name = f"{user_rec.first_name} {user_rec.last_name}"
+
+        self.send_message(
+            chat_id,
+            "🏆 <i>Tutto confermato! Generazione dell'analisi tecnica definitiva e calcolo WHS in corso...</i>"
+        )
+
+        try:
+            from core.schemas import GolfRoundData
+            # Rimuove campo provvisorio "anomalies" prima di validare con lo schema Pydantic
+            for h in pending.get("holes", []):
+                h.pop("anomalies", None)
+
+            raw_data = GolfRoundData.model_validate(pending)
+            validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
+
+            round_id = self.db.save_round(
+                round_data=validated_data,
+                user_id=user_rec.user_id,
+                group_name=user_rec.group
+            )
+
+            self.session_mgr.clear_pending_round(chat_id)
+
+            reply_msg = self._format_round_summary(validated_data, round_id, player_name, active_course.name)
+            return self.send_message(chat_id, reply_msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+
+        except Exception as e:
+            logging.error(f"Errore durante la finalizzazione dell'analisi: {e}", exc_info=True)
+            return self.send_message(chat_id, f"❌ Errore durante la finalizzazione: {str(e)}")
+
+    # ---------------------------------------------------------
     # Processing Voice & Text Messages
     # ---------------------------------------------------------
     def process_voice_message(self, chat_id: int | str, file_id: str):
@@ -686,29 +956,8 @@ class VoiceCaddyTelegramBot:
                 )
                 return
 
-            # Altrimenti è un resoconto completo della partita
-            self.send_message(
-                chat_id,
-                f"🧠 <i>Trascrizione completata:</i>\n«<i>{transcript[:180]}...</i>»\n\n<i>Analisi giro completo con l'IA in corso...</i>"
-            )
-
-            raw_data = parse_golf_audio_transcript(
-                transcript_text=transcript,
-                user_profile=user_profile,
-                course=active_course,
-                ai_config=ai_cfg
-            )
-
-            validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
-
-            round_id = self.db.save_round(
-                round_data=validated_data,
-                user_id=user_rec.user_id,
-                group_name=user_rec.group
-            )
-
-            reply_msg = self._format_round_summary(validated_data, round_id, player_name, active_course.name)
-            self.send_message(chat_id, reply_msg)
+            # Altrimenti è un resoconto completo della partita -> Avvia Audit & Verification Gate
+            return self.initiate_round_audit_flow(chat_id, transcript)
 
         except Exception as e:
             logging.error(f"Errore durante l'elaborazione vocale: {e}", exc_info=True)
@@ -744,6 +993,30 @@ class VoiceCaddyTelegramBot:
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         player_name = f"{user_rec.first_name} {user_rec.last_name}"
         user_mode = self.get_user_mode(chat_id)
+
+        # 0. Se siamo nello stato di verifica dell'audit (Prompt 2), gestisci correzioni o conferma
+        if self.session_mgr.get_round_state(chat_id) == "AWAITING_VERIFICATION":
+            if self.handle_audit_correction(chat_id, clean):
+                return
+
+        # 0b. Controllo se il messaggio specifica la sequenza di buche giocate (Prompt 1)
+        seq_intent = parse_round_sequence_intent(clean, active_course.holes_count)
+        if seq_intent["is_sequence_intent"] and (self.session_mgr.get_round_state(chat_id) in ["AWAITING_SETUP", "IDLE"] or len(clean.split()) <= 8):
+            self.session_mgr.set_round_sequence(chat_id, seq_intent["sequence"])
+            if seq_intent["tee"]:
+                self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
+            self.session_mgr.set_round_state(chat_id, "IDLE")
+            whs_p = self._resolve_handicap_profile(chat_id, tee_name=seq_intent["tee"])
+            t_name = self.session_mgr.get_selected_tee(chat_id)
+            msg = (
+                f"🏌️‍♂️ <b>Sequenza Buche Confermata!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• <b>Percorso:</b> {seq_intent['description']}\n"
+                f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
+                f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
+                f"🎙️ <i>Invia ora le tue note vocali o il testo con i colpi giocati buca per buca!</i>"
+            )
+            return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
 
         # Se in modalità gara e l'utente fa domande esplicite sul bastone da tirare
         if user_mode == "gara" and any(w in clean_lower for w in ["bastone", "mazza", "ferro", "legno", "ibrido", "che tiro", "cosa tiro", "consiglio"]):
@@ -903,34 +1176,8 @@ class VoiceCaddyTelegramBot:
                 self.send_message(chat_id, msg)
             return
 
-        # Altrimenti è un resoconto completo della partita
-        self.send_message(
-            chat_id,
-            f"📝 <i>Resoconto testuale ricevuto per <b>{player_name}</b> su <b>{active_course.name}</b>.\nAnalisi colpi con l'IA in corso...</i>"
-        )
-
-        try:
-            raw_data = parse_golf_audio_transcript(
-                transcript_text=text,
-                user_profile=user_profile,
-                course=active_course,
-                ai_config=ai_cfg
-            )
-
-            validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
-
-            round_id = self.db.save_round(
-                round_data=validated_data,
-                user_id=user_rec.user_id,
-                group_name=user_rec.group
-            )
-
-            reply_msg = self._format_round_summary(validated_data, round_id, player_name, active_course.name)
-            self.send_message(chat_id, reply_msg)
-
-        except Exception as e:
-            logging.error(f"Errore durante l'elaborazione testuale: {e}", exc_info=True)
-            self.send_message(chat_id, f"❌ Errore durante l'analisi: {str(e)}")
+        # Altrimenti è un resoconto completo della partita -> Avvia Audit & Verification Gate
+        return self.initiate_round_audit_flow(chat_id, text)
 
     # ---------------------------------------------------------
     # Telegram Commands Handler
@@ -1087,7 +1334,42 @@ class VoiceCaddyTelegramBot:
 
             help_msg += "\n⚖️ <i>Voice Caddy Pro &bull; Concept, Architettura e Sviluppo: <b>Stefano Pirani</b></i>\n"
 
-            self.send_message(chat_id, help_msg)
+            return self.send_message(chat_id, help_msg)
+
+        if cmd in ["/conferma", "/conferma_giro"]:
+            return self.complete_pending_round_analysis(chat_id)
+
+        if cmd in ["/sequenza", "/shotgun"]:
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            if args:
+                seq_text = " ".join(args)
+                seq_intent = parse_round_sequence_intent(seq_text, active_course.holes_count)
+                if seq_intent["is_sequence_intent"]:
+                    self.session_mgr.set_round_sequence(chat_id, seq_intent["sequence"])
+                    if seq_intent["tee"]:
+                        self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
+                    self.session_mgr.set_round_state(chat_id, "IDLE")
+                    whs_p = self._resolve_handicap_profile(chat_id, tee_name=seq_intent["tee"])
+                    t_name = self.session_mgr.get_selected_tee(chat_id)
+                    msg = (
+                        f"🏌️‍♂️ <b>Sequenza Buche Impostata!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>Percorso:</b> {seq_intent['description']}\n"
+                        f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
+                        f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
+                        f"🎙️ <i>Invia ora le tue note vocali o il testo con i colpi giocati!</i>"
+                    )
+                    return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+            return self.send_message(
+                chat_id,
+                "⛳ <b>Imposta la sequenza di buche giocate:</b>\n"
+                "Esempi:\n"
+                "• <code>/sequenza 1-18</code> (Giro standard)\n"
+                "• <code>/sequenza prime 9</code> (Buche 1-9)\n"
+                "• <code>/sequenza shotgun 7</code> (Da buca 7 a 18, poi 1 a 6)\n"
+                "• <code>/sequenza 1-6 e 15-18</code> (Giro parziale)",
+                reply_markup=self.get_round_sequence_keyboard()
+            )
 
         elif cmd in ["/gara", "/modalitagara"]:
             self.start_round_flow(chat_id, "gara")
