@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, Any, List, Optional
-from core.schemas import GolfRoundData, HoleData, PerformanceSummary
+from core.schemas import GolfRoundData, HoleData, PerformanceSummary, CourseManagementStats, ShotIntent
 
 
 class GolfMetricsCalculator:
@@ -90,6 +90,9 @@ class GolfMetricsCalculator:
         # 7. Extract primary miss tendency
         miss_summary = cls._extract_miss_tendencies(holes)
 
+        # 8. Course Management Stats (layup, recovery, bump & run)
+        cm_stats = cls.calculate_course_management_stats(holes)
+
         # Re-build validated PerformanceSummary (with professional_diagnosis preserved)
         updated_summary = PerformanceSummary(
             total_score=total_score,
@@ -105,7 +108,8 @@ class GolfMetricsCalculator:
             primary_miss_tendency=miss_summary or round_data.performance_summary.primary_miss_tendency,
             professional_diagnosis=round_data.performance_summary.professional_diagnosis,
             strokes_lost_breakdown=round_data.performance_summary.strokes_lost_breakdown,
-            training_drills_recommended=round_data.performance_summary.training_drills_recommended
+            training_drills_recommended=round_data.performance_summary.training_drills_recommended,
+            course_management_stats=cm_stats
         )
 
         round_data.holes = holes
@@ -144,6 +148,57 @@ class GolfMetricsCalculator:
             "miss_right": "Errore a destra del green/fairway"
         }
         return labels_it.get(most_frequent_miss, f"Errore ricorrente: {most_frequent_miss}")
+
+    @classmethod
+    def calculate_course_management_stats(cls, holes: List[HoleData]) -> CourseManagementStats:
+        layups = 0
+        recoveries = 0
+        bump_runs = 0
+        recovery_holes_count = 0
+        recovery_success_count = 0
+
+        for h in holes:
+            hole_had_recovery = False
+            for s in h.shots:
+                # Check layup
+                if getattr(s, "is_layup", False) or getattr(s, "intent", None) == ShotIntent.LAYUP:
+                    layups += 1
+                # Check recovery
+                if getattr(s, "is_recovery", False) or getattr(s, "intent", None) in (ShotIntent.RECOVERY_PUNCH, ShotIntent.ESCAPE_TROUBLE):
+                    recoveries += 1
+                    hole_had_recovery = True
+                # Check bump and run
+                if getattr(s, "intent", None) == ShotIntent.BUMP_AND_RUN:
+                    bump_runs += 1
+
+            if hole_had_recovery:
+                recovery_holes_count += 1
+                # Success if score <= par or net_score <= par (Net Par or better)
+                net_par_target = h.par + (h.received_strokes or 0)
+                if h.score <= h.par or (h.net_score is not None and h.net_score <= h.par) or h.score <= net_par_target:
+                    recovery_success_count += 1
+
+        recovery_rate = (
+            round((recovery_success_count / recovery_holes_count) * 100.0, 1)
+            if recovery_holes_count > 0 else 100.0
+        )
+
+        if layups >= 2 and recoveries <= 2:
+            rating = "Gestione del Percorso Esemplare e Disciplinata"
+        elif recoveries >= 4 and recovery_rate < 40.0:
+            rating = "Troppi Rischi Inutili / Gestione Difficoltà da Ottimizzare"
+        elif layups >= 1 or bump_runs >= 1:
+            rating = "Strategia Solida e Paziente"
+        else:
+            rating = "Standard"
+
+        return CourseManagementStats(
+            layups_count=layups,
+            recoveries_count=recoveries,
+            bump_and_runs_count=bump_runs,
+            recovery_success_rate=recovery_rate,
+            course_management_rating=rating
+        )
 
     @staticmethod
     def get_scorecard_matrix(holes: List[HoleData]) -> List[Dict[str, Any]]:

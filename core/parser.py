@@ -3,11 +3,174 @@ from __future__ import annotations
 import os
 import re
 from typing import Optional, Dict, Any
-from core.schemas import GolfRoundData
+from core.schemas import GolfRoundData, ShotIntent
 from core.user_profile import UserProfile
 from core.course import GolfCourse, CONERO_GOLF_CLUB
 from core.auth import AIUserConfig
 from core.ai_provider import execute_round_analysis
+
+
+def infer_shot_intent(
+    text: str = "",
+    club: Optional[str] = None,
+    lie: Optional[str] = None,
+    distance_to_green: Optional[float] = None,
+    shot_index: Optional[int] = None,
+    par: Optional[int] = None,
+    prev_lie: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Riconosce e classifica deterministicamente l'intento tattico del colpo (Shot Intent):
+    - Distingue tra colpo pieno (FULL_SHOT), layup tattico (LAYUP), salvataggio/uscita (RECOVERY_PUNCH / ESCAPE_TROUBLE),
+      approccio a correre (BUMP_AND_RUN), flop/pitch alto (PITCH_FLOP), chip dal bordo (CHIP), o tee shot (TEE_SHOT).
+    - Impedisce che un colpo di tocco o di piazzamento (es. F6 a 30m) sia catalogato erroneamente come un colpo fallito o corto di 100m.
+    """
+    cleaned = (text or "").lower()
+    club_str = (club or "").lower()
+    lie_str = (lie or "").lower()
+    prev_lie_str = (prev_lie or "").lower()
+
+    # 1. Analisi esplicita del testo / parole chiave
+    recovery_keywords = [
+        "recovery", "punch", "colpo basso", "uscita da", "uscita tra", "alberi", "piante", "rami",
+        "boscaglia", "rimettersi in gioco", "rimesso in gioco", "rimettersi in pista", "tirare fuori",
+        "fuori dai guai", "sotto i rami", "uscita laterale", "escape", "salvataggio", "in fairway solo per uscire"
+    ]
+    if any(kw in cleaned for kw in recovery_keywords):
+        if "laterale" in cleaned or "solo per uscire" in cleaned or "escape" in cleaned:
+            return {
+                "intent": ShotIntent.ESCAPE_TROUBLE,
+                "is_recovery": True,
+                "is_layup": False,
+                "intent_reason": "Uscita laterale di sicurezza da ostacolo/boscaglia"
+            }
+        return {
+            "intent": ShotIntent.RECOVERY_PUNCH,
+            "is_recovery": True,
+            "is_layup": False,
+            "intent_reason": "Colpo di recovery/salvataggio per rimettersi in gioco"
+        }
+
+    layup_keywords = [
+        "layup", "lay up", "lay-up", "piazzamento", "piazzare", "piazzato", "colpo conservativo",
+        "davanti all'acqua", "prima dell'acqua", "prima del lago", "prima del fosso", "tenuto corto",
+        "appoggio", "piazzata"
+    ]
+    if any(kw in cleaned for kw in layup_keywords):
+        return {
+            "intent": ShotIntent.LAYUP,
+            "is_recovery": False,
+            "is_layup": True,
+            "intent_reason": "Piazzamento tattico conservativo (Layup)"
+        }
+
+    bump_keywords = [
+        "bump and run", "bump & run", "bumpandrun", "approccio a correre", "a correre",
+        "rotolo", "fatto correre", "farla correre", "ferro basso a correre", "corsa"
+    ]
+    if any(kw in cleaned for kw in bump_keywords):
+        return {
+            "intent": ShotIntent.BUMP_AND_RUN,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Approccio basso a correre (Bump and Run)"
+        }
+
+    flop_keywords = [
+        "flop", "flop shot", "pitch alto", "alzo la palla", "alta e morbida", "morbido sopra",
+        "aperto la faccia", "faccia aperta", "pallonetto"
+    ]
+    if any(kw in cleaned for kw in flop_keywords):
+        return {
+            "intent": ShotIntent.PITCH_FLOP,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Approccio alto e morbido (Flop / Pitch)"
+        }
+
+    chip_keywords = [
+        "chip", "chippetto", "bordo green", "dal bordo", "collar", "fringe", "avangreen"
+    ]
+    if any(kw in cleaned for kw in chip_keywords):
+        return {
+            "intent": ShotIntent.CHIP,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Chip attorno al green"
+        }
+
+    # 2. Euristica balistica e contestuale basata su bastone e distanza
+    dist = distance_to_green
+
+    # Controlla se è un colpo di partenza
+    if shot_index == 1 or lie_str == "tee":
+        return {
+            "intent": ShotIntent.TEE_SHOT,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Tee shot dal tee di partenza"
+        }
+
+    # Rilevamento Bump & Run implicito:
+    # Uso di un ferro medio (F4, F5, F6, F7, F8, F9 o Ibrido) da < 45m dal green
+    is_mid_iron_or_hybrid = any(
+        c in club_str for c in ["ferro 4", "ferro 5", "ferro 6", "ferro 7", "ferro 8", "ferro 9", "f4", "f5", "f6", "f7", "f8", "f9", "ibrido"]
+    )
+    if is_mid_iron_or_hybrid and dist is not None and dist <= 45.0 and lie_str in ("fairway", "rough", "green", "collar", "fringe", "unknown", ""):
+        return {
+            "intent": ShotIntent.BUMP_AND_RUN,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": f"Uso di ferro medio ({club}) da {dist}m per approccio a correre (Bump & Run)"
+        }
+
+    # Rilevamento Recovery implicito:
+    is_long_or_mid_club = any(
+        c in club_str for c in ["driver", "legno", "ibrido", "ferro 3", "ferro 4", "ferro 5", "ferro 6", "ferro 7"]
+    )
+    if is_long_or_mid_club and lie_str in ("rough", "hazard", "alberi") and dist is not None and 35.0 <= dist <= 85.0:
+        return {
+            "intent": ShotIntent.RECOVERY_PUNCH,
+            "is_recovery": True,
+            "is_layup": False,
+            "intent_reason": f"Uscita/recovery controllata con {club} dal rough/ostacolo"
+        }
+
+    # Rilevamento Layup implicito su Par 5:
+    if par == 5 and shot_index == 2 and is_long_or_mid_club:
+        if dist is not None and dist >= 50.0:
+            return {
+                "intent": ShotIntent.LAYUP,
+                "is_recovery": False,
+                "is_layup": True,
+                "intent_reason": "Secondo colpo di piazzamento strategico su Par 5 (Layup)"
+            }
+
+    # Rilevamento approcci con Wedge vicino al green
+    is_wedge = any(w in club_str for w in ["wedge", "pitch", "sand", "lob", "approach", "gap", "pw", "sw", "lw", "gw", "aw"])
+    if is_wedge and dist is not None:
+        if dist <= 18.0:
+            return {
+                "intent": ShotIntent.CHIP,
+                "is_recovery": False,
+                "is_layup": False,
+                "intent_reason": f"Chip con {club} a breve distanza ({dist}m)"
+            }
+        elif dist <= 50.0:
+            return {
+                "intent": ShotIntent.PITCH_FLOP,
+                "is_recovery": False,
+                "is_layup": False,
+                "intent_reason": f"Pitch/approccio morbido con {club} ({dist}m)"
+            }
+
+    # Default: Colpo pieno standard
+    return {
+        "intent": ShotIntent.FULL_SHOT,
+        "is_recovery": False,
+        "is_layup": False,
+        "intent_reason": "Colpo pieno standard"
+    }
 
 
 def parse_golf_audio_transcript(
@@ -88,6 +251,21 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
    - Colpi Netti Totale = Colpi Lordi Totale - Playing Handicap.
 4. **Coerenza dei dati**: Compila con la massima precisione i dettagli buca per buca e il riepilogo complessivo del giro.
 
+### 🏌️‍♂️ DISTINZIONE TATTICA DELL'INTENTO DEI COLPI (SHOT INTENT TAXONOMY):
+Un colpo di golf non è mai un semplice valore numerico: lo stesso Ferro 6 può essere usato a 160m per il green o a 30m per un approccio a correre!
+Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagliato o un 'mishit':
+1. **`BUMP_AND_RUN` (Approccio a correre attorno al green):**
+   - Quando un ferro medio (Ferro 4, 5, 6, 7, 8, 9, Ibrido) viene usato da corta distanza (< 45m dal green) per far saltare l'avangreen e rotolare verso la bandiera.
+   - Tagga `intent: "bump_and_run"`. NON considerarlo MAI un colpo corto o errato: è una scelta tecnica di precisione!
+2. **`RECOVERY_PUNCH` (Uscita da difficoltà / Pugno basso):**
+   - Quando il giocatore è tra gli alberi, sotto rami bassi, in rough pesante o in ostacolo, e gioca un ferro per rimettere la palla in gioco in fairway (es. 40-90 metri).
+   - Tagga `intent: "recovery_punch"`, `is_recovery: true`. Consideralo un ottimo colpo di salvataggio.
+3. **`LAYUP` (Piazzamento Tattico):**
+   - Quando il giocatore gioca un colpo conservativo (es. secondo colpo su un Par 5 o prima di un ostacolo d'acqua) per posizionarsi alla distanza di approccio ideale.
+   - Tagga `intent: "layup"`, `is_layup: true`. Premialo nell'analisi di gestione del percorso (`course_management_score`).
+4. **`FULL_SHOT` (Colpo Pieno):**
+   - Il colpo standard giocato alla distanza di carry nominale del bastone verso fairway o green.
+
 ### 📋 ULTERIORI ISTRUZIONI DI ESTRAZIONE:
 - Confronta le distanze dei colpi menzionati con le distanze registrate nella sacca del giocatore.
 - Mantieni la rigorosità nella conta dei colpi, Fairway Hit (solo Par 4/5) e GIR (Green in Regulation).
@@ -139,6 +317,25 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
                 h.stableford_gross_points = max(0, 2 + h.par - h.score)
     except Exception:
         pass
+
+    # Arricchimento deterministico dell'intento dei colpi (Shot Intent Inference)
+    for h in parsed_data.holes:
+        prev_lie_str = "tee"
+        for s in h.shots:
+            if not getattr(s, "intent", None) or s.intent == ShotIntent.FULL_SHOT:
+                inf = infer_shot_intent(
+                    text=s.notes or "",
+                    club=s.club,
+                    lie=s.lie.value if hasattr(s.lie, "value") else str(s.lie),
+                    distance_to_green=s.distance_meters or s.raw_distance,
+                    shot_index=s.shot_index,
+                    par=h.par,
+                    prev_lie=prev_lie_str
+                )
+                s.intent = inf["intent"]
+                s.is_recovery = inf["is_recovery"]
+                s.is_layup = inf["is_layup"]
+            prev_lie_str = s.lie.value if hasattr(s.lie, "value") else str(s.lie)
 
     return parsed_data
 
@@ -229,13 +426,25 @@ def parse_quick_shot_update(text: str) -> Dict[str, Any]:
 
     is_quick_shot = has_signals and not is_multi_hole
 
+    intent_info = infer_shot_intent(
+        text=text,
+        club=club,
+        lie=lie,
+        distance_to_green=manual_distance,
+        shot_index=shot_index,
+    )
+
     return {
         "is_quick_shot": is_quick_shot,
         "shot_index": shot_index,
         "club": club,
         "lie": lie or ("tee" if shot_index == 1 else "fairway"),
         "manual_distance": manual_distance,
-        "raw_text": text
+        "raw_text": text,
+        "intent": intent_info["intent"],
+        "is_recovery": intent_info["is_recovery"],
+        "is_layup": intent_info["is_layup"],
+        "intent_reason": intent_info["intent_reason"]
     }
 
 

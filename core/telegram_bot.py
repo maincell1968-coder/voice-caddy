@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
+from core.schemas import ShotIntent
 from core.audio import VoiceCaddyAudioEngine
 from core.parser import (
     parse_golf_audio_transcript,
@@ -668,18 +669,43 @@ class VoiceCaddyTelegramBot:
         holes_count = info.holes_played or len(validated_data.holes)
         putts_avg = round(summary.total_putts / holes_count, 2) if holes_count else 0.0
 
+        # Score Lordo e Netto
+        score_line = f"• 🏌️ <b>Score Totale:</b> {summary.total_score} Lordo ({rel_par_str})"
+        if summary.total_score_net is not None:
+            score_line += f" | <b>{summary.total_score_net} Netto</b>"
+
+        # Stableford
+        stbl_line = ""
+        if summary.total_stableford_points is not None:
+            gross_stbl = summary.total_stableford_gross_points if summary.total_stableford_gross_points is not None else "-"
+            stbl_line = f"• 🏆 <b>Punti Stableford:</b> <b>{summary.total_stableford_points} pt Netti</b> | {gross_stbl} pt Lordi\n"
+
+        # Course Management Stats
+        cm = summary.course_management_stats
+        cm_block = ""
+        if cm:
+            cm_block = (
+                f"🧠 <b>GESTIONE DEL PERCORSO & SCELTE TATTICHE:</b>\n"
+                f"• <b>Valutazione Tattica:</b> {cm.course_management_rating}\n"
+                f"• <b>Piazzamenti (Layup):</b> {cm.layups_count} | <b>Salvataggi (Recovery):</b> {cm.recoveries_count}\n"
+                f"• <b>Approcci a correre (Bump & Run):</b> {cm.bump_and_runs_count}\n"
+                f"• <b>Tasso di Successo Recovery:</b> {cm.recovery_success_rate}%\n\n"
+            )
+
         reply_msg = (
             f"⛳ <b>VOICE CADDY PRO — SCORECARD UFFICIALE</b>\n"
             f"👤 <b>Giocatore:</b> {player_name}\n"
             f"📍 <b>Campo:</b> {course_name}\n"
             f"🔢 <b>Buche giocate:</b> {holes_count}\n\n"
             f"📊 <b>RISULTATI CHIAVE:</b>\n"
-            f"• <b>Score Totale:</b> {summary.total_score} ({rel_par_str})\n"
+            f"{score_line}\n"
+            f"{stbl_line}"
             f"• <b>Fairway Presi (FIR):</b> {summary.fairway_accuracy_pct}%\n"
             f"• <b>Green in Reg. (GIR):</b> {summary.gir_pct}%\n"
             f"• <b>Scrambling:</b> {summary.scrambling_pct}%\n"
             f"• <b>Totale Putt:</b> {summary.total_putts} (Media {putts_avg}/buca)\n"
             f"• <b>Course Mgmt Score:</b> {diag.course_management_score}/100\n\n"
+            f"{cm_block}"
             f"🎯 <b>TENDENZA ERRORE PRINCIPALE:</b>\n"
             f"<i>{summary.primary_miss_tendency}</i>\n\n"
             f"🧠 <b>DIAGNOSI CADDIE PGA:</b>\n"
@@ -1233,18 +1259,28 @@ class VoiceCaddyTelegramBot:
             s_idx = quick["shot_index"] or session.get("current_shot_index", 1)
             club = quick["club"]
             lie = quick["lie"]
+            intent = quick.get("intent", ShotIntent.FULL_SHOT)
+            is_recovery = quick.get("is_recovery", False)
+            is_layup = quick.get("is_layup", False)
 
+            shot_note = f"[{intent.value if hasattr(intent, 'value') else intent}] {text}" if intent != ShotIntent.FULL_SHOT else text
             self.session_mgr.record_live_shot(
                 chat_id=chat_id,
                 hole_number=h_num,
                 shot_index=s_idx,
                 club=club,
                 lie=lie,
-                notes=text
+                notes=shot_note
             )
             next_shot = self.session_mgr.advance_shot(chat_id)
 
-            if lie in ["bunker", "sabbia"]:
+            if intent == ShotIntent.BUMP_AND_RUN:
+                sit = "FERRO_OK"
+            elif is_recovery or intent in (ShotIntent.RECOVERY_PUNCH, ShotIntent.ESCAPE_TROUBLE):
+                sit = "ROUGH"
+            elif is_layup or intent == ShotIntent.LAYUP:
+                sit = "FERRO_OK"
+            elif lie in ["bunker", "sabbia"]:
                 sit = "BUNKER"
             elif lie in ["acqua", "ostacolo"]:
                 sit = "ACQUA"
@@ -1262,10 +1298,23 @@ class VoiceCaddyTelegramBot:
                 distanza=str(quick.get("manual_distance") or "150")
             )
 
+            intent_label = ""
+            if intent and intent != ShotIntent.FULL_SHOT:
+                labels = {
+                    ShotIntent.LAYUP: "🎯 Piazzamento Strategico (Layup)",
+                    ShotIntent.RECOVERY_PUNCH: "🌳 Uscita da Difficoltà / Punch",
+                    ShotIntent.BUMP_AND_RUN: "👟 Bump & Run (Approccio a Correre)",
+                    ShotIntent.PITCH_FLOP: "🪂 Approccio Alto / Morbido",
+                    ShotIntent.CHIP: "⛳ Chip dal Bordo",
+                    ShotIntent.ESCAPE_TROUBLE: "🚨 Uscita di Sicurezza Laterale",
+                }
+                intent_label = f"• 🎯 <b>Intento Tattico:</b> {labels.get(intent, intent.value if hasattr(intent, 'value') else str(intent))}\n"
+
             msg = (
                 f"🏌️‍♂️ <b>Buca {h_num} — Colpo {s_idx} Registrato!</b>\n"
                 f"• <b>Bastone:</b> {club or 'Non specificato'}\n"
-                f"• <b>Lie:</b> {lie.title()}\n\n"
+                f"• <b>Lie:</b> {lie.title()}\n"
+                f"{intent_label}"
                 f"💬 <i>Caddie ({caddy_tone.short_label}):</i> «{caddy_quote}»\n\n"
             )
             if quick["manual_distance"]:

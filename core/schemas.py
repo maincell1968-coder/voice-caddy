@@ -35,6 +35,17 @@ class ShotResult(str, Enum):
     WATER = "water"
 
 
+class ShotIntent(str, Enum):
+    FULL_SHOT = "full_shot"            # Colpo pieno standard verso fairway o green
+    LAYUP = "layup"                    # Piazzamento tattico intenzionale (es. Par 5 o prima di un ostacolo)
+    RECOVERY_PUNCH = "recovery_punch"  # Uscita da difficoltà / colpo basso da alberi o rough per rimettersi in gioco
+    BUMP_AND_RUN = "bump_and_run"      # Approccio basso a correre attorno al green con ferro medio (es. F6/F7 da 20-40m)
+    PITCH_FLOP = "pitch_flop"          # Approccio alto / morbido con wedge
+    CHIP = "chip"                      # Chip standard dal bordo green
+    TEE_SHOT = "tee_shot"              # Colpo dal tee di partenza
+    ESCAPE_TROUBLE = "escape_trouble"  # Uscita estrema di sicurezza laterale da ostacolo o boscaglia
+
+
 class TargetLandingAnalysis(BaseModel):
     ideal_target_zone: str = Field(..., description="L'area di target ideale raccomandata per l'HCP del giocatore su questa buca")
     actual_landing_zone: str = Field(..., description="Dove è effettivamente atterrata la palla dal colpo del giocatore")
@@ -48,6 +59,9 @@ class Shot(BaseModel):
     distance_meters: Optional[float] = Field(None, description="Distanza del colpo o al bersaglio in metri")
     lie: LieType = Field(..., description="Superficie da cui si esegue il colpo")
     result: ShotResult = Field(..., description="Esito balistico o destinazione del colpo")
+    intent: ShotIntent = Field(default=ShotIntent.FULL_SHOT, description="Intento tattico del colpo (pieno, layup, recovery, bump & run, ecc.)")
+    is_recovery: bool = Field(default=False, description="True se il colpo è un'uscita da situazione di difficoltà (alberi, rough profondo, ecc.)")
+    is_layup: bool = Field(default=False, description="True se il colpo è un piazzamento strategico conservativo (es. Par 5 o prima di ostacoli)")
     notes: Optional[str] = Field(default="", description="Sensazioni o dettagli tecnici specifici del colpo")
     latitude: Optional[float] = Field(default=None, description="Latitudine GPS del punto di esecuzione del colpo")
     longitude: Optional[float] = Field(default=None, description="Longitudine GPS del punto di esecuzione del colpo")
@@ -99,6 +113,14 @@ class TrainingDrill(BaseModel):
     success_benchmark: str = Field(..., description="Target di successo quantificabile (es. 'Completa 8/10 tentativi entro 1.5 metri')")
 
 
+class CourseManagementStats(BaseModel):
+    layups_count: int = Field(default=0, description="Numero totale di layup tattici eseguiti nel giro")
+    recoveries_count: int = Field(default=0, description="Numero totale di colpi di recovery/salvataggio eseguiti")
+    bump_and_runs_count: int = Field(default=0, description="Numero di approcci a correre (Bump & Run) con ferri medi")
+    recovery_success_rate: float = Field(default=0.0, description="Percentuale di buche con recovery chiuse con Par o Net Par")
+    course_management_rating: str = Field(default="Standard", description="Valutazione strategica complessiva (es. 'Disciplina Eccellente', 'Strategia Solida', 'Troppi Rischi Inutili')")
+
+
 class PerformanceSummary(BaseModel):
     total_score: int = Field(..., description="Score totale lordo del giro")
     total_score_net: Optional[int] = Field(default=None, description="Score totale netto del giro")
@@ -114,6 +136,7 @@ class PerformanceSummary(BaseModel):
     professional_diagnosis: ProfessionalDiagnosis = Field(..., description="Diagnosi di livello PGA Coach/Caddie professionale")
     strokes_lost_breakdown: StrokesLostBreakdown = Field(..., description="Ripartizione stimata dei colpi persi per area di gioco")
     training_drills_recommended: List[TrainingDrill] = Field(..., description="Drill di allenamento mirati con benchmark di successo quantificabili")
+    course_management_stats: Optional[CourseManagementStats] = Field(default=None, description="Statistiche dettagliate di gestione del percorso e scelte tattiche")
 
 
 class RoundInfo(BaseModel):
