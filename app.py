@@ -15,6 +15,9 @@ from core.audio import VoiceCaddyAudioEngine, AudioProcessingError
 from core.parser import parse_golf_audio_transcript
 from core.metrics import GolfMetricsCalculator
 from core.schemas import GolfRoundData
+import importlib
+import core.db
+importlib.reload(core.db)
 from core.db import DatabaseManager
 from core.strokes_gained import StrokesGainedBenchmarkEngine
 from core.pdf_export import PDFReportGenerator
@@ -1794,7 +1797,13 @@ with nav_tab1:
 
             st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-weight: bold; color: #38BDF8; font-size: 0.88rem;'>☁️ Oppure Recupera Gara Archiviata in Cloud per Data:</div>", unsafe_allow_html=True)
 
-            archived_dates = db.get_telegram_archived_dates(chat_id=linked_cid, user_id=current_user.user_id)
+            if not hasattr(db, "get_telegram_archived_dates"):
+                import importlib
+                import core.db
+                importlib.reload(core.db)
+                db = core.db.DatabaseManager()
+
+            archived_dates = db.get_telegram_archived_dates(chat_id=linked_cid, user_id=current_user.user_id) if hasattr(db, "get_telegram_archived_dates") else []
             date_options = [d["round_date"] for d in archived_dates]
 
             from datetime import date, timedelta
@@ -1816,7 +1825,13 @@ with nav_tab1:
                 st.write("")  # alignment spacing
                 if st.button("🚀 Elabora da Cloud", key="btn_elabora_data_cloud", type="secondary", use_container_width=True):
                     with st.spinner(f"Recupero dati del {selected_date} dal Cloud..."):
-                        msgs = db.get_telegram_messages_for_date(selected_date, chat_id=linked_cid, user_id=current_user.user_id)
+                        if not hasattr(db, "get_telegram_messages_for_date"):
+                            import importlib
+                            import core.db
+                            importlib.reload(core.db)
+                            db = core.db.DatabaseManager()
+
+                        msgs = db.get_telegram_messages_for_date(selected_date, chat_id=linked_cid, user_id=current_user.user_id) if hasattr(db, "get_telegram_messages_for_date") else []
                         if msgs:
                             text_lines = []
                             audio_files_to_transcribe = []
