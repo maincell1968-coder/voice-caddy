@@ -1395,6 +1395,31 @@ def execute_audio_round_pipeline(
                                 json_texts.append("\n".join(user_texts))
                     except Exception:
                         pass
+                elif fname.endswith(".html") or fname.endswith(".htm"):
+                    try:
+                        raw_bytes = item.read()
+                        html_content = raw_bytes.decode("utf-8", errors="ignore")
+                        import re
+                        from html import unescape
+                        msg_blocks = re.findall(r'<div class="message default clearfix[^"]*"[^>]*>(.*?)</div>\s*</div>', html_content, re.DOTALL)
+                        user_texts = []
+                        for block in msg_blocks:
+                            from_match = re.search(r'<div class="from_name">\s*(.*?)\s*</div>', block)
+                            author = from_match.group(1).strip() if from_match else ""
+                            if "Voice Caddy" in author or "bot" in author.lower():
+                                continue
+                            date_match = re.search(r'<div class="date details" title="([^"]+)"', block)
+                            d_str = date_match.group(1) if date_match else ""
+                            text_match = re.search(r'<div class="text">\s*(.*?)\s*</div>', block, re.DOTALL)
+                            if text_match:
+                                clean_t = re.sub(r'<[^>]+>', ' ', text_match.group(1))
+                                clean_t = unescape(clean_t).strip()
+                                if clean_t:
+                                    user_texts.append(f"[{d_str}] {clean_t}" if d_str else clean_t)
+                        if user_texts:
+                            json_texts.append("\n".join(user_texts))
+                    except Exception:
+                        pass
                 else:
                     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{fname}")
                     temp_file.write(item.read())
@@ -1875,8 +1900,8 @@ with nav_tab1:
             """, unsafe_allow_html=True)
 
             hero_uploaded_files = st.file_uploader(
-                "File audio (.m4a, .mp3, .wav, .opus, .ogg) o esportazione Telegram (result.json)",
-                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr", "json"],
+                "File audio (.m4a, .mp3, .wav, .opus, .ogg) o esportazione Telegram (result.json, messages.html)",
+                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr", "json", "html", "htm"],
                 accept_multiple_files=True,
                 key="hero_uploader_files_box"
             )
