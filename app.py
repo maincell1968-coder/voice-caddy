@@ -1340,13 +1340,16 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------
-# PROCESS AUDIO PIPELINE (Using User's Configured AI)
+# AUDIO & TELEGRAM PIPELINE (REUSABLE FOR SIDEBAR & MAIN DASHBOARD)
 # ---------------------------------------------------------
-if process_btn and uploaded_files:
-    # Validate user AI configuration before consuming
+def execute_audio_round_pipeline(
+    files_or_paths,
+    whisper_engine="Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)",
+    whisper_model_local="base"
+):
     if user_ai.provider == "openai" and not user_ai.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
         st.error("⚠️ Inserisci la tua OpenAI API Key personale nella barra laterale prima di avviare l'analisi.")
-        st.stop()
+        return
 
     temp_paths = []
     try:
@@ -1356,11 +1359,19 @@ if process_btn and uploaded_files:
         status_text.info("⚙️ Preparazione e caricamento note vocali...")
         progress_bar.progress(15)
 
-        for file in uploaded_files:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.name}")
-            temp_file.write(file.read())
-            temp_file.close()
-            temp_paths.append(temp_file.name)
+        for item in files_or_paths:
+            if hasattr(item, "read"):
+                fname = getattr(item, "name", "audio.ogg")
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{fname}")
+                temp_file.write(item.read())
+                temp_file.close()
+                temp_paths.append(temp_file.name)
+            elif isinstance(item, (str, Path)) and os.path.exists(str(item)):
+                temp_paths.append(str(item))
+
+        if not temp_paths:
+            st.error("⚠️ Nessun file audio valido trovato per l'elaborazione.")
+            return
 
         status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
         progress_bar.progress(40)
@@ -1387,7 +1398,9 @@ if process_btn and uploaded_files:
 
         st.session_state.transcript = transcript_text
 
-        ai_desc = f"Ollama ({user_ai.ollama_model})" if user_ai.provider == "ollama" else f"OpenAI ({user_ai.openai_model})"
+        ai_desc = f"Ollama ({user_ai.ollama_model})" if user_ai.provider == "ollama" else (
+            f"Groq ({user_ai.groq_model})" if user_ai.provider == "groq" else f"OpenAI ({user_ai.openai_model})"
+        )
         status_text.info(f"🧠 Analisi semantica NLU tramite la tua IA ({ai_desc}) per {st.session_state.user_profile.category.value} su {active_course.name}...")
         progress_bar.progress(70)
 
@@ -1424,6 +1437,118 @@ if process_btn and uploaded_files:
                     os.remove(p)
                 except OSError:
                     pass
+
+
+def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Controlla e scarica note vocali recenti o colpi registrati su Telegram,
+    elaborando e salvando il round aggiornato.
+    """
+    token = tg_manager.get_token()
+    resolved_cid = str(chat_id or tg_manager.get_chat_id_for_user(user_id) or "")
+
+    # 1. Verifica aggiornamenti audio in arrivo su Telegram
+    if token:
+        try:
+            url = f"https://api.telegram.org/bot{token}/getUpdates"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok"):
+                    updates = data.get("result", [])
+                    audio_msgs = []
+                    max_u_id = 0
+                    for u in updates:
+                        u_id = u.get("update_id", 0)
+                        if u_id > max_u_id:
+                            max_u_id = u_id
+                        msg = u.get("message", {})
+                        c_id = str(msg.get("chat", {}).get("id", ""))
+                        if resolved_cid and c_id != resolved_cid:
+                            continue
+                        if msg.get("voice") or msg.get("audio"):
+                            audio_msgs.append(msg)
+
+                    if audio_msgs:
+                        downloaded = []
+                        for m in audio_msgs:
+                            f_obj = m.get("voice") or m.get("audio")
+                            f_id = f_obj.get("file_id")
+                            if f_id:
+                                req_f = urllib.request.Request(f"https://api.telegram.org/bot{token}/getFile?file_id={f_id}")
+                                with urllib.request.urlopen(req_f, timeout=8) as r_f:
+                                    f_info = json.loads(r_f.read().decode("utf-8"))
+                                    if f_info.get("ok"):
+                                        fp = f_info["result"]["file_path"]
+                                        ext = os.path.splitext(fp)[1] or ".ogg"
+                                        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+                                        tmp_path = tmp.name
+                                        tmp.close()
+                                        urllib.request.urlretrieve(f"https://api.telegram.org/file/bot{token}/{fp}", tmp_path)
+                                        downloaded.append(tmp_path)
+
+                        # Conferma lettura a Telegram
+                        if max_u_id > 0:
+                            try:
+                                urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getUpdates?offset={max_u_id + 1}", timeout=5)
+                            except Exception:
+                                pass
+
+                        if downloaded:
+                            execute_audio_round_pipeline(downloaded)
+                            return True, f"Scaricati ed elaborati con successo {len(downloaded)} file vocali da Telegram!"
+        except Exception:
+            pass
+
+    # 2. Verifica sessione live e colpi già memorizzati su database locale
+    if resolved_cid:
+        scorecard = live_session_mgr.get_round_scorecard(resolved_cid)
+        comp_holes = scorecard.get("completed_holes", [])
+        if comp_holes:
+            from core.schemas import HoleScoreData, ShotData
+            holes_list = []
+            for h in comp_holes:
+                h_num = h.get("hole_number", 1)
+                shots_raw = live_session_mgr.get_hole_shots(resolved_cid, h_num)
+                s_list = []
+                for s_idx, s in enumerate(shots_raw, 1):
+                    s_list.append(ShotData(
+                        shot_index=s_idx,
+                        club=s.get("club") or "Bastone",
+                        lie=s.get("lie") or "fairway",
+                        distance_meters=s.get("distance_covered")
+                    ))
+                holes_list.append(HoleScoreData(
+                    hole_number=h_num,
+                    par=h.get("par", 4),
+                    score=h.get("gross_strokes", 4),
+                    putts=h.get("putts", 2),
+                    shots=s_list
+                ))
+
+            raw_round = GolfRoundData(
+                round_info={
+                    "date": datetime.now().strftime("%d %B %Y"),
+                    "course_name": active_course.name,
+                    "holes_played": len(holes_list),
+                    "game_format": "stableford"
+                },
+                holes=holes_list
+            )
+            validated = GolfMetricsCalculator.recompute_and_reconcile(raw_round)
+            st.session_state.round_data = validated
+            db.save_round(validated, user_id=current_user.user_id, group_name=current_user.group)
+            return True, f"Sincronizzate {len(holes_list)} buche registrate in campo dal Bot Telegram con successo!"
+
+    return False, (
+        "Nessun file audio recente o colpo live trovato sul server Telegram. "
+        "Se hai registrato i vocali ieri, puoi inoltrarli ora nella chat del bot @VoiceCaddyGolf_bot, "
+        "oppure salvare i file audio da Telegram e trascinarli nel riquadro 'Opzione 2' qui a fianco!"
+    )
+
+
+if process_btn and uploaded_files:
+    execute_audio_round_pipeline(uploaded_files, whisper_engine=whisper_engine, whisper_model_local=whisper_model_local)
 
 
 # =========================================================
@@ -1506,6 +1631,124 @@ nav_admin = all_tabs[7] if current_user.is_admin else None
 # TAB 1: LIVE DASHBOARD & PGA DIAGNOSIS
 # ---------------------------------------------------------
 with nav_tab1:
+    # ---------------------------------------------------------
+    # HERO ACTION HUB: SCARICA ED ELABORA GARA DI IERI (TELEGRAM / AUDIO)
+    # ---------------------------------------------------------
+    if "show_sync_panel" not in st.session_state:
+        st.session_state.show_sync_panel = True
+
+    if st.session_state.show_sync_panel:
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #0f1e16 0%, #162a20 50%, #0c1824 100%);
+                        border: 2px solid #2ECC71; border-radius: 14px; padding: 22px 26px;
+                        margin-bottom: 24px; box-shadow: 0 10px 30px rgba(46, 204, 113, 0.25);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 14px;">
+                    <div style="display:flex; align-items:center; gap: 12px;">
+                        <span style="font-size: 2rem;">📥</span>
+                        <div>
+                            <span style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
+                                SCARICA & ELABORA LA GARA DI IERI / ALLENAMENTO
+                            </span>
+                            <div style="font-size: 0.9rem; color: #A0AEC0; margin-top: 3px;">
+                                Trasferisci e processa le note vocali e i colpi da Telegram, oppure trascina qui i file audio registrati.
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(46, 204, 113, 0.2); border: 1px solid #2ECC71; color: #2ECC71;
+                                 padding: 5px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
+                        ⚡ AZIONE RAPIDA 1-CLIC
+                    </span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        col_sync_tg, col_sync_files = st.columns([1, 1], gap="large")
+
+        with col_sync_tg:
+            st.markdown("""
+                <div style="background: #131d2a; border: 1px solid #38BDF8; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
+                        <span style="font-size: 1.3rem;">📲</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #38BDF8;">OPZIONE 1: Da Bot Telegram</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
+                        Se durante o dopo la gara hai inviato note vocali o registrato colpi al bot Telegram <b>@VoiceCaddyGolf_bot</b>, clicca il pulsante qui sotto per scaricarli e processarli subito.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
+            bot_uname = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+
+            if linked_cid:
+                st.caption(f"🟢 Collegato: **@{bot_uname}** (Chat ID: `{linked_cid}`)")
+            else:
+                st.caption(f"⚠️ Smartphone non ancora associato a @{bot_uname}")
+
+            if st.button("🔄 Scarica ed Elabora Ultimi Dati da Telegram", key="btn_sync_tg_hero", type="primary", use_container_width=True):
+                with st.spinner("Connessione a Telegram e controllo aggiornamenti in corso..."):
+                    ok_sync, msg_sync = sync_telegram_data_to_round(current_user.user_id, linked_cid)
+                    if ok_sync:
+                        st.success(msg_sync)
+                        st.rerun()
+                    else:
+                        st.warning(msg_sync)
+
+            deep_link_hero = f"https://t.me/{bot_uname}"
+            st.link_button("👉 Apri Chat con @VoiceCaddyGolf_bot su Telegram", deep_link_hero, use_container_width=True)
+
+            with st.expander("ℹ️ Come inviare gli audio di ieri tramite Telegram", expanded=False):
+                st.markdown(f"""
+                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
+                        <b>1.</b> Apri Telegram sul cellulare o PC e cerca <b>@{bot_uname}</b>.<br>
+                        <b>2.</b> Inoltra o invia le note vocali della gara direttamente al bot.<br>
+                        <b>3.</b> Torna qui e premi <b>[ 🔄 Scarica ed Elabora Ultimi Dati da Telegram ]</b>: il sistema li trascriverà e calcolerà all'istante la scorecard e tutte le statistiche PGA!
+                    </div>
+                """, unsafe_allow_html=True)
+
+        with col_sync_files:
+            st.markdown("""
+                <div style="background: #112217; border: 1px solid #2ECC71; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
+                        <span style="font-size: 1.3rem;">🎙️</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #2ECC71;">OPZIONE 2: Trascina o Carica File Audio</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
+                        Hai i file audio salvati sul PC o scaricati da Telegram? Selezionali o trascinali direttamente qui:
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            hero_uploaded_files = st.file_uploader(
+                "File audio (.m4a, .mp3, .wav, .opus, .ogg)",
+                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr"],
+                accept_multiple_files=True,
+                key="hero_uploader_files_box"
+            )
+
+            hero_whisper = st.radio(
+                "Motore Whisper Trascrizione:",
+                options=["Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)", "OpenAI Whisper Cloud (Usa tua API Key)", "Faster-Whisper Locale"],
+                index=0,
+                key="hero_whisper_choice",
+                horizontal=False
+            )
+
+            if st.button("🚀 TRASCRIVI ED ELABORA LA GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not hero_uploaded_files):
+                execute_audio_round_pipeline(hero_uploaded_files, whisper_engine=hero_whisper, whisper_model_local="base")
+
+            with st.expander("💡 Come salvare i file vocali da Telegram sul PC", expanded=False):
+                st.markdown("""
+                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
+                        <b>1.</b> Apri Telegram sul computer o su Telegram Web.<br>
+                        <b>2.</b> Nella chat col bot o nel gruppo, clicca con il <b>tasto destro</b> sul messaggio vocale.<br>
+                        <b>3.</b> Clicca su <b>«Salva con nome...»</b> o <b>«Scarica»</b> (salverà un file <code>.ogg</code> o <code>.mp3</code>).<br>
+                        <b>4.</b> Trascina il file scaricato nel box qui sopra e clicca <b>[ 🚀 TRASCRIVI ED ELABORA LA GARA ORA ]</b>!
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
     data = st.session_state.round_data
 
     if data:
@@ -1520,12 +1763,18 @@ with nav_tab1:
         h_played = getattr(r_info, "holes_played", len(data.holes) if data.holes else 18)
         r_date = getattr(r_info, "date", None) or "Oggi"
 
-        col_head, col_btn = st.columns([4, 1])
+        col_head, col_sync_btn, col_btn = st.columns([2.6, 1.4, 1.0])
         with col_head:
             st.title(f"⛳ {c_name}")
             cat_val = st.session_state.user_profile.category.value
             cat_badge = f"🎭 Tono IA: {cat_val}"
             st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {h_played} Buche • Data: {r_date} • {cat_badge}")
+
+        with col_sync_btn:
+            lbl_toggle = "🔼 Nascondi Pannello Sync" if st.session_state.show_sync_panel else "📥 Sincronizza Gara di Ieri"
+            if st.button(lbl_toggle, key="toggle_sync_btn_hdr", use_container_width=True, help="Mostra o nasconde il pannello di sincronizzazione con Telegram e caricamento audio"):
+                st.session_state.show_sync_panel = not st.session_state.show_sync_panel
+                st.rerun()
 
         with col_btn:
             html_rep = PDFReportGenerator.generate_html_report(data)
