@@ -1861,13 +1861,18 @@ with nav_tab1:
                             text_lines = []
                             audio_files_to_transcribe = []
                             for m in msgs:
-                                if m.get("content_text"):
+                                m_type = m.get("message_type", "text")
+                                f_path = m.get("file_path")
+                                c_text = m.get("content_text")
+                                
+                                if m_type in ("voice", "audio", "video_note") or (f_path and not c_text):
+                                    if f_path:
+                                        full_p = Path(f_path) if os.path.isabs(f_path) else (PROJECT_ROOT / f_path)
+                                        if full_p.exists():
+                                            audio_files_to_transcribe.append(full_p)
+                                elif c_text:
                                     ts_short = m.get("timestamp", "")[11:16]
-                                    text_lines.append(f"[{ts_short}] {m['content_text']}")
-                                elif m.get("file_path"):
-                                    full_p = PROJECT_ROOT / m["file_path"]
-                                    if full_p.exists():
-                                        audio_files_to_transcribe.append(full_p)
+                                    text_lines.append(f"[{ts_short}] {c_text}" if ts_short else c_text)
 
                             combined_text = "\n".join(text_lines)
                             execute_audio_round_pipeline(
