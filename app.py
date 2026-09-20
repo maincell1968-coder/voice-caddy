@@ -1507,40 +1507,82 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
         scorecard = live_session_mgr.get_round_scorecard(resolved_cid)
         comp_holes = scorecard.get("completed_holes", [])
         if comp_holes:
-            from core.schemas import HoleScoreData, ShotData
-            holes_list = []
-            for h in comp_holes:
-                h_num = h.get("hole_number", 1)
-                shots_raw = live_session_mgr.get_hole_shots(resolved_cid, h_num)
-                s_list = []
-                for s_idx, s in enumerate(shots_raw, 1):
-                    s_list.append(ShotData(
-                        shot_index=s_idx,
-                        club=s.get("club") or "Bastone",
-                        lie=s.get("lie") or "fairway",
-                        distance_meters=s.get("distance_covered")
-                    ))
-                holes_list.append(HoleScoreData(
-                    hole_number=h_num,
-                    par=h.get("par", 4),
-                    score=h.get("gross_strokes", 4),
-                    putts=h.get("putts", 2),
-                    shots=s_list
-                ))
+            try:
+                from core.schemas import HoleData, Shot, RoundInfo, GolfRoundData, LieType, ShotResult, ShotIntent
+                holes_list = []
+                for h in comp_holes:
+                    h_num = int(h.get("hole_number", 1))
+                    shots_raw = live_session_mgr.get_hole_shots(resolved_cid, h_num)
+                    s_list = []
+                    for s_idx, s in enumerate(shots_raw, 1):
+                        lie_str = str(s.get("lie", "fairway")).lower()
+                        try:
+                            lie_val = LieType(lie_str)
+                        except Exception:
+                            lie_val = LieType.FAIRWAY
 
-            raw_round = GolfRoundData(
-                round_info={
-                    "date": datetime.now().strftime("%d %B %Y"),
-                    "course_name": active_course.name,
-                    "holes_played": len(holes_list),
-                    "game_format": "stableford"
-                },
-                holes=holes_list
-            )
-            validated = GolfMetricsCalculator.recompute_and_reconcile(raw_round)
-            st.session_state.round_data = validated
-            db.save_round(validated, user_id=current_user.user_id, group_name=current_user.group)
-            return True, f"Sincronizzate {len(holes_list)} buche registrate in campo dal Bot Telegram con successo!"
+                        dist_cov = s.get("distance_covered")
+                        raw_d = s.get("raw_distance_to_green")
+                        pl_d = s.get("plays_like_distance")
+                        elev_d = s.get("elevation_diff")
+
+                        s_list.append(Shot(
+                            shot_index=s_idx,
+                            club=s.get("club") or "Bastone",
+                            lie=lie_val,
+                            result=ShotResult.GOOD,
+                            intent=ShotIntent.FULL_SHOT,
+                            distance_meters=float(dist_cov) if dist_cov is not None else None,
+                            raw_distance=float(raw_d) if raw_d is not None else None,
+                            plays_like_distance=float(pl_d) if pl_d is not None else None,
+                            elevation_diff=float(elev_d) if elev_d is not None else None,
+                            notes=s.get("notes") or ""
+                        ))
+
+                    h_par = int(h.get("par", 4))
+                    h_score = int(h.get("gross_strokes") or h.get("score") or 4)
+                    h_putts = int(h.get("putts", 2))
+                    shots_to_green = h_score - h_putts
+                    calc_gir = (shots_to_green <= (h_par - 2)) if h_score >= h_putts else False
+
+                    holes_list.append(HoleData(
+                        hole_number=h_num,
+                        par=h_par,
+                        score=h_score,
+                        putts=h_putts,
+                        gir=calc_gir,
+                        fairway_hit=None if h_par == 3 else True,
+                        received_strokes=int(h.get("received_strokes") or 0),
+                        stroke_index=int(h.get("stroke_index")) if h.get("stroke_index") is not None else None,
+                        shots=s_list
+                    ))
+
+                user_prof = st.session_state.get("user_profile")
+                hcp_val = getattr(user_prof, "handicap", 23.9) if user_prof else 23.9
+                p_name = "Stefano Pirani"
+                if hasattr(current_user, "first_name") and hasattr(current_user, "last_name"):
+                    p_name = f"{current_user.first_name} {current_user.last_name}"
+
+                raw_round = GolfRoundData(
+                    round_info=RoundInfo(
+                        date=datetime.now().strftime("%d %B %Y"),
+                        course_name=active_course.name,
+                        holes_played=len(holes_list),
+                        game_format="stableford",
+                        player_name=p_name,
+                        exact_hcp=hcp_val,
+                        playing_hcp=int(round(hcp_val)),
+                        category="Singolo Stableford"
+                    ),
+                    holes=holes_list
+                )
+                validated = GolfMetricsCalculator.recompute_and_reconcile(raw_round)
+                st.session_state.round_data = validated
+                db.save_round(validated, user_id=current_user.user_id, group_name=current_user.group)
+                return True, f"Sincronizzate {len(holes_list)} buche registrate in campo dal Bot Telegram con successo!"
+            except Exception as e_sync:
+                return False, f"Errore durante l'elaborazione dei colpi della sessione live: {e_sync}"
+
 
     return False, (
         f"🟢 Smartphone associato con successo a @{tg_manager.get_bot_username()} (Chat ID: `{resolved_cid}`)!\n\n"

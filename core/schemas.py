@@ -155,4 +155,10 @@ class RoundInfo(BaseModel):
 class GolfRoundData(BaseModel):
     round_info: RoundInfo
     holes: List[HoleData]
-    performance_summary: PerformanceSummary
+    performance_summary: Optional[PerformanceSummary] = None
+
+
+# Backward compatibility aliases
+HoleScoreData = HoleData
+ShotData = Shot
+
