@@ -205,70 +205,74 @@ def execute_round_analysis(
         "Non includere saluti, spiegazioni o testo al di fuori del JSON."
     )
 
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": ollama_system_prompt},
-                    {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-            content = response.choices[0].message.content
-            data_dict = extract_json_from_llm_response(content)
-            return GolfRoundData.model_validate(data_dict)
-        except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "rate_limit" in err_str.lower():
-                wait_sec = 25.0
-                match = re.search(r"try again in ([\d\.]+)s", err_str, re.IGNORECASE)
-                if match:
-                    try:
-                        wait_sec = float(match.group(1)) + 2.0
-                    except Exception:
-                        pass
-                if attempt < max_retries - 1:
-                    try:
-                        import streamlit as st
-                        st.info(f"⏳ Limite momentaneo di traffico Groq (TPM). Attesa automatica di {int(wait_sec)}s e nuovo tentativo in corso ({attempt + 1}/{max_retries})...")
-                    except Exception:
-                        pass
-                    import time
-                    time.sleep(wait_sec)
-                    continue
+    models_to_try = [model]
+    if ai_config.provider.lower() == "groq":
+        # Fallback between qwen3.8-27b and compound-mini to avoid per-model daily quota limits
+        if "qwen/qwen3.8-27b" not in models_to_try:
+            models_to_try.append("qwen/qwen3.8-27b")
+        if "groq/compound-mini" not in models_to_try:
+            models_to_try.append("groq/compound-mini")
 
-            # If response_format={"type": "json_object"} isn't supported, try without it
+    last_error = None
+    for current_model in models_to_try:
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
                 response = client.chat.completions.create(
-                    model=model,
+                    model=current_model,
                     messages=[
                         {"role": "system", "content": ollama_system_prompt},
                         {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
                     ],
+                    response_format={"type": "json_object"},
+                    max_tokens=2500,
                     temperature=0.1
                 )
                 content = response.choices[0].message.content
                 data_dict = extract_json_from_llm_response(content)
                 return GolfRoundData.model_validate(data_dict)
-            except Exception as inner_e:
-                inner_str = str(inner_e)
-                if ("429" in inner_str or "rate_limit" in inner_str.lower()) and attempt < max_retries - 1:
-                    wait_sec = 25.0
-                    match = re.search(r"try again in ([\d\.]+)s", inner_str, re.IGNORECASE)
+            except Exception as e:
+                last_error = e
+                err_str = str(e)
+                # If daily quota exceeded on this model, switch immediately to next model
+                if "tokens per day" in err_str.lower() or "tpd" in err_str.lower():
+                    break
+                if "429" in err_str or "rate_limit" in err_str.lower():
+                    wait_sec = 2.0
+                    match = re.search(r"try again in ([\d\.]+)s", err_str, re.IGNORECASE)
                     if match:
                         try:
-                            wait_sec = float(match.group(1)) + 2.0
+                            wait_sec = float(match.group(1)) + 1.0
                         except Exception:
                             pass
-                    try:
-                        import streamlit as st
-                        st.info(f"⏳ Limite momentaneo Groq. Attesa automatica di {int(wait_sec)}s...")
-                    except Exception:
-                        pass
-                    import time
-                    time.sleep(wait_sec)
+                    # If wait is short (<10s), sleep and retry on same model
+                    if wait_sec <= 10.0 and attempt < max_retries - 1:
+                        import time
+                        time.sleep(wait_sec)
+                        continue
+                    else:
+                        # Otherwise try next model
+                        break
+
+                # If response_format={"type": "json_object"} isn't supported, try without it
+                try:
+                    response = client.chat.completions.create(
+                        model=current_model,
+                        messages=[
+                            {"role": "system", "content": ollama_system_prompt},
+                            {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
+                        ],
+                        max_tokens=2500,
+                        temperature=0.1
+                    )
+                    content = response.choices[0].message.content
+                    data_dict = extract_json_from_llm_response(content)
+                    return GolfRoundData.model_validate(data_dict)
+                except Exception as inner_e:
+                    last_error = inner_e
+                    inner_str = str(inner_e)
+                    if "tokens per day" in inner_str.lower() or "tpd" in inner_str.lower():
+                        break
                     continue
-                raise AIProviderError(f"Errore durante l'analisi con il modello '{model}': {inner_e}")
+
+    raise AIProviderError(f"Errore durante l'analisi con i modelli disponibili ({models_to_try}): {last_error}")

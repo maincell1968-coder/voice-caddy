@@ -281,11 +281,48 @@ Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagli
             openai_model=model_name
         )
 
-    parsed_data = execute_round_analysis(
-        transcript_text=transcript_text,
-        system_prompt=system_prompt,
-        ai_config=config
-    )
+    lower_t = transcript_text.lower()
+    has_back_9 = any(k in lower_t for k in ["buca 10", "buca10", "tee 10", "buca 11", "buca 12", "buca 13", "buca 14", "buca 15", "buca 16", "buca 17", "buca 18"])
+
+    if len(transcript_text) > 1200 and has_back_9:
+        # Split into Front 9 and Back 9
+        idx_b10 = lower_t.find("buca 10")
+        if idx_b10 == -1:
+            idx_b10 = lower_t.find("buca10")
+        if idx_b10 == -1:
+            idx_b10 = lower_t.find("tee 10")
+        if idx_b10 == -1:
+            idx_b10 = len(transcript_text) // 2
+
+        t_front = transcript_text[:idx_b10].strip()
+        t_back = transcript_text[idx_b10:].strip()
+
+        sys_front = f"{system_prompt}\n\n### ISTRUZIONE DI SPLIT: Analizza ed estrai ESCLUSIVAMENTE le PRIME 9 BUCHE (Buche 1-9)."
+        sys_back = f"{system_prompt}\n\n### ISTRUZIONE DI SPLIT: Analizza ed estrai ESCLUSIVAMENTE le SECONDE 9 BUCHE (Buche 10-18)."
+
+        data_front = execute_round_analysis(
+            transcript_text=t_front,
+            system_prompt=sys_front,
+            ai_config=config
+        )
+        data_back = execute_round_analysis(
+            transcript_text=t_back,
+            system_prompt=sys_back,
+            ai_config=config
+        )
+
+        merged_holes = list(data_front.holes) + list(data_back.holes)
+        parsed_data = GolfRoundData(
+            round_info=data_front.round_info,
+            holes=merged_holes,
+            performance_summary=data_front.performance_summary
+        )
+    else:
+        parsed_data = execute_round_analysis(
+            transcript_text=transcript_text,
+            system_prompt=system_prompt,
+            ai_config=config
+        )
 
     if not parsed_data.round_info.course_name or parsed_data.round_info.course_name == "Circolo Golf Non Specificato":
         parsed_data.round_info.course_name = active_course.name
