@@ -1515,35 +1515,47 @@ with nav_tab1:
         rel_par = GolfMetricsCalculator.calculate_score_relation_to_par(data.holes)
         rel_par_str = f"+{rel_par}" if rel_par > 0 else ("Par" if rel_par == 0 else f"{rel_par}")
 
+        r_info = data.round_info
+        c_name = getattr(r_info, "course_name", None) or active_course.name
+        h_played = getattr(r_info, "holes_played", len(data.holes) if data.holes else 18)
+        r_date = getattr(r_info, "date", None) or "Oggi"
+
         col_head, col_btn = st.columns([4, 1])
         with col_head:
-            st.title(f"⛳ {data.round_info.course_name or active_course.name}")
+            st.title(f"⛳ {c_name}")
             cat_val = st.session_state.user_profile.category.value
             cat_badge = f"🎭 Tono IA: {cat_val}"
-            st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {data.round_info.holes_played} Buche • Data: {data.round_info.date or 'Oggi'} • {cat_badge}")
+            st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {h_played} Buche • Data: {r_date} • {cat_badge}")
 
         with col_btn:
             html_rep = PDFReportGenerator.generate_html_report(data)
             st.download_button(
                 label="📥 Scarica Report PDF / HTML",
                 data=html_rep,
-                file_name=f"VoiceCaddy_{current_user.first_name}_{data.round_info.date or 'Round'}.html",
+                file_name=f"VoiceCaddy_{current_user.first_name}_{r_date}.html",
                 mime="text/html",
                 use_container_width=True
             )
 
         # Top KPI Metrics Cards (Lordo, Netto, Stableford WHS)
-        is_stbl = "stableford" in (data.round_info.game_format or "stableford").lower()
+        g_format = getattr(r_info, "game_format", None) or "stableford"
+        is_stbl = "stableford" in g_format.lower()
         kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+        stbl_net = getattr(summary, "total_stableford_points", None)
+        stbl_gross = getattr(summary, "total_stableford_gross_points", None)
+        sc_net = getattr(summary, "total_score_net", None)
+
         if is_stbl:
-            kpi1.metric("Stableford Netto", f"{summary.total_stableford_points or 0} pt", f"{summary.total_stableford_gross_points or 0} pt Lordo")
-            kpi2.metric("Colpi Lordi / Netti", f"{summary.total_score} L / {summary.total_score_net or summary.total_score} N", f"Rel. Par {rel_par_str}")
+            kpi1.metric("Stableford Netto", f"{stbl_net or 0} pt", f"{stbl_gross or 0} pt Lordo")
+            kpi2.metric("Colpi Lordi / Netti", f"{summary.total_score} L / {sc_net or summary.total_score} N", f"Rel. Par {rel_par_str}")
         else:
             kpi1.metric("Colpi Lordi", f"{summary.total_score} ({rel_par_str})")
-            kpi2.metric("Colpi Netti", f"{summary.total_score_net or summary.total_score}")
+            kpi2.metric("Colpi Netti", f"{sc_net or summary.total_score}")
 
-        phcp_display = f"{data.round_info.playing_hcp}" if data.round_info.playing_hcp is not None else "-"
-        ehcp_display = f"{data.round_info.exact_hcp}" if data.round_info.exact_hcp is not None else str(st.session_state.user_profile.handicap)
+        phcp = getattr(r_info, "playing_hcp", None)
+        ehcp = getattr(r_info, "exact_hcp", None)
+        phcp_display = f"{phcp}" if phcp is not None else "-"
+        ehcp_display = f"{ehcp}" if ehcp is not None else str(st.session_state.user_profile.handicap)
         kpi3.metric("Playing HCP", f"{phcp_display} colpi", f"Exact: {ehcp_display}")
         kpi4.metric("Fairway Presi (FIR)", f"{summary.fairway_accuracy_pct}%")
         kpi5.metric("Green in Reg. (GIR)", f"{summary.gir_pct}%")
@@ -1561,6 +1573,23 @@ with nav_tab1:
                 <p><b>Analisi Esecuzione Tecnica vs Tattica:</b> {diag.technical_vs_tactical_split}</p>
             </div>
         """, unsafe_allow_html=True)
+
+        # Course Management Stats Box (Layup, Recovery, Bump & Run)
+        cm = getattr(summary, "course_management_stats", None)
+        if cm:
+            st.markdown(f"""
+                <div style="background:#131824; border:1px solid #2ECC71; border-radius:10px; padding:14px 18px; margin-top:12px; margin-bottom:15px; color:#E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                        <span style="color:#2ECC71; font-weight:bold; font-size:1.05rem;">🧠 Gestione del Percorso & Scelte Tattiche: <i>{cm.course_management_rating}</i></span>
+                        <span style="font-size:0.88rem; color:#A0AEC0;">Tasso Successo Recovery: <b style="color:#2ECC71;">{cm.recovery_success_rate}%</b></span>
+                    </div>
+                    <div style="display:flex; gap:25px; margin-top:10px; font-size:0.92rem; flex-wrap:wrap;">
+                        <span>🎯 <b>Piazzamenti Tattici (Layup):</b> {cm.layups_count}</span>
+                        <span>🌳 <b>Salvataggi da Difficoltà (Recovery):</b> {cm.recoveries_count}</span>
+                        <span>👟 <b>Approcci a Correre (Bump & Run):</b> {cm.bump_and_runs_count}</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
         sub_tab_overview, sub_tab_holes, sub_tab_drills, sub_tab_transcript = st.tabs([
             "📋 Scorecard Ufficiale",

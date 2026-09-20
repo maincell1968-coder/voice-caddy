@@ -274,7 +274,7 @@ def generate_tournament_summary_data(round_data: Any) -> Dict[str, Any]:
     holes = round_data.holes or []
     summary = round_data.performance_summary
 
-    raw_format = (info.game_format or "stableford").lower().strip()
+    raw_format = (getattr(info, "game_format", None) or "stableford").lower().strip()
     is_stableford = "stableford" in raw_format or "stbl" in raw_format
     fmt_display = "Stableford (WHS 95%)" if is_stableford else "Gara a Colpi / Stroke Play (100%)"
 
@@ -297,18 +297,19 @@ def generate_tournament_summary_data(round_data: Any) -> Dict[str, Any]:
     if missing_si:
         anomalies.append(f"Stroke Index non configurato alle buche: {missing_si} (colpi ricevuti stimati).")
 
-    if info.playing_hcp is None:
+    phcp = getattr(info, "playing_hcp", None)
+    if phcp is None:
         anomalies.append("Playing Handicap non configurato nel profilo (colpi netti calcolati sui colpi ricevuti buca per buca).")
 
     # 2. Calcolo Colpi e Punti
     total_gross = sum(h.score for h in holes if h.score)
     
     # Calcolo colpi netti
-    if info.playing_hcp is not None:
-        if info.playing_hcp >= 0:
-            total_net = total_gross - info.playing_hcp
+    if phcp is not None:
+        if phcp >= 0:
+            total_net = total_gross - phcp
         else:
-            total_net = total_gross + abs(info.playing_hcp)
+            total_net = total_gross + abs(phcp)
     else:
         # Somma netti buca per buca se colpi ricevuti sono presenti
         total_net = sum((h.net_score if h.net_score is not None else (h.score - (h.received_strokes or 0))) for h in holes)
@@ -334,9 +335,12 @@ def generate_tournament_summary_data(round_data: Any) -> Dict[str, Any]:
         )
 
     # 4. Riga Risultati Giocatore (Sezione C)
-    player_name = info.player_name or "Giocatore"
-    hcp_idx_str = f"{info.exact_hcp:.1f}" if info.exact_hcp is not None else "N/D"
-    phcp_str = str(info.playing_hcp) if info.playing_hcp is not None else "N/D"
+    player_name = getattr(info, "player_name", None) or "Giocatore"
+    exact_hcp = getattr(info, "exact_hcp", None)
+    course_hcp = getattr(info, "course_hcp", None)
+    hcp_idx_str = f"{exact_hcp:.1f}" if exact_hcp is not None else "N/D"
+    chcp_str = f"{course_hcp:.1f}" if course_hcp is not None else "N/D"
+    phcp_str = str(phcp) if phcp is not None else "N/D"
 
     # 5. Classifiche (Sezioni E, F)
     # Per giro individuale la posizione è 1° (o qualificata se torneo multiplayer)
@@ -382,7 +386,7 @@ def generate_tournament_summary_data(round_data: Any) -> Dict[str, Any]:
         "calc_method": calc_method,
         "player_name": player_name,
         "hcp_index": hcp_idx_str,
-        "course_hcp": f"{info.course_hcp:.1f}" if info.course_hcp is not None else "N/D",
+        "course_hcp": chcp_str,
         "playing_hcp": phcp_str,
         "total_gross": total_gross,
         "total_net": total_net,
