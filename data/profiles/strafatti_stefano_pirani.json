@@ -33,11 +33,25 @@
       "carry_meters": 160.0
     },
     {
+      "club_name": "Ferro 6",
+      "brand": "Titleist",
+      "model_type": "T200",
+      "shaft_flex": "Stiff",
+      "carry_meters": 152.0
+    },
+    {
       "club_name": "Ferro 7",
       "brand": "Titleist",
       "model_type": "T200",
       "shaft_flex": "Stiff",
       "carry_meters": 145.0
+    },
+    {
+      "club_name": "Ferro 8",
+      "brand": "Titleist",
+      "model_type": "T200",
+      "shaft_flex": "Stiff",
+      "carry_meters": 135.0
     },
     {
       "club_name": "Ferro 9",

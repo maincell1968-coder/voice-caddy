@@ -273,7 +273,13 @@ class UserProfile(BaseModel):
     def save_for_user(self, user_id: str) -> bool:
         PROFILES_DIR.mkdir(parents=True, exist_ok=True)
         file_path = PROFILES_DIR / f"{user_id}.json"
-        return self.save_to_file(file_path)
+        saved = self.save_to_file(file_path)
+        try:
+            from core.db import DatabaseManager
+            DatabaseManager().save_user_profile(user_id, self.model_dump_json(indent=2))
+        except Exception:
+            pass
+        return saved
 
     @classmethod
     def load_for_user(cls, user_id: str, default_name: str = "Giocatore") -> UserProfile:
@@ -281,27 +287,59 @@ class UserProfile(BaseModel):
         file_path = PROFILES_DIR / f"{user_id}.json"
         bak_path = PROFILES_DIR / f"{user_id}.json.bak"
 
-        # 1. Prova a caricare il profilo principale
-        profile = cls.load_from_file(file_path)
+        # 1. Prova a caricare dal database protetto SQLite
+        db_profile = None
+        try:
+            from core.db import DatabaseManager
+            db_json = DatabaseManager().get_user_profile(user_id)
+            if db_json:
+                data = json.loads(db_json)
+                db_profile = cls.model_validate(data)
+                db_profile.sort_clubs()
+        except Exception:
+            pass
 
-        # 2. Se fallisce ma esiste una copia .bak, tenta il recupero dal backup
-        if profile is None and bak_path.exists():
-            profile = cls.load_from_file(bak_path)
-            if profile is not None:
-                # Ripristina il file principale dal backup
-                profile.save_for_user(user_id)
-                return profile
+        # 2. Prova a caricare dal file principale JSON
+        file_profile = cls.load_from_file(file_path)
 
-        # 3. Solo se nessun file esiste o è la prima volta, crea il profilo iniziale
-        if profile is None:
-            profile = cls(
-                player_name=default_name,
-                handicap=14.0,
-                category=PlayerCategory.CATEGORY_2,
-                preferred_ball="Titleist Pro V1",
-                clubs_in_bag=get_default_bag()
-            )
-            profile.save_for_user(user_id)
+        # 3. Se fallisce ma esiste una copia .bak, tenta il recupero dal backup
+        if file_profile is None and bak_path.exists():
+            file_profile = cls.load_from_file(bak_path)
+
+        # 4. Sincronizzazione intelligente (Fault-Tolerant & Anti-Loss):
+        # Se esistono sia DB che file, privilegia quello con la sacca più completa (più bastoni)
+        if db_profile and file_profile:
+            if len(db_profile.clubs_in_bag) > len(file_profile.clubs_in_bag):
+                profile = db_profile
+                profile.save_to_file(file_path)
+            else:
+                profile = file_profile
+                try:
+                    from core.db import DatabaseManager
+                    DatabaseManager().save_user_profile(user_id, profile.model_dump_json(indent=2))
+                except Exception:
+                    pass
+            return profile
+        elif db_profile:
+            db_profile.save_to_file(file_path)
+            return db_profile
+        elif file_profile:
+            try:
+                from core.db import DatabaseManager
+                DatabaseManager().save_user_profile(user_id, file_profile.model_dump_json(indent=2))
+            except Exception:
+                pass
+            return file_profile
+
+        # 5. Solo se nessun file o record esiste, crea il profilo iniziale
+        profile = cls(
+            player_name=default_name,
+            handicap=14.0,
+            category=PlayerCategory.CATEGORY_2,
+            preferred_ball="Titleist Pro V1",
+            clubs_in_bag=get_default_bag()
+        )
+        profile.save_for_user(user_id)
         return profile
 
 

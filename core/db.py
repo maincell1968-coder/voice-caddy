@@ -65,6 +65,14 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_profiles (
+                    user_id TEXT PRIMARY KEY,
+                    profile_json TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             
             # Check for existing table missing user_id / group_name columns
             cursor.execute("PRAGMA table_info(rounds)")
@@ -206,3 +214,27 @@ class DatabaseManager:
                 "avg_gir_pct": round(row["avg_gir_pct"], 1) if row["avg_gir_pct"] else 0.0,
                 "avg_scrambling_pct": round(row["avg_scrambling_pct"], 1) if row["avg_scrambling_pct"] else 0.0
             }
+
+    def save_user_profile(self, user_id: str, profile_json: str) -> bool:
+        """Salva o aggiorna il profilo utente e la sacca nel database protetto."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO user_profiles (user_id, profile_json, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    profile_json = excluded.profile_json,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (user_id, profile_json))
+            conn.commit()
+            return True
+
+    def get_user_profile(self, user_id: str) -> Optional[str]:
+        """Recupera il JSON del profilo utente dal database protetto."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT profile_json FROM user_profiles WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if row:
+                return row["profile_json"]
+            return None
