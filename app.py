@@ -2573,6 +2573,7 @@ with nav_tab2:
         df_bag = pd.DataFrame(clubs_data)
         edited_df = st.data_editor(
             df_bag,
+            key=f"bag_editor_{current_user.user_id}",
             num_rows="dynamic",
             use_container_width=True,
             column_config={
@@ -2615,6 +2616,32 @@ with nav_tab2:
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
             st.rerun()
+
+        col_sb1, col_sb2 = st.columns([1, 1])
+        with col_sb1:
+            st.download_button(
+                "⬇️ Scarica la mia Sacca (File JSON)",
+                data=prof.model_dump_json(indent=2),
+                file_name=f"sacca_{current_user.user_id}.json",
+                mime="application/json",
+                use_container_width=True,
+                help="Scarica una copia istantanea della tua sacca sul tuo dispositivo per conservarla sempre al sicuro da qualsiasi aggiornamento cloud."
+            )
+        with col_sb2:
+            with st.popover("📥 Ricarica da File JSON", use_container_width=True):
+                st.caption("Se la tua sacca si è resettata dopo un aggiornamento cloud, ricarica qui il tuo file JSON per ripristinarla in 1 secondo:")
+                uploaded_bag_json = st.file_uploader("Seleziona file JSON sacca:", type=["json"], key="restore_bag_json_pop")
+                if uploaded_bag_json is not None:
+                    if st.button("🚀 Ripristina Subito", type="primary", use_container_width=True, key="btn_apply_uploaded_bag"):
+                        try:
+                            raw_data = json.loads(uploaded_bag_json.read().decode("utf-8"))
+                            restored_prof = UserProfile.model_validate(raw_data)
+                            restored_prof.save_for_user(current_user.user_id)
+                            st.session_state.user_profile = restored_prof
+                            st.success("✅ Sacca ripristinata con successo!")
+                            st.rerun()
+                        except Exception as e_rst:
+                            st.error(f"Errore lettura file JSON: {e_rst}")
 
         # ---------------------------------------------------------
         # 🎯 Sincronizza Sacca: Allenamento vs Gara sull'Erba
