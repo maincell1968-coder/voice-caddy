@@ -32,6 +32,9 @@ class ClubDetail(BaseModel):
     model_type: Optional[str] = Field(default="", description="Modello o tipo bastone (es. Qi10, Stealth 2, Apex 21, T200, G430, CB/Blade)")
     shaft_flex: Optional[ShaftFlex] = Field(default=ShaftFlex.REGULAR, description="Flessibilità dello shaft")
     carry_meters: float = Field(..., description="Distanza media di volo/totale in metri")
+    real_grass_meters: Optional[float] = Field(default=None, description="Distanza media reale misurata su erba in campo/gara")
+    measured_shots_count: int = Field(default=0, description="Numero di colpi reali misurati in campo con questo bastone")
+    last_synced_at: Optional[str] = Field(default=None, description="Timestamp dell'ultima sincronizzazione con i colpi in campo")
 
 
 CLUB_HIERARCHY_RANK = {
@@ -111,9 +114,12 @@ def get_default_bag() -> List[ClubDetail]:
         ClubDetail(club_name="Legno 3", brand="Callaway", model_type="Paradym Ai Smoke", shaft_flex=ShaftFlex.STIFF, carry_meters=195),
         ClubDetail(club_name="Ibrido 4", brand="Ping", model_type="G430", shaft_flex=ShaftFlex.REGULAR, carry_meters=175),
         ClubDetail(club_name="Ferro 5", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=160),
+        ClubDetail(club_name="Ferro 6", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=152),
         ClubDetail(club_name="Ferro 7", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=145),
+        ClubDetail(club_name="Ferro 8", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=135),
         ClubDetail(club_name="Ferro 9", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=125),
         ClubDetail(club_name="Pitching Wedge", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=110),
+        ClubDetail(club_name="Approach Wedge (AW)", brand="TaylorMade", model_type="Qi / Stealth (AW)", shaft_flex=ShaftFlex.STIFF, carry_meters=98),
         ClubDetail(club_name="Sand Wedge (56°)", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=85),
         ClubDetail(club_name="Putter", brand="Scotty Cameron", model_type="Phantom X", shaft_flex=ShaftFlex.REGULAR, carry_meters=0)
     ]
@@ -188,6 +194,85 @@ class UserProfile(BaseModel):
             brand_str = f" [{c.brand} {c.model_type}]" if c.brand else ""
             lines.append(f"- {c.club_name}{brand_str}: ~{int(c.carry_meters)} metri (Shaft: {c.shaft_flex.value if hasattr(c.shaft_flex, 'value') else c.shaft_flex})")
         return "Dettaglio Sacca e Distanze del Giocatore:\n" + "\n".join(lines)
+
+    def sync_with_grass_statistics(
+        self,
+        stats: dict,
+        update_carry: bool = False,
+        user_id: Optional[str] = None
+    ) -> bool:
+        """
+        Sincronizza la sacca con le statistiche reali misurate su erba in gara.
+        - Memorizza 'real_grass_meters', 'measured_shots_count' e 'last_synced_at'.
+        - Se update_carry=True, allinea anche 'carry_meters' con la media reale su erba.
+        """
+        import time
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        norm_stats = {}
+        for k, v in stats.items():
+            norm_stats[k.lower().strip()] = v
+
+        for club in self.clubs_in_bag:
+            c_name_norm = club.club_name.lower().strip()
+            matched_stat = norm_stats.get(c_name_norm)
+            if not matched_stat:
+                for s_key, s_val in norm_stats.items():
+                    if s_key in c_name_norm or c_name_norm in s_key:
+                        matched_stat = s_val
+                        break
+
+            if matched_stat and matched_stat.get("avg_meters"):
+                grass_avg = float(matched_stat["avg_meters"])
+                club.real_grass_meters = round(grass_avg, 1)
+                club.measured_shots_count = int(matched_stat.get("count", 0))
+                club.last_synced_at = now_str
+                if update_carry and grass_avg > 0:
+                    club.carry_meters = round(grass_avg, 1)
+
+        self.sort_clubs()
+        if user_id:
+            return self.save_for_user(user_id)
+        return True
+
+    def get_club_comparison_summary(self) -> List[dict]:
+        """
+        Genera la lista di confronto per la sacca:
+        Mazza | Allenamento (m) | Erba (m) | Delta (m) | Colpi | Stato
+        """
+        summary = []
+        for c in self.clubs_in_bag:
+            if "putt" in c.club_name.lower():
+                continue
+            training_m = float(c.carry_meters) if c.carry_meters is not None else 0.0
+            grass_m = c.real_grass_meters
+            shots = c.measured_shots_count
+
+            if grass_m is not None and shots > 0:
+                delta = round(grass_m - training_m, 1)
+                if abs(delta) <= 3.0:
+                    status = "✅ Allineato (±3m)"
+                elif delta < -3.0:
+                    status = f"📉 {int(delta)}m (Più corto su erba)"
+                else:
+                    status = f"🚀 +{int(delta)}m (Più lungo su erba)"
+            else:
+                delta = None
+                status = "⚪ Nessun dato su erba"
+
+            summary.append({
+                "club_name": c.club_name,
+                "brand": c.brand or "Generica",
+                "model_type": c.model_type or "",
+                "shaft_flex": c.shaft_flex.value if hasattr(c.shaft_flex, "value") else str(c.shaft_flex),
+                "training_meters": training_m,
+                "grass_meters": grass_m,
+                "delta_meters": delta,
+                "shots_count": shots,
+                "status": status,
+                "last_synced_at": c.last_synced_at
+            })
+        return summary
 
     def save_to_file(self, file_path: str | Path = "user_profile.json") -> bool:
         self.sort_clubs()
@@ -273,7 +358,13 @@ class UserProfile(BaseModel):
     def save_for_user(self, user_id: str) -> bool:
         PROFILES_DIR.mkdir(parents=True, exist_ok=True)
         file_path = PROFILES_DIR / f"{user_id}.json"
-        return self.save_to_file(file_path)
+        saved = self.save_to_file(file_path)
+        try:
+            from core.db import DatabaseManager
+            DatabaseManager().save_user_profile(user_id, self.model_dump_json(indent=2))
+        except Exception:
+            pass
+        return saved
 
     @classmethod
     def load_for_user(cls, user_id: str, default_name: str = "Giocatore") -> UserProfile:
@@ -281,27 +372,59 @@ class UserProfile(BaseModel):
         file_path = PROFILES_DIR / f"{user_id}.json"
         bak_path = PROFILES_DIR / f"{user_id}.json.bak"
 
-        # 1. Prova a caricare il profilo principale
-        profile = cls.load_from_file(file_path)
+        # 1. Prova a caricare dal database protetto SQLite
+        db_profile = None
+        try:
+            from core.db import DatabaseManager
+            db_json = DatabaseManager().get_user_profile(user_id)
+            if db_json:
+                data = json.loads(db_json)
+                db_profile = cls.model_validate(data)
+                db_profile.sort_clubs()
+        except Exception:
+            pass
 
-        # 2. Se fallisce ma esiste una copia .bak, tenta il recupero dal backup
-        if profile is None and bak_path.exists():
-            profile = cls.load_from_file(bak_path)
-            if profile is not None:
-                # Ripristina il file principale dal backup
-                profile.save_for_user(user_id)
-                return profile
+        # 2. Prova a caricare dal file principale JSON
+        file_profile = cls.load_from_file(file_path)
 
-        # 3. Solo se nessun file esiste o è la prima volta, crea il profilo iniziale
-        if profile is None:
-            profile = cls(
-                player_name=default_name,
-                handicap=14.0,
-                category=PlayerCategory.CATEGORY_2,
-                preferred_ball="Titleist Pro V1",
-                clubs_in_bag=get_default_bag()
-            )
-            profile.save_for_user(user_id)
+        # 3. Se fallisce ma esiste una copia .bak, tenta il recupero dal backup
+        if file_profile is None and bak_path.exists():
+            file_profile = cls.load_from_file(bak_path)
+
+        # 4. Sincronizzazione intelligente (Fault-Tolerant & Anti-Loss):
+        # Se esistono sia DB che file, privilegia quello con la sacca più completa (più bastoni)
+        if db_profile and file_profile:
+            if len(db_profile.clubs_in_bag) >= len(file_profile.clubs_in_bag):
+                profile = db_profile
+                profile.save_to_file(file_path)
+            else:
+                profile = file_profile
+                try:
+                    from core.db import DatabaseManager
+                    DatabaseManager().save_user_profile(user_id, profile.model_dump_json(indent=2))
+                except Exception:
+                    pass
+            return profile
+        elif db_profile:
+            db_profile.save_to_file(file_path)
+            return db_profile
+        elif file_profile:
+            try:
+                from core.db import DatabaseManager
+                DatabaseManager().save_user_profile(user_id, file_profile.model_dump_json(indent=2))
+            except Exception:
+                pass
+            return file_profile
+
+        # 5. Solo se nessun file o record esiste, crea il profilo iniziale
+        profile = cls(
+            player_name=default_name,
+            handicap=14.0,
+            category=PlayerCategory.CATEGORY_2,
+            preferred_ball="Titleist Pro V1",
+            clubs_in_bag=get_default_bag()
+        )
+        profile.save_for_user(user_id)
         return profile
 
 

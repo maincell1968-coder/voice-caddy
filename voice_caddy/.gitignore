@@ -14,8 +14,12 @@ data/*
 !data/golf_courses.json
 !data/caddy_phrases.json
 !data/users.json
+!data/telegram_config.json
+!data/telegram_users.json
 !data/profiles/
 !data/profiles/*.json
+!data/audio_archive/
+!data/audio_archive/**
 !voice_caddy.db
 *.wav
 *.m4a
@@ -23,6 +27,11 @@ data/*
 *.opus
 *.aac
 *.ogg
+!data/audio_archive/**/*.ogg
+!data/audio_archive/**/*.wav
+!data/audio_archive/**/*.m4a
+!data/audio_archive/**/*.mp3
+!data/audio_archive/**/*.opus
 imports/
 temp/
 

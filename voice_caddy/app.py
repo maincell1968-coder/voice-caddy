@@ -15,6 +15,9 @@ from core.audio import VoiceCaddyAudioEngine, AudioProcessingError
 from core.parser import parse_golf_audio_transcript
 from core.metrics import GolfMetricsCalculator
 from core.schemas import GolfRoundData
+import importlib
+import core.db
+importlib.reload(core.db)
 from core.db import DatabaseManager
 from core.strokes_gained import StrokesGainedBenchmarkEngine
 from core.pdf_export import PDFReportGenerator
@@ -32,6 +35,7 @@ from core.elevation_service import elevation_service, haversine_distance, calcul
 from core.live_session import LiveSessionManager
 from core.backup_manager import backup_manager
 from golf_rules_module import render_rules_academy
+from core.club_distance_service import ClubDistanceService
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
@@ -1340,58 +1344,166 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------
-# PROCESS AUDIO PIPELINE (Using User's Configured AI)
+# AUDIO & TELEGRAM PIPELINE (REUSABLE FOR SIDEBAR & MAIN DASHBOARD)
 # ---------------------------------------------------------
-if process_btn and uploaded_files:
-    # Validate user AI configuration before consuming
+def execute_audio_round_pipeline(
+    files_or_paths,
+    whisper_engine="Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)",
+    whisper_model_local="base",
+    additional_text=""
+):
     if user_ai.provider == "openai" and not user_ai.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
         st.error("⚠️ Inserisci la tua OpenAI API Key personale nella barra laterale prima di avviare l'analisi.")
-        st.stop()
+        return
 
     temp_paths = []
+    json_texts = []
     try:
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        status_text.info("⚙️ Preparazione e caricamento note vocali...")
+        status_text.info("⚙️ Preparazione e caricamento note vocali e dati di testo...")
         progress_bar.progress(15)
 
-        for file in uploaded_files:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.name}")
-            temp_file.write(file.read())
-            temp_file.close()
-            temp_paths.append(temp_file.name)
+        for item in (files_or_paths or []):
+            if hasattr(item, "read"):
+                fname = getattr(item, "name", "audio.ogg").lower()
+                if fname.endswith(".json"):
+                    try:
+                        raw_bytes = item.read()
+                        tg_data = json.loads(raw_bytes.decode("utf-8"))
+                        if isinstance(tg_data, dict) and "messages" in tg_data:
+                            user_texts = []
+                            for m in tg_data["messages"]:
+                                # Skip bot responses
+                                if m.get("from") == "Voice Caddy Pro" or "bot" in str(m.get("from_id", "")):
+                                    continue
+                                txt_obj = m.get("text", "")
+                                if isinstance(txt_obj, list):
+                                    t_parts = []
+                                    for p in txt_obj:
+                                        if isinstance(p, dict):
+                                            t_parts.append(p.get("text", ""))
+                                        elif isinstance(p, str):
+                                            t_parts.append(p)
+                                    m_txt = "".join(t_parts).strip()
+                                else:
+                                    m_txt = str(txt_obj).strip()
+                                d_str = m.get("date", "")
+                                if m_txt:
+                                    user_texts.append(f"[{d_str}] {m_txt}")
+                            if user_texts:
+                                json_texts.append("\n".join(user_texts))
+                    except Exception:
+                        pass
+                elif fname.endswith(".html") or fname.endswith(".htm"):
+                    try:
+                        raw_bytes = item.read()
+                        html_content = raw_bytes.decode("utf-8", errors="ignore")
+                        import re
+                        from html import unescape
+                        msg_blocks = re.findall(r'<div class="message default clearfix[^"]*"[^>]*>(.*?)</div>\s*</div>', html_content, re.DOTALL)
+                        user_texts = []
+                        for block in msg_blocks:
+                            from_match = re.search(r'<div class="from_name">\s*(.*?)\s*</div>', block)
+                            author = from_match.group(1).strip() if from_match else ""
+                            if "Voice Caddy" in author or "bot" in author.lower():
+                                continue
+                            date_match = re.search(r'<div class="date details" title="([^"]+)"', block)
+                            d_str = date_match.group(1) if date_match else ""
+                            text_match = re.search(r'<div class="text">\s*(.*?)\s*</div>', block, re.DOTALL)
+                            if text_match:
+                                clean_t = re.sub(r'<[^>]+>', ' ', text_match.group(1))
+                                clean_t = unescape(clean_t).strip()
+                                if clean_t:
+                                    user_texts.append(f"[{d_str}] {clean_t}" if d_str else clean_t)
+                        if user_texts:
+                            json_texts.append("\n".join(user_texts))
+                    except Exception:
+                        pass
+                else:
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{fname}")
+                    temp_file.write(item.read())
+                    temp_file.close()
+                    temp_paths.append(temp_file.name)
+            elif isinstance(item, (str, Path)) and os.path.exists(str(item)):
+                temp_paths.append(str(item))
 
-        status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
-        progress_bar.progress(40)
+        # Check if we have anything to process
+        has_audio = bool(temp_paths)
+        has_text = bool(json_texts or (additional_text and additional_text.strip()))
 
-        if "Groq" in whisper_engine:
-            engine_mode = "groq"
-        elif "Cloud" in whisper_engine or "OpenAI" in whisper_engine:
-            engine_mode = "cloud"
-        else:
-            engine_mode = "local"
+        if not has_audio and not has_text:
+            st.error("⚠️ Nessun file audio o testo valido trovato per l'elaborazione.")
+            return
 
-        audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
-        whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-        groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+        transcript_parts = []
 
-        if len(temp_paths) == 1:
-            transcript_text, meta = audio_engine.transcribe(
-                temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
-            )
-        else:
-            transcript_text, meta = audio_engine.transcribe_multiple(
-                temp_paths, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
-            )
+        if has_audio:
+            status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
+            progress_bar.progress(40)
 
+            if "Groq" in whisper_engine:
+                engine_mode = "groq"
+            elif "Cloud" in whisper_engine or "OpenAI" in whisper_engine:
+                engine_mode = "cloud"
+            else:
+                engine_mode = "local"
+
+            audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
+            whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+            groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+            if not groq_api_key:
+                try:
+                    if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                        groq_api_key = st.secrets["GROQ_API_KEY"]
+                except Exception:
+                    pass
+            if not groq_api_key:
+                try:
+                    from core.ai_provider import get_default_groq_key
+                    groq_api_key = get_default_groq_key()
+                except Exception:
+                    pass
+
+            if len(temp_paths) == 1:
+                t_text, _ = audio_engine.transcribe(
+                    temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                )
+            else:
+                t_text, _ = audio_engine.transcribe_multiple(
+                    temp_paths, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                )
+            if t_text:
+                transcript_parts.append(t_text)
+
+        if json_texts:
+            transcript_parts.append("[Messaggi di Testo dalla Chat Telegram]:\n" + "\n\n".join(json_texts))
+
+        if additional_text and additional_text.strip():
+            if not has_audio and not json_texts:
+                transcript_parts.append(additional_text.strip())
+            else:
+                transcript_parts.append("[Note e Messaggi Scritti dal Giocatore]:\n" + additional_text.strip())
+
+        transcript_text = "\n\n".join(transcript_parts)
         st.session_state.transcript = transcript_text
 
-        ai_desc = f"Ollama ({user_ai.ollama_model})" if user_ai.provider == "ollama" else f"OpenAI ({user_ai.openai_model})"
+        ai_desc = f"Ollama ({user_ai.ollama_model})" if user_ai.provider == "ollama" else (
+            f"Groq ({user_ai.groq_model})" if user_ai.provider == "groq" else f"OpenAI ({user_ai.openai_model})"
+        )
         status_text.info(f"🧠 Analisi semantica NLU tramite la tua IA ({ai_desc}) per {st.session_state.user_profile.category.value} su {active_course.name}...")
         progress_bar.progress(70)
 
-        raw_round_data = parse_golf_audio_transcript(
+        import importlib
+        import core.parser
+        import core.ai_provider
+        import core.metrics
+        importlib.reload(core.parser)
+        importlib.reload(core.ai_provider)
+        importlib.reload(core.metrics)
+
+        raw_round_data = core.parser.parse_golf_audio_transcript(
             transcript_text=transcript_text,
             user_profile=st.session_state.user_profile,
             course=active_course,
@@ -1401,7 +1513,7 @@ if process_btn and uploaded_files:
         status_text.info("📊 Riconciliazione matematica e calcolo metriche balistiche...")
         progress_bar.progress(90)
 
-        validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_round_data)
+        validated_data = core.metrics.GolfMetricsCalculator.recompute_and_reconcile(raw_round_data)
         st.session_state.round_data = validated_data
 
         # Save round tagged with current user ID and group
@@ -1424,6 +1536,164 @@ if process_btn and uploaded_files:
                     os.remove(p)
                 except OSError:
                     pass
+
+
+def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Controlla e scarica note vocali recenti o colpi registrati su Telegram,
+    elaborando e salvando il round aggiornato.
+    """
+    token = tg_manager.get_token()
+    resolved_cid = str(chat_id or tg_manager.get_chat_id_for_user(user_id) or "")
+    if not resolved_cid and (user_id == "strafatti_stefano_pirani" or "stefano" in str(user_id).lower()):
+        resolved_cid = tg_manager.get_admin_chat_id()
+
+    # 1. Verifica aggiornamenti audio in arrivo su Telegram
+    if token:
+        try:
+            url = f"https://api.telegram.org/bot{token}/getUpdates"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok"):
+                    updates = data.get("result", [])
+                    audio_msgs = []
+                    max_u_id = 0
+                    for u in updates:
+                        u_id = u.get("update_id", 0)
+                        if u_id > max_u_id:
+                            max_u_id = u_id
+                        msg = u.get("message", {})
+                        c_id = str(msg.get("chat", {}).get("id", ""))
+                        if resolved_cid and c_id != resolved_cid:
+                            continue
+                        if msg.get("voice") or msg.get("audio"):
+                            audio_msgs.append(msg)
+
+                    if audio_msgs:
+                        downloaded = []
+                        for m in audio_msgs:
+                            f_obj = m.get("voice") or m.get("audio")
+                            f_id = f_obj.get("file_id")
+                            if f_id:
+                                req_f = urllib.request.Request(f"https://api.telegram.org/bot{token}/getFile?file_id={f_id}")
+                                with urllib.request.urlopen(req_f, timeout=8) as r_f:
+                                    f_info = json.loads(r_f.read().decode("utf-8"))
+                                    if f_info.get("ok"):
+                                        fp = f_info["result"]["file_path"]
+                                        ext = os.path.splitext(fp)[1] or ".ogg"
+                                        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+                                        tmp_path = tmp.name
+                                        tmp.close()
+                                        urllib.request.urlretrieve(f"https://api.telegram.org/file/bot{token}/{fp}", tmp_path)
+                                        downloaded.append(tmp_path)
+
+                        # Conferma lettura a Telegram
+                        if max_u_id > 0:
+                            try:
+                                urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getUpdates?offset={max_u_id + 1}", timeout=5)
+                            except Exception:
+                                pass
+
+                        if downloaded:
+                            execute_audio_round_pipeline(downloaded)
+                            return True, f"Scaricati ed elaborati con successo {len(downloaded)} file vocali da Telegram!"
+        except Exception:
+            pass
+
+    # 2. Verifica sessione live e colpi già memorizzati su database locale
+    if resolved_cid:
+        scorecard = live_session_mgr.get_round_scorecard(resolved_cid)
+        comp_holes = scorecard.get("completed_holes", [])
+        if comp_holes:
+            try:
+                from core.schemas import HoleData, Shot, RoundInfo, GolfRoundData, LieType, ShotResult, ShotIntent
+                holes_list = []
+                for h in comp_holes:
+                    h_num = int(h.get("hole_number", 1))
+                    shots_raw = live_session_mgr.get_hole_shots(resolved_cid, h_num)
+                    s_list = []
+                    for s_idx, s in enumerate(shots_raw, 1):
+                        lie_str = str(s.get("lie", "fairway")).lower()
+                        try:
+                            lie_val = LieType(lie_str)
+                        except Exception:
+                            lie_val = LieType.FAIRWAY
+
+                        dist_cov = s.get("distance_covered")
+                        raw_d = s.get("raw_distance_to_green")
+                        pl_d = s.get("plays_like_distance")
+                        elev_d = s.get("elevation_diff")
+
+                        s_list.append(Shot(
+                            shot_index=s_idx,
+                            club=s.get("club") or "Bastone",
+                            lie=lie_val,
+                            result=ShotResult.GOOD,
+                            intent=ShotIntent.FULL_SHOT,
+                            distance_meters=float(dist_cov) if dist_cov is not None else None,
+                            raw_distance=float(raw_d) if raw_d is not None else None,
+                            plays_like_distance=float(pl_d) if pl_d is not None else None,
+                            elevation_diff=float(elev_d) if elev_d is not None else None,
+                            notes=s.get("notes") or ""
+                        ))
+
+                    h_par = int(h.get("par", 4))
+                    h_score = int(h.get("gross_strokes") or h.get("score") or 4)
+                    h_putts = int(h.get("putts", 2))
+                    shots_to_green = h_score - h_putts
+                    calc_gir = (shots_to_green <= (h_par - 2)) if h_score >= h_putts else False
+
+                    holes_list.append(HoleData(
+                        hole_number=h_num,
+                        par=h_par,
+                        score=h_score,
+                        putts=h_putts,
+                        gir=calc_gir,
+                        fairway_hit=None if h_par == 3 else True,
+                        received_strokes=int(h.get("received_strokes") or 0),
+                        stroke_index=int(h.get("stroke_index")) if h.get("stroke_index") is not None else None,
+                        shots=s_list
+                    ))
+
+                user_prof = st.session_state.get("user_profile")
+                hcp_val = getattr(user_prof, "handicap", 23.9) if user_prof else 23.9
+                p_name = "Stefano Pirani"
+                if hasattr(current_user, "first_name") and hasattr(current_user, "last_name"):
+                    p_name = f"{current_user.first_name} {current_user.last_name}"
+
+                raw_round = GolfRoundData(
+                    round_info=RoundInfo(
+                        date=datetime.now().strftime("%d %B %Y"),
+                        course_name=active_course.name,
+                        holes_played=len(holes_list),
+                        game_format="stableford",
+                        player_name=p_name,
+                        exact_hcp=hcp_val,
+                        playing_hcp=int(round(hcp_val)),
+                        category="Singolo Stableford"
+                    ),
+                    holes=holes_list
+                )
+                validated = GolfMetricsCalculator.recompute_and_reconcile(raw_round)
+                st.session_state.round_data = validated
+                db.save_round(validated, user_id=current_user.user_id, group_name=current_user.group)
+                return True, f"Sincronizzate {len(holes_list)} buche registrate in campo dal Bot Telegram con successo!"
+            except Exception as e_sync:
+                return False, f"Errore durante l'elaborazione dei colpi della sessione live: {e_sync}"
+
+
+    return False, (
+        f"🟢 Smartphone associato con successo a @{tg_manager.get_bot_username()} (Chat ID: `{resolved_cid}`)!\n\n"
+        "ℹ️ Al momento non sono presenti nuovi file audio in arrivo sui server Telegram (le note vocali restano sul server Telegram per 24h se non inviate di recente).\n\n"
+        "👉 **Cosa fare adesso per elaborare la gara di ieri:**\n"
+        "• **Se hai le note vocali salvate sul computer o telefono:** trascinale direttamente nel riquadro verde a fianco *(Opzione 2)* e premi **[ 🚀 TRASCRIVI ED ELABORA LA GARA ORA ]**!\n"
+        "• **Oppure inoltra/invia ora** gli audio della gara nella chat di **@VoiceCaddyGolf_bot** su Telegram, poi torna qui e riclicca questo pulsante!"
+    )
+
+
+if process_btn and uploaded_files:
+    execute_audio_round_pipeline(uploaded_files, whisper_engine=whisper_engine, whisper_model_local=whisper_model_local)
 
 
 # =========================================================
@@ -1506,6 +1776,234 @@ nav_admin = all_tabs[7] if current_user.is_admin else None
 # TAB 1: LIVE DASHBOARD & PGA DIAGNOSIS
 # ---------------------------------------------------------
 with nav_tab1:
+    # ---------------------------------------------------------
+    # HERO ACTION HUB: SCARICA ED ELABORA GARA DI IERI (TELEGRAM / AUDIO)
+    # ---------------------------------------------------------
+    if "show_sync_panel" not in st.session_state:
+        st.session_state.show_sync_panel = True
+
+    if st.session_state.show_sync_panel:
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #0f1e16 0%, #162a20 50%, #0c1824 100%);
+                        border: 2px solid #2ECC71; border-radius: 14px; padding: 22px 26px;
+                        margin-bottom: 24px; box-shadow: 0 10px 30px rgba(46, 204, 113, 0.25);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 14px;">
+                    <div style="display:flex; align-items:center; gap: 12px;">
+                        <span style="font-size: 2rem;">📥</span>
+                        <div>
+                            <span style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
+                                SCARICA & ELABORA LA GARA DI IERI / ALLENAMENTO
+                            </span>
+                            <div style="font-size: 0.9rem; color: #A0AEC0; margin-top: 3px;">
+                                Trasferisci e processa le note vocali e i colpi da Telegram, oppure trascina qui i file audio registrati.
+                            </div>
+                        </div>
+                    </div>
+                    <span style="background: rgba(46, 204, 113, 0.2); border: 1px solid #2ECC71; color: #2ECC71;
+                                 padding: 5px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
+                        ⚡ AZIONE RAPIDA 1-CLIC
+                    </span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        col_sync_tg, col_sync_files = st.columns([1, 1], gap="large")
+
+        with col_sync_tg:
+            st.markdown("""
+                <div style="background: #131d2a; border: 1px solid #38BDF8; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
+                        <span style="font-size: 1.3rem;">📲</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #38BDF8;">OPZIONE 1: Da Bot Telegram</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
+                        Se durante o dopo la gara hai inviato note vocali o registrato colpi al bot Telegram <b>@VoiceCaddyGolf_bot</b>, clicca il pulsante qui sotto per scaricarli e processarli subito.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
+            if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
+                linked_cid = tg_manager.get_admin_chat_id()
+            bot_uname = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+
+            if linked_cid:
+                st.caption(f"🟢 Collegato: **@{bot_uname}** (Chat ID: `{linked_cid}`)")
+            else:
+                st.caption(f"⚠️ Smartphone non ancora associato a @{bot_uname}")
+
+            if st.button("🔄 Scarica ed Elabora Ultimi Dati da Telegram", key="btn_sync_tg_hero", type="primary", use_container_width=True):
+                with st.spinner("Connessione a Telegram e controllo aggiornamenti in corso..."):
+                    ok_sync, msg_sync = sync_telegram_data_to_round(current_user.user_id, linked_cid)
+                    if ok_sync:
+                        st.success(msg_sync)
+                        st.rerun()
+                    else:
+                        st.warning(msg_sync)
+
+            deep_link_hero = f"https://t.me/{bot_uname}"
+            st.link_button("👉 Apri Chat con @VoiceCaddyGolf_bot su Telegram", deep_link_hero, use_container_width=True)
+
+            st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-weight: bold; color: #38BDF8; font-size: 0.88rem;'>☁️ Oppure Recupera Gara Archiviata in Cloud per Data:</div>", unsafe_allow_html=True)
+
+            if not hasattr(db, "get_telegram_archived_dates"):
+                import importlib
+                import core.db
+                importlib.reload(core.db)
+                db = core.db.DatabaseManager()
+
+            archived_dates = db.get_telegram_archived_dates(chat_id=linked_cid, user_id=current_user.user_id) if hasattr(db, "get_telegram_archived_dates") else []
+            date_options = [d["round_date"] for d in archived_dates]
+
+            from datetime import date, timedelta
+            default_d = date.today() - timedelta(days=1)
+
+            col_date, col_btn = st.columns([1.1, 1], gap="small")
+            with col_date:
+                if date_options:
+                    selected_date = st.selectbox(
+                        "Data del Giro:",
+                        options=date_options,
+                        format_func=lambda d: f"{d} ({next((x['total_count'] for x in archived_dates if x['round_date'] == d), 0)} note)",
+                        key="sb_archive_date"
+                    )
+                else:
+                    selected_date = str(st.date_input("Data del Giro:", value=default_d, key="di_archive_date"))
+
+            with col_btn:
+                st.write("")  # alignment spacing
+                if st.button("🚀 Elabora da Cloud", key="btn_elabora_data_cloud", type="secondary", use_container_width=True):
+                    with st.spinner(f"Recupero ed elaborazione cronologica dati del {selected_date} dal Cloud..."):
+                        if not hasattr(db, "get_telegram_messages_for_date"):
+                            import importlib
+                            import core.db
+                            importlib.reload(core.db)
+                            db = core.db.DatabaseManager()
+
+                        msgs = db.get_telegram_messages_for_date(selected_date, chat_id=linked_cid, user_id=current_user.user_id) if hasattr(db, "get_telegram_messages_for_date") else []
+                        if msgs:
+                            # Ordina rigorosamente in sequenza cronologica
+                            msgs = sorted(msgs, key=lambda m: (m.get("timestamp") or "", m.get("id") or 0))
+
+                            whisper_choice = st.session_state.get("hero_whisper_choice", "Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)")
+                            engine_mode = "groq" if "Groq" in whisper_choice else ("cloud" if "Cloud" in whisper_choice or "OpenAI" in whisper_choice else "local")
+                            audio_engine = VoiceCaddyAudioEngine(model_size="base")
+                            whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+                            groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+                            if not groq_api_key:
+                                try:
+                                    from core.ai_provider import get_default_groq_key
+                                    groq_api_key = get_default_groq_key()
+                                except Exception:
+                                    pass
+
+                            timeline_lines = []
+                            for m in msgs:
+                                m_type = m.get("message_type", "text")
+                                f_path = m.get("file_path")
+                                c_text = m.get("content_text")
+                                ts_short = m.get("timestamp", "")[11:16]
+                                is_audio_msg = m_type in ("voice", "audio", "video_note") or bool(f_path)
+                                is_dummy_name = bool(c_text and any(c_text.strip().lower().endswith(ext) for ext in ('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.aac', '.3gp', '.amr')))
+                                needs_transcription = is_audio_msg and (not c_text or is_dummy_name)
+
+                                if needs_transcription and f_path:
+                                    full_p = Path(f_path) if os.path.isabs(f_path) else (PROJECT_ROOT / f_path)
+                                    if full_p.exists():
+                                        try:
+                                            t_text, _ = audio_engine.transcribe(
+                                                full_p, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                                            )
+                                            if t_text:
+                                                c_text = t_text
+                                                m["content_text"] = t_text
+                                                if hasattr(db, "update_telegram_message_text") and m.get("id"):
+                                                    db.update_telegram_message_text(m["id"], t_text)
+                                        except Exception as tx_err:
+                                            logger.warning(f"Errore trascrizione audio {f_path}: {tx_err}")
+
+                                if c_text and not any(c_text.strip().lower().endswith(ext) for ext in ('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.aac', '.3gp', '.amr')):
+                                    line = f"[{ts_short}] {c_text.strip()}" if ts_short else c_text.strip()
+                                    timeline_lines.append(line)
+
+                            unified_transcript = "\n".join(timeline_lines)
+                            if unified_transcript.strip():
+                                execute_audio_round_pipeline(
+                                    [],
+                                    whisper_engine=whisper_choice,
+                                    additional_text=unified_transcript
+                                )
+                            else:
+                                st.warning("Nessun contenuto testuale o vocale valido trovato per questa data.")
+                        else:
+                            st.info(f"Nessun dato registrato in cloud per la data {selected_date}. Se hai salvato il file sul PC, usa l'Opzione 2 a fianco!")
+
+            with st.expander("ℹ️ Come inviare gli audio di ieri tramite Telegram", expanded=False):
+                st.markdown(f"""
+                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
+                        <b>1.</b> Apri Telegram sul cellulare o PC e cerca <b>@{bot_uname}</b>.<br>
+                        <b>2.</b> Inoltra o invia le note vocali della gara direttamente al bot.<br>
+                        <b>3.</b> Torna qui e premi <b>[ 🔄 Scarica ed Elabora Ultimi Dati da Telegram ]</b>: il sistema li trascriverà e calcolerà all'istante la scorecard e tutte le statistiche PGA!
+                    </div>
+                """, unsafe_allow_html=True)
+
+        with col_sync_files:
+            st.markdown("""
+                <div style="background: #112217; border: 1px solid #2ECC71; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
+                        <span style="font-size: 1.3rem;">🎙️</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #2ECC71;">OPZIONE 2: Trascina o Carica File Audio</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
+                        Hai i file audio salvati sul PC o scaricati da Telegram? Selezionali o trascinali direttamente qui:
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            hero_uploaded_files = st.file_uploader(
+                "File audio (.m4a, .mp3, .wav, .opus, .ogg) o esportazione Telegram (result.json, messages.html)",
+                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr", "json", "html", "htm"],
+                accept_multiple_files=True,
+                key="hero_uploader_files_box"
+            )
+
+            hero_text_notes = st.text_area(
+                "📝 Note o Messaggi di Testo della Gara (Opzionale):",
+                placeholder="Hai scritto alcune buche o colpi come messaggi di testo in chat? Incollali qui...",
+                help="Se durante il giro hai alternato vocali e messaggi di testo scritti, incolla qui il testo. Verrà unito in automatico alle note vocali per un'analisi completa a 18 buche!",
+                height=90,
+                key="hero_text_notes_area"
+            )
+
+            hero_whisper = st.radio(
+                "Motore Whisper Trascrizione:",
+                options=["Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)", "OpenAI Whisper Cloud (Usa tua API Key)", "Faster-Whisper Locale"],
+                index=0,
+                key="hero_whisper_choice",
+                horizontal=False
+            )
+
+            can_process = bool(hero_uploaded_files or (hero_text_notes and hero_text_notes.strip()))
+
+            if st.button("🚀 TRASCRIVI ED ELABORA LA GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not can_process):
+                execute_audio_round_pipeline(
+                    hero_uploaded_files or [],
+                    whisper_engine=hero_whisper,
+                    whisper_model_local="base",
+                    additional_text=hero_text_notes.strip() if hero_text_notes else ""
+                )
+
+            with st.expander("💡 Come gestire audio + messaggi scritti o esportazione Telegram", expanded=False):
+                st.markdown("""
+                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
+                        <b>• Se hai vocali e messaggi di testo:</b> trascina i file vocali nel riquadro sopra e fai <i>Copia & Incolla</i> dei messaggi di testo nel box «Note o Messaggi di Testo». Il sistema unirà tutto in automatico!<br>
+                        <b>• Se hai esportato la chat da Telegram Desktop:</b> puoi trascinare direttamente il file <code>result.json</code> nel riquadro: Voice Caddy estrarrà i tuoi messaggi e li elaborerà all'istante!<br>
+                        <b>• Per salvare i singoli vocali da Telegram:</b> tasto destro sul vocale ➔ «Salva con nome...» ➔ trascinalo qui.
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
     data = st.session_state.round_data
 
     if data:
@@ -1515,35 +2013,53 @@ with nav_tab1:
         rel_par = GolfMetricsCalculator.calculate_score_relation_to_par(data.holes)
         rel_par_str = f"+{rel_par}" if rel_par > 0 else ("Par" if rel_par == 0 else f"{rel_par}")
 
-        col_head, col_btn = st.columns([4, 1])
+        r_info = data.round_info
+        c_name = getattr(r_info, "course_name", None) or active_course.name
+        h_played = getattr(r_info, "holes_played", len(data.holes) if data.holes else 18)
+        r_date = getattr(r_info, "date", None) or "Oggi"
+
+        col_head, col_sync_btn, col_btn = st.columns([2.6, 1.4, 1.0])
         with col_head:
-            st.title(f"⛳ {data.round_info.course_name or active_course.name}")
+            st.title(f"⛳ {c_name}")
             cat_val = st.session_state.user_profile.category.value
             cat_badge = f"🎭 Tono IA: {cat_val}"
-            st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {data.round_info.holes_played} Buche • Data: {data.round_info.date or 'Oggi'} • {cat_badge}")
+            st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {h_played} Buche • Data: {r_date} • {cat_badge}")
+
+        with col_sync_btn:
+            lbl_toggle = "🔼 Nascondi Pannello Sync" if st.session_state.show_sync_panel else "📥 Sincronizza Gara di Ieri"
+            if st.button(lbl_toggle, key="toggle_sync_btn_hdr", use_container_width=True, help="Mostra o nasconde il pannello di sincronizzazione con Telegram e caricamento audio"):
+                st.session_state.show_sync_panel = not st.session_state.show_sync_panel
+                st.rerun()
 
         with col_btn:
             html_rep = PDFReportGenerator.generate_html_report(data)
             st.download_button(
                 label="📥 Scarica Report PDF / HTML",
                 data=html_rep,
-                file_name=f"VoiceCaddy_{current_user.first_name}_{data.round_info.date or 'Round'}.html",
+                file_name=f"VoiceCaddy_{current_user.first_name}_{r_date}.html",
                 mime="text/html",
                 use_container_width=True
             )
 
         # Top KPI Metrics Cards (Lordo, Netto, Stableford WHS)
-        is_stbl = "stableford" in (data.round_info.game_format or "stableford").lower()
+        g_format = getattr(r_info, "game_format", None) or "stableford"
+        is_stbl = "stableford" in g_format.lower()
         kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+        stbl_net = getattr(summary, "total_stableford_points", None)
+        stbl_gross = getattr(summary, "total_stableford_gross_points", None)
+        sc_net = getattr(summary, "total_score_net", None)
+
         if is_stbl:
-            kpi1.metric("Stableford Netto", f"{summary.total_stableford_points or 0} pt", f"{summary.total_stableford_gross_points or 0} pt Lordo")
-            kpi2.metric("Colpi Lordi / Netti", f"{summary.total_score} L / {summary.total_score_net or summary.total_score} N", f"Rel. Par {rel_par_str}")
+            kpi1.metric("Stableford Netto", f"{stbl_net or 0} pt", f"{stbl_gross or 0} pt Lordo")
+            kpi2.metric("Colpi Lordi / Netti", f"{summary.total_score} L / {sc_net or summary.total_score} N", f"Rel. Par {rel_par_str}")
         else:
             kpi1.metric("Colpi Lordi", f"{summary.total_score} ({rel_par_str})")
-            kpi2.metric("Colpi Netti", f"{summary.total_score_net or summary.total_score}")
+            kpi2.metric("Colpi Netti", f"{sc_net or summary.total_score}")
 
-        phcp_display = f"{data.round_info.playing_hcp}" if data.round_info.playing_hcp is not None else "-"
-        ehcp_display = f"{data.round_info.exact_hcp}" if data.round_info.exact_hcp is not None else str(st.session_state.user_profile.handicap)
+        phcp = getattr(r_info, "playing_hcp", None)
+        ehcp = getattr(r_info, "exact_hcp", None)
+        phcp_display = f"{phcp}" if phcp is not None else "-"
+        ehcp_display = f"{ehcp}" if ehcp is not None else str(st.session_state.user_profile.handicap)
         kpi3.metric("Playing HCP", f"{phcp_display} colpi", f"Exact: {ehcp_display}")
         kpi4.metric("Fairway Presi (FIR)", f"{summary.fairway_accuracy_pct}%")
         kpi5.metric("Green in Reg. (GIR)", f"{summary.gir_pct}%")
@@ -1561,6 +2077,23 @@ with nav_tab1:
                 <p><b>Analisi Esecuzione Tecnica vs Tattica:</b> {diag.technical_vs_tactical_split}</p>
             </div>
         """, unsafe_allow_html=True)
+
+        # Course Management Stats Box (Layup, Recovery, Bump & Run)
+        cm = getattr(summary, "course_management_stats", None)
+        if cm:
+            st.markdown(f"""
+                <div style="background:#131824; border:1px solid #2ECC71; border-radius:10px; padding:14px 18px; margin-top:12px; margin-bottom:15px; color:#E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                        <span style="color:#2ECC71; font-weight:bold; font-size:1.05rem;">🧠 Gestione del Percorso & Scelte Tattiche: <i>{cm.course_management_rating}</i></span>
+                        <span style="font-size:0.88rem; color:#A0AEC0;">Tasso Successo Recovery: <b style="color:#2ECC71;">{cm.recovery_success_rate}%</b></span>
+                    </div>
+                    <div style="display:flex; gap:25px; margin-top:10px; font-size:0.92rem; flex-wrap:wrap;">
+                        <span>🎯 <b>Piazzamenti Tattici (Layup):</b> {cm.layups_count}</span>
+                        <span>🌳 <b>Salvataggi da Difficoltà (Recovery):</b> {cm.recoveries_count}</span>
+                        <span>👟 <b>Approcci a Correre (Bump & Run):</b> {cm.bump_and_runs_count}</span>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
         sub_tab_overview, sub_tab_holes, sub_tab_drills, sub_tab_transcript = st.tabs([
             "📋 Scorecard Ufficiale",
@@ -2082,6 +2615,71 @@ with nav_tab2:
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
             st.rerun()
+
+        # ---------------------------------------------------------
+        # 🎯 Sincronizza Sacca: Allenamento vs Gara sull'Erba
+        # ---------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🎯 Sincronizza Sacca: Allenamento vs Gara sull'Erba")
+        st.caption("Confronta le distanze nominali impostate in allenamento/campo pratica con la media reale dei colpi misurati su erba via GPS durante le gare.")
+
+        grass_stats = ClubDistanceService.get_club_grass_performance(
+            db_path=db.db_path,
+            user_id=current_user.user_id
+        )
+
+        # Allinea temporaneamente per calcolare la sintesi (senza sovrascrivere il carry)
+        prof.sync_with_grass_statistics(grass_stats, update_carry=False)
+        comparison_list = prof.get_club_comparison_summary()
+
+        has_grass_data = any(item["grass_meters"] is not None for item in comparison_list)
+
+        comp_rows = []
+        for item in comparison_list:
+            c_name = item["club_name"]
+            train_m = f"{int(item['training_meters'])} m"
+            if item["grass_meters"] is not None:
+                g_m = f"{int(item['grass_meters'])} m"
+                delta_val = int(item["delta_meters"])
+                delta_str = f"{'+' if delta_val > 0 else ''}{delta_val} m"
+                cnt = item["shots_count"]
+                if abs(delta_val) <= 5:
+                    status = "🎯 Allineato (±5m)"
+                elif delta_val > 5:
+                    status = f"🚀 Su erba vola più lungo (+{delta_val}m)"
+                else:
+                    status = f"⚠️ Su erba vola più corto ({delta_val}m)"
+            else:
+                g_m = "—"
+                delta_str = "—"
+                cnt = 0
+                status = "Dati in attesa (nessun colpo su erba)"
+
+            comp_rows.append({
+                "Bastone": c_name,
+                "Allenamento (m)": train_m,
+                "Media Erba (m)": g_m,
+                "Differenza (Delta)": delta_str,
+                "Colpi Misurati": cnt,
+                "Analisi Performance": status
+            })
+
+        df_comp = pd.DataFrame(comp_rows)
+        st.dataframe(df_comp, use_container_width=True, hide_index=True)
+
+        col_sync1, col_sync2 = st.columns([2, 1])
+        with col_sync1:
+            if has_grass_data:
+                st.info("💡 **Consiglio Tattico:** Se i colpi misurati su erba sono attendibili (es. > 3 colpi per bastone), puoi sincronizzare la sacca per permettere al caddie di suggerire i bastoni in base alla tua reale resa sul campo da golf.")
+            else:
+                st.info("ℹ️ **Nessun colpo ancora rilevato su erba:** Registra i colpi via GPS con il Bot Telegram durante la gara per popolare automaticamente questo confronto.")
+
+        with col_sync2:
+            if st.button("🔄 Sincronizza Sacca con i Colpi su Erba", type="secondary", use_container_width=True, disabled=not has_grass_data, key="sync_grass_bag_btn"):
+                prof.sync_with_grass_statistics(grass_stats, update_carry=True, user_id=current_user.user_id)
+                st.session_state.user_profile = prof
+                st.success("✅ Sacca sincronizzata con successo con le distanze reali su erba!")
+                st.rerun()
 
         # ---------------------------------------------------------
         # SAFEVAULT: Protezione Dati, Esportazione & Ripristino 1-Clic

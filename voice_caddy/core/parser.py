@@ -3,11 +3,174 @@ from __future__ import annotations
 import os
 import re
 from typing import Optional, Dict, Any
-from core.schemas import GolfRoundData
+from core.schemas import GolfRoundData, ShotIntent, HoleData, RoundInfo, Shot
 from core.user_profile import UserProfile
 from core.course import GolfCourse, CONERO_GOLF_CLUB
 from core.auth import AIUserConfig
 from core.ai_provider import execute_round_analysis
+
+
+def infer_shot_intent(
+    text: str = "",
+    club: Optional[str] = None,
+    lie: Optional[str] = None,
+    distance_to_green: Optional[float] = None,
+    shot_index: Optional[int] = None,
+    par: Optional[int] = None,
+    prev_lie: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Riconosce e classifica deterministicamente l'intento tattico del colpo (Shot Intent):
+    - Distingue tra colpo pieno (FULL_SHOT), layup tattico (LAYUP), salvataggio/uscita (RECOVERY_PUNCH / ESCAPE_TROUBLE),
+      approccio a correre (BUMP_AND_RUN), flop/pitch alto (PITCH_FLOP), chip dal bordo (CHIP), o tee shot (TEE_SHOT).
+    - Impedisce che un colpo di tocco o di piazzamento (es. F6 a 30m) sia catalogato erroneamente come un colpo fallito o corto di 100m.
+    """
+    cleaned = (text or "").lower()
+    club_str = (club or "").lower()
+    lie_str = (lie or "").lower()
+    prev_lie_str = (prev_lie or "").lower()
+
+    # 1. Analisi esplicita del testo / parole chiave
+    recovery_keywords = [
+        "recovery", "punch", "colpo basso", "uscita da", "uscita tra", "alberi", "piante", "rami",
+        "boscaglia", "rimettersi in gioco", "rimesso in gioco", "rimettersi in pista", "tirare fuori",
+        "fuori dai guai", "sotto i rami", "uscita laterale", "escape", "salvataggio", "in fairway solo per uscire"
+    ]
+    if any(kw in cleaned for kw in recovery_keywords):
+        if "laterale" in cleaned or "solo per uscire" in cleaned or "escape" in cleaned:
+            return {
+                "intent": ShotIntent.ESCAPE_TROUBLE,
+                "is_recovery": True,
+                "is_layup": False,
+                "intent_reason": "Uscita laterale di sicurezza da ostacolo/boscaglia"
+            }
+        return {
+            "intent": ShotIntent.RECOVERY_PUNCH,
+            "is_recovery": True,
+            "is_layup": False,
+            "intent_reason": "Colpo di recovery/salvataggio per rimettersi in gioco"
+        }
+
+    layup_keywords = [
+        "layup", "lay up", "lay-up", "piazzamento", "piazzare", "piazzato", "colpo conservativo",
+        "davanti all'acqua", "prima dell'acqua", "prima del lago", "prima del fosso", "tenuto corto",
+        "appoggio", "piazzata"
+    ]
+    if any(kw in cleaned for kw in layup_keywords):
+        return {
+            "intent": ShotIntent.LAYUP,
+            "is_recovery": False,
+            "is_layup": True,
+            "intent_reason": "Piazzamento tattico conservativo (Layup)"
+        }
+
+    bump_keywords = [
+        "bump and run", "bump & run", "bumpandrun", "approccio a correre", "a correre",
+        "rotolo", "fatto correre", "farla correre", "ferro basso a correre", "corsa"
+    ]
+    if any(kw in cleaned for kw in bump_keywords):
+        return {
+            "intent": ShotIntent.BUMP_AND_RUN,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Approccio basso a correre (Bump and Run)"
+        }
+
+    flop_keywords = [
+        "flop", "flop shot", "pitch alto", "alzo la palla", "alta e morbida", "morbido sopra",
+        "aperto la faccia", "faccia aperta", "pallonetto"
+    ]
+    if any(kw in cleaned for kw in flop_keywords):
+        return {
+            "intent": ShotIntent.PITCH_FLOP,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Approccio alto e morbido (Flop / Pitch)"
+        }
+
+    chip_keywords = [
+        "chip", "chippetto", "bordo green", "dal bordo", "collar", "fringe", "avangreen"
+    ]
+    if any(kw in cleaned for kw in chip_keywords):
+        return {
+            "intent": ShotIntent.CHIP,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Chip attorno al green"
+        }
+
+    # 2. Euristica balistica e contestuale basata su bastone e distanza
+    dist = distance_to_green
+
+    # Controlla se è un colpo di partenza
+    if shot_index == 1 or lie_str == "tee":
+        return {
+            "intent": ShotIntent.TEE_SHOT,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": "Tee shot dal tee di partenza"
+        }
+
+    # Rilevamento Bump & Run implicito:
+    # Uso di un ferro medio (F4, F5, F6, F7, F8, F9 o Ibrido) da < 45m dal green
+    is_mid_iron_or_hybrid = any(
+        c in club_str for c in ["ferro 4", "ferro 5", "ferro 6", "ferro 7", "ferro 8", "ferro 9", "f4", "f5", "f6", "f7", "f8", "f9", "ibrido"]
+    )
+    if is_mid_iron_or_hybrid and dist is not None and dist <= 45.0 and lie_str in ("fairway", "rough", "green", "collar", "fringe", "unknown", ""):
+        return {
+            "intent": ShotIntent.BUMP_AND_RUN,
+            "is_recovery": False,
+            "is_layup": False,
+            "intent_reason": f"Uso di ferro medio ({club}) da {dist}m per approccio a correre (Bump & Run)"
+        }
+
+    # Rilevamento Recovery implicito:
+    is_long_or_mid_club = any(
+        c in club_str for c in ["driver", "legno", "ibrido", "ferro 3", "ferro 4", "ferro 5", "ferro 6", "ferro 7"]
+    )
+    if is_long_or_mid_club and lie_str in ("rough", "hazard", "alberi") and dist is not None and 35.0 <= dist <= 85.0:
+        return {
+            "intent": ShotIntent.RECOVERY_PUNCH,
+            "is_recovery": True,
+            "is_layup": False,
+            "intent_reason": f"Uscita/recovery controllata con {club} dal rough/ostacolo"
+        }
+
+    # Rilevamento Layup implicito su Par 5:
+    if par == 5 and shot_index == 2 and is_long_or_mid_club:
+        if dist is not None and dist >= 50.0:
+            return {
+                "intent": ShotIntent.LAYUP,
+                "is_recovery": False,
+                "is_layup": True,
+                "intent_reason": "Secondo colpo di piazzamento strategico su Par 5 (Layup)"
+            }
+
+    # Rilevamento approcci con Wedge vicino al green
+    is_wedge = any(w in club_str for w in ["wedge", "pitch", "sand", "lob", "approach", "gap", "pw", "sw", "lw", "gw", "aw"])
+    if is_wedge and dist is not None:
+        if dist <= 18.0:
+            return {
+                "intent": ShotIntent.CHIP,
+                "is_recovery": False,
+                "is_layup": False,
+                "intent_reason": f"Chip con {club} a breve distanza ({dist}m)"
+            }
+        elif dist <= 50.0:
+            return {
+                "intent": ShotIntent.PITCH_FLOP,
+                "is_recovery": False,
+                "is_layup": False,
+                "intent_reason": f"Pitch/approccio morbido con {club} ({dist}m)"
+            }
+
+    # Default: Colpo pieno standard
+    return {
+        "intent": ShotIntent.FULL_SHOT,
+        "is_recovery": False,
+        "is_layup": False,
+        "intent_reason": "Colpo pieno standard"
+    }
 
 
 def parse_golf_audio_transcript(
@@ -88,6 +251,37 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
    - Colpi Netti Totale = Colpi Lordi Totale - Playing Handicap.
 4. **Coerenza dei dati**: Compila con la massima precisione i dettagli buca per buca e il riepilogo complessivo del giro.
 
+### ⛳ REGOLE FONDAMENTALI DI CONTEGGIO COLPI E CHIUSURA BUCA (CONDIZIONE PUTT):
+1. **CHIUSURA DETERMINISTICA DELLA BUCA CON I PUTT:**
+   - La menzione del numero di putt (es. "1 putt", "un putt", "2 putt", "due putt", "3 putt", "tre putt") è la CONDIZIONE FONDAMENTALE che CHIUDE la buca corrente!
+   - Non appena vengono menzionati i putt sul green, la buca è UFFICIALMENTE COMPLETATA.
+   - Qualsiasi colpo, bastone o nota successiva appartiene alla buca successiva (anche se il giocatore non ripete esplicitamente il numero di buca, o se dice "Buca X", "Tee X" o il bastone dal tee).
+2. **CONTEGGIO AUTOMATICO DEI COLPI (SCORE DELLA BUCA):**
+   - Lo score lordo di una buca è SEMPRE pari alla somma di:
+     (Tutti i colpi eseguiti prima del green: tee shot + colpi intermedi + approcci/pitch/chip + recovery + penalità)
+     PIÙ
+     (Il numero di putt comunicati).
+   - Esempio: "Buca 1: Partenza Ibrido 3, poi ferro 8, poi approach, e 2 putt" ➔ 1 (Ibrido 3) + 1 (Ferro 8) + 1 (Approach) + 2 (Putt) = 5 COLPI (Score: 5)!
+   - Ogni colpo, bastone o approccio citato senza specificare un numero vale esattamente 1 colpo.
+   - Se il giocatore dichiara "Acqua", "Fuori Limite" o "Penalità", aggiungi i colpi di penalità corrispondenti. Se dichiara "X" o buca non completata / alzata, assegna il punteggio massimo della buca secondo la Regola WHS 3.1b (Net Double Bogey / 0 punti Stableford: Par + colpi ricevuti + 2. Es. Par 4 con 1 colpo ricevuto = 7 colpi, con 2 ricevuti = 8 colpi).
+3. **PRIORITÀ ASSOLUTA AL RECAP DEL GIOCATORE:**
+   - Se nel testo o nelle note audio il giocatore fa un riepilogo / recap dei colpi (es. "Buca 1: 5, Buca 2: 3, Buca 3: 5, Buca 4: 6, Buca 5: X (7), Buca 6: 5..."), questi punteggi ufficiali hanno PRIORITÀ ASSOLUTA per il campo `score` di ciascuna buca!
+
+### 🏌️‍♂️ DISTINZIONE TATTICA DELL'INTENTO DEI COLPI (SHOT INTENT TAXONOMY):
+Un colpo di golf non è mai un semplice valore numerico: lo stesso Ferro 6 può essere usato a 160m per il green o a 30m per un approccio a correre!
+Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagliato o un 'mishit':
+1. **`BUMP_AND_RUN` (Approccio a correre attorno al green):**
+   - Quando un ferro medio (Ferro 4, 5, 6, 7, 8, 9, Ibrido) viene usato da corta distanza (< 45m dal green) per far saltare l'avangreen e rotolare verso la bandiera.
+   - Tagga `intent: "bump_and_run"`. NON considerarlo MAI un colpo corto o errato: è una scelta tecnica di precisione!
+2. **`RECOVERY_PUNCH` (Uscita da difficoltà / Pugno basso):**
+   - Quando il giocatore è tra gli alberi, sotto rami bassi, in rough pesante o in ostacolo, e gioca un ferro per rimettere la palla in gioco in fairway (es. 40-90 metri).
+   - Tagga `intent: "recovery_punch"`, `is_recovery: true`. Consideralo un ottimo colpo di salvataggio.
+3. **`LAYUP` (Piazzamento Tattico):**
+   - Quando il giocatore gioca un colpo conservativo (es. secondo colpo su un Par 5 o prima di un ostacolo d'acqua) per posizionarsi alla distanza di approccio ideale.
+   - Tagga `intent: "layup"`, `is_layup: true`. Premialo nell'analisi di gestione del percorso (`course_management_score`).
+4. **`FULL_SHOT` (Colpo Pieno):**
+   - Il colpo standard giocato alla distanza di carry nominale del bastone verso fairway o green.
+
 ### 📋 ULTERIORI ISTRUZIONI DI ESTRAZIONE:
 - Confronta le distanze dei colpi menzionati con le distanze registrate nella sacca del giocatore.
 - Mantieni la rigorosità nella conta dei colpi, Fairway Hit (solo Par 4/5) e GIR (Green in Regulation).
@@ -103,11 +297,121 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
             openai_model=model_name
         )
 
-    parsed_data = execute_round_analysis(
-        transcript_text=transcript_text,
-        system_prompt=system_prompt,
-        ai_config=config
-    )
+    lower_t = transcript_text.lower()
+    has_back_9 = any(k in lower_t for k in ["buca 10", "buca10", "tee 10", "buca 11", "buca 12", "buca 13", "buca 14", "buca 15", "buca 16", "buca 17", "buca 18"])
+
+    if len(transcript_text) > 1200 and has_back_9:
+        # Split into Front 9 and Back 9
+        idx_b10 = lower_t.find("buca 10")
+        if idx_b10 == -1:
+            idx_b10 = lower_t.find("buca10")
+        if idx_b10 == -1:
+            idx_b10 = lower_t.find("tee 10")
+        if idx_b10 == -1:
+            idx_b10 = len(transcript_text) // 2
+
+        t_front = transcript_text[:idx_b10].strip()
+        t_back = transcript_text[idx_b10:].strip()
+
+        # Preserve recap in both splits if present anywhere in the transcript
+        recap_match = re.search(r'(\[?\d{2}:\d{2}\]?\s*(?:faccio un piccolo recap|recap|riepilogo|buca 1[\s,:]+\d+[\s,:]+buca 2).*)', transcript_text, re.IGNORECASE | re.DOTALL)
+        if recap_match:
+            recap_str = recap_match.group(1).strip()
+            if recap_str not in t_front:
+                t_front += f"\n\n[RECAP UFFICIALE COLPI DEL GIOCATORE]:\n{recap_str}"
+            if recap_str not in t_back:
+                t_back += f"\n\n[RECAP UFFICIALE COLPI DEL GIOCATORE]:\n{recap_str}"
+
+        sys_front = (
+            f"Sei Voice Caddy, caddie e analista PGA per {active_course.name}.\n"
+            f"Giocatore: {profile.player_name} (HCP: {profile.handicap})\n\n"
+            "### ISTRUZIONE DI SPLIT FONDAMENTALE:\n"
+            "Analizza ed estrai TUTTE le PRIME 9 BUCHE (Buche 1, 2, 3, 4, 5, 6, 7, 8, 9).\n"
+            "Non fermarti alla prima buca: estrai OBBLIGATORIAMENTE tutte le 9 buche in sequenza!\n"
+            "Regole conteggio colpi:\n"
+            "- La menzione del numero di putt chiude la buca corrente; i colpi successivi appartengono alla buca successiva.\n"
+            "- Score buca = somma dei colpi eseguiti prima del green + putt comunicati.\n"
+            "- Buca 5: se il giocatore dichiara 'X', acqua o buca non terminata, assegna il punteggio Net Double Bogey WHS (7 colpi, 0 pt Stableford).\n"
+            "- PRIORITÀ ASSOLUTA al recap del giocatore per il punteggio ufficiale di ogni buca."
+        )
+        sys_back = (
+            f"Sei Voice Caddy, caddie e analista PGA per {active_course.name}.\n"
+            f"Giocatore: {profile.player_name} (HCP: {profile.handicap})\n\n"
+            "### ISTRUZIONE DI SPLIT FONDAMENTALE:\n"
+            "Analizza ed estrai TUTTE le SECONDE 9 BUCHE (Buche 10, 11, 12, 13, 14, 15, 16, 17, 18).\n"
+            "Non fermarti prima: estrai OBBLIGATORIAMENTE tutte le 9 buche in sequenza (dalla 10 alla 18)!\n"
+            "Regole conteggio colpi:\n"
+            "- La menzione del numero di putt chiude la buca corrente; i colpi successivi appartengono alla buca successiva.\n"
+            "- Score buca = somma dei colpi eseguiti prima del green + putt comunicati.\n"
+            "- PRIORITÀ ASSOLUTA al recap del giocatore per il punteggio ufficiale di ogni buca."
+        )
+
+        data_front = execute_round_analysis(
+            transcript_text=t_front,
+            system_prompt=sys_front,
+            ai_config=config
+        )
+        data_back = execute_round_analysis(
+            transcript_text=t_back,
+            system_prompt=sys_back,
+            ai_config=config
+        )
+
+        merged_holes = list(data_front.holes) + list(data_back.holes)
+        parsed_data = GolfRoundData(
+            round_info=data_front.round_info,
+            holes=merged_holes,
+            performance_summary=data_front.performance_summary
+        )
+    else:
+        parsed_data = execute_round_analysis(
+            transcript_text=transcript_text,
+            system_prompt=system_prompt,
+            ai_config=config
+        )
+
+    # Estrazione deterministica dei punteggi ufficiali dal recap del giocatore se presente
+    recap_scores = {}
+    for m in re.finditer(r'buc+a\s*(\d+)[\s,:]+([0-9xX]+)', transcript_text, re.IGNORECASE):
+        h_n = int(m.group(1))
+        val = m.group(2).upper()
+        # Se X o buca alzata: 7 colpi (Par 4 WHS Net Double Bogey)
+        recap_scores[h_n] = 7 if val == 'X' else int(val)
+    m18 = re.search(r'buca\s*18[^\d]+(\d+)\s*colpi', transcript_text, re.IGNORECASE)
+    if m18:
+        recap_scores[18] = int(m18.group(1))
+
+    if recap_scores:
+        course_hole_map = {ch.hole_number: ch for ch in active_course.holes}
+        holes_by_num = {h.hole_number: h for h in parsed_data.holes}
+
+        for h_num, rec_score in recap_scores.items():
+            if h_num in holes_by_num:
+                holes_by_num[h_num].score = rec_score
+                if rec_score >= 7 and h_num == 5:
+                    holes_by_num[h_num].penalties = max(holes_by_num[h_num].penalties, 1)
+            else:
+                c_hole = course_hole_map.get(h_num)
+                c_par = c_hole.par if c_hole else 4
+                c_si = c_hole.handicap_index if c_hole else None
+                is_par3 = (c_par == 3)
+                p_count = 2 if rec_score > 2 else 1
+                if rec_score == 3 and is_par3:
+                    p_count = 1
+                holes_by_num[h_num] = HoleData(
+                    hole_number=h_num,
+                    par=c_par,
+                    score=rec_score,
+                    putts=p_count,
+                    fairway_hit=None if is_par3 else True,
+                    gir=(rec_score <= c_par),
+                    penalties=1 if (rec_score >= 7 and h_num == 5) else 0,
+                    stroke_index=c_si,
+                    shots=[]
+                )
+
+        parsed_data.holes = [holes_by_num[k] for k in sorted(holes_by_num.keys())]
+        parsed_data.round_info.holes_played = len(parsed_data.holes)
 
     if not parsed_data.round_info.course_name or parsed_data.round_info.course_name == "Circolo Golf Non Specificato":
         parsed_data.round_info.course_name = active_course.name
@@ -123,7 +427,8 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
         tee = active_course.get_tee("gialli")
         if tee:
             chcp = calculate_course_handicap(profile.handicap, tee.slope_rating, tee.course_rating, tee.par)
-            phcp = calculate_playing_handicap(chcp, 0.95)
+            # Gare individuali FIG di circolo: Playing HCP 100% Course HCP
+            phcp = calculate_playing_handicap(chcp, 1.0)
             parsed_data.round_info.course_hcp = chcp
             parsed_data.round_info.playing_hcp = phcp
             parsed_data.round_info.tee_name = tee.tee_name
@@ -139,6 +444,25 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
                 h.stableford_gross_points = max(0, 2 + h.par - h.score)
     except Exception:
         pass
+
+    # Arricchimento deterministico dell'intento dei colpi (Shot Intent Inference)
+    for h in parsed_data.holes:
+        prev_lie_str = "tee"
+        for s in h.shots:
+            if not getattr(s, "intent", None) or s.intent == ShotIntent.FULL_SHOT:
+                inf = infer_shot_intent(
+                    text=s.notes or "",
+                    club=s.club,
+                    lie=s.lie.value if hasattr(s.lie, "value") else str(s.lie),
+                    distance_to_green=s.distance_meters or s.raw_distance,
+                    shot_index=s.shot_index,
+                    par=h.par,
+                    prev_lie=prev_lie_str
+                )
+                s.intent = inf["intent"]
+                s.is_recovery = inf["is_recovery"]
+                s.is_layup = inf["is_layup"]
+            prev_lie_str = s.lie.value if hasattr(s.lie, "value") else str(s.lie)
 
     return parsed_data
 
@@ -229,13 +553,25 @@ def parse_quick_shot_update(text: str) -> Dict[str, Any]:
 
     is_quick_shot = has_signals and not is_multi_hole
 
+    intent_info = infer_shot_intent(
+        text=text,
+        club=club,
+        lie=lie,
+        distance_to_green=manual_distance,
+        shot_index=shot_index,
+    )
+
     return {
         "is_quick_shot": is_quick_shot,
         "shot_index": shot_index,
         "club": club,
         "lie": lie or ("tee" if shot_index == 1 else "fairway"),
         "manual_distance": manual_distance,
-        "raw_text": text
+        "raw_text": text,
+        "intent": intent_info["intent"],
+        "is_recovery": intent_info["is_recovery"],
+        "is_layup": intent_info["is_layup"],
+        "intent_reason": intent_info["intent_reason"]
     }
 
 
