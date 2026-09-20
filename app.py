@@ -1452,6 +1452,18 @@ def execute_audio_round_pipeline(
             audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
             whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
             groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+            if not groq_api_key:
+                try:
+                    if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                        groq_api_key = st.secrets["GROQ_API_KEY"]
+                except Exception:
+                    pass
+            if not groq_api_key:
+                try:
+                    from core.ai_provider import get_default_groq_key
+                    groq_api_key = get_default_groq_key()
+                except Exception:
+                    pass
 
             if len(temp_paths) == 1:
                 t_text, _ = audio_engine.transcribe(
@@ -1875,8 +1887,10 @@ with nav_tab1:
                                     text_lines.append(f"[{ts_short}] {c_text}" if ts_short else c_text)
 
                             combined_text = "\n".join(text_lines)
+                            whisper_choice = st.session_state.get("hero_whisper_choice", "Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)")
                             execute_audio_round_pipeline(
                                 audio_files_to_transcribe,
+                                whisper_engine=whisper_choice,
                                 additional_text=combined_text
                             )
                         else:

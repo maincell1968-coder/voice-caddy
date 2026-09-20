@@ -128,6 +128,19 @@ class VoiceCaddyAudioEngine:
         """
         key = api_key or os.environ.get("GROQ_API_KEY")
         if not key:
+            try:
+                import streamlit as st
+                if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+                    key = st.secrets["GROQ_API_KEY"]
+            except Exception:
+                pass
+        if not key:
+            try:
+                from core.ai_provider import get_default_groq_key
+                key = get_default_groq_key()
+            except Exception:
+                pass
+        if not key:
             raise ValueError("Groq API Key non configurata per la trascrizione cloud.")
 
         client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=key)
