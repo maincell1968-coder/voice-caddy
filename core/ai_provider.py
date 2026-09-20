@@ -184,9 +184,19 @@ def execute_round_analysis(
             # Fallback to json object prompt if beta parse fails
             pass
 
-    # For Ollama and other OpenAI-compatible endpoints:
-    # Append explicit JSON schema instructions
-    schema_json = json.dumps(GolfRoundData.model_json_schema(), ensure_ascii=False)
+    # For Groq, Ollama and other OpenAI-compatible endpoints:
+    # Use compact JSON schema (strip verbose descriptions/titles to save >2000 tokens)
+    def _compact_schema(d):
+        if isinstance(d, dict):
+            return {k: _compact_schema(v) for k, v in d.items() if k not in ('description', 'title')}
+        elif isinstance(d, list):
+            return [_compact_schema(v) for v in d]
+        return d
+
+    raw_schema = GolfRoundData.model_json_schema()
+    compact_schema = _compact_schema(raw_schema)
+    schema_json = json.dumps(compact_schema, separators=(',', ':'), ensure_ascii=False)
+
     ollama_system_prompt = (
         f"{system_prompt}\n\n"
         "### FORMATO OBBLIGATORIO DI RISPOSTA:\n"
@@ -195,21 +205,8 @@ def execute_round_analysis(
         "Non includere saluti, spiegazioni o testo al di fuori del JSON."
     )
 
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": ollama_system_prompt},
-                {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1
-        )
-        content = response.choices[0].message.content
-        data_dict = extract_json_from_llm_response(content)
-        return GolfRoundData.model_validate(data_dict)
-    except Exception as e:
-        # If response_format={"type": "json_object"} isn't supported by old local server, try without response_format
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
                 model=model,
@@ -217,10 +214,61 @@ def execute_round_analysis(
                     {"role": "system", "content": ollama_system_prompt},
                     {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
                 ],
+                response_format={"type": "json_object"},
                 temperature=0.1
             )
             content = response.choices[0].message.content
             data_dict = extract_json_from_llm_response(content)
             return GolfRoundData.model_validate(data_dict)
-        except Exception as inner_e:
-            raise AIProviderError(f"Errore durante l'analisi con il modello '{model}': {inner_e}")
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "rate_limit" in err_str.lower():
+                wait_sec = 25.0
+                match = re.search(r"try again in ([\d\.]+)s", err_str, re.IGNORECASE)
+                if match:
+                    try:
+                        wait_sec = float(match.group(1)) + 2.0
+                    except Exception:
+                        pass
+                if attempt < max_retries - 1:
+                    try:
+                        import streamlit as st
+                        st.info(f"⏳ Limite momentaneo di traffico Groq (TPM). Attesa automatica di {int(wait_sec)}s e nuovo tentativo in corso ({attempt + 1}/{max_retries})...")
+                    except Exception:
+                        pass
+                    import time
+                    time.sleep(wait_sec)
+                    continue
+
+            # If response_format={"type": "json_object"} isn't supported, try without it
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": ollama_system_prompt},
+                        {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
+                    ],
+                    temperature=0.1
+                )
+                content = response.choices[0].message.content
+                data_dict = extract_json_from_llm_response(content)
+                return GolfRoundData.model_validate(data_dict)
+            except Exception as inner_e:
+                inner_str = str(inner_e)
+                if ("429" in inner_str or "rate_limit" in inner_str.lower()) and attempt < max_retries - 1:
+                    wait_sec = 25.0
+                    match = re.search(r"try again in ([\d\.]+)s", inner_str, re.IGNORECASE)
+                    if match:
+                        try:
+                            wait_sec = float(match.group(1)) + 2.0
+                        except Exception:
+                            pass
+                    try:
+                        import streamlit as st
+                        st.info(f"⏳ Limite momentaneo Groq. Attesa automatica di {int(wait_sec)}s...")
+                    except Exception:
+                        pass
+                    import time
+                    time.sleep(wait_sec)
+                    continue
+                raise AIProviderError(f"Errore durante l'analisi con il modello '{model}': {inner_e}")
