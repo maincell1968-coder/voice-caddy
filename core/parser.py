@@ -263,9 +263,9 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
      (Il numero di putt comunicati).
    - Esempio: "Buca 1: Partenza Ibrido 3, poi ferro 8, poi approach, e 2 putt" ➔ 1 (Ibrido 3) + 1 (Ferro 8) + 1 (Approach) + 2 (Putt) = 5 COLPI (Score: 5)!
    - Ogni colpo, bastone o approccio citato senza specificare un numero vale esattamente 1 colpo.
-   - Se il giocatore dichiara "Acqua", "Fuori Limite" o "Penalità", aggiungi i colpi di penalità corrispondenti. Se dichiara "X" o buca non completata, assegna il punteggio massimo della buca (Net Double Bogey / 0 punti Stableford, tipicamente 8 colpi).
+   - Se il giocatore dichiara "Acqua", "Fuori Limite" o "Penalità", aggiungi i colpi di penalità corrispondenti. Se dichiara "X" o buca non completata / alzata, assegna il punteggio massimo della buca secondo la Regola WHS 3.1b (Net Double Bogey / 0 punti Stableford: Par + colpi ricevuti + 2. Es. Par 4 con 1 colpo ricevuto = 7 colpi, con 2 ricevuti = 8 colpi).
 3. **PRIORITÀ ASSOLUTA AL RECAP DEL GIOCATORE:**
-   - Se nel testo o nelle note audio il giocatore fa un riepilogo / recap dei colpi (es. "Buca 1: 5, Buca 2: 3, Buca 3: 5, Buca 4: 6, Buca 5: X (8), Buca 6: 5..."), questi punteggi ufficiali hanno PRIORITÀ ASSOLUTA per il campo `score` di ciascuna buca!
+   - Se nel testo o nelle note audio il giocatore fa un riepilogo / recap dei colpi (es. "Buca 1: 5, Buca 2: 3, Buca 3: 5, Buca 4: 6, Buca 5: X (7), Buca 6: 5..."), questi punteggi ufficiali hanno PRIORITÀ ASSOLUTA per il campo `score` di ciascuna buca!
 
 ### 🏌️‍♂️ DISTINZIONE TATTICA DELL'INTENTO DEI COLPI (SHOT INTENT TAXONOMY):
 Un colpo di golf non è mai un semplice valore numerico: lo stesso Ferro 6 può essere usato a 160m per il green o a 30m per un approccio a correre!
@@ -363,7 +363,8 @@ Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagli
         tee = active_course.get_tee("gialli")
         if tee:
             chcp = calculate_course_handicap(profile.handicap, tee.slope_rating, tee.course_rating, tee.par)
-            phcp = calculate_playing_handicap(chcp, 0.95)
+            # Gare individuali FIG di circolo: Playing HCP 100% Course HCP
+            phcp = calculate_playing_handicap(chcp, 1.0)
             parsed_data.round_info.course_hcp = chcp
             parsed_data.round_info.playing_hcp = phcp
             parsed_data.round_info.tee_name = tee.tee_name

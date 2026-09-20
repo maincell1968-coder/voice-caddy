@@ -125,32 +125,45 @@ def test_ai_connection(config: AIUserConfig) -> Tuple[bool, str]:
         return False, f"❌ Errore durante il test di connessione: {err_msg}"
 
 
-def extract_json_from_llm_response(raw_text: str) -> dict:
+def extract_json_from_llm_response(raw_text: str) -> Dict[str, Any]:
     """
-    Robustly extracts JSON from an LLM response, dealing with markdown code blocks or surrounding text.
+    Robustly extracts JSON from an LLM response, dealing with markdown code blocks,
+    lists, or surrounding text.
     """
     raw_text = raw_text.strip()
     # Try direct parse
     try:
-        return json.loads(raw_text)
+        res = json.loads(raw_text)
+        return {"holes": res} if isinstance(res, list) else res
     except json.JSONDecodeError:
         pass
 
-    # Try markdown json blocks: ```json { ... } ```
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    # Try markdown json blocks: ```json ... ```
+    match = re.search(r"```(?:json)?\s*([\{\[].*?[\}\]])\s*```", raw_text, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(1))
+            res = json.loads(match.group(1))
+            return {"holes": res} if isinstance(res, list) else res
         except json.JSONDecodeError:
             pass
 
-    # Try finding first { and last }
-    first_brace = raw_text.find("{")
-    last_brace = raw_text.rfind("}")
-    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-        json_candidate = raw_text[first_brace:last_brace + 1]
+    # Try finding first { or [ and last } or ]
+    first_b = -1
+    for i, c in enumerate(raw_text):
+        if c in ('{', '['):
+            first_b = i
+            break
+    last_b = -1
+    for i in range(len(raw_text) - 1, -1, -1):
+        if raw_text[i] in ('}', ']'):
+            last_b = i
+            break
+
+    if first_b != -1 and last_b != -1 and last_b > first_b:
+        json_candidate = raw_text[first_b:last_b + 1]
         try:
-            return json.loads(json_candidate)
+            res = json.loads(json_candidate)
+            return {"holes": res} if isinstance(res, list) else res
         except json.JSONDecodeError:
             pass
 
@@ -207,15 +220,18 @@ def execute_round_analysis(
 
     models_to_try = [model]
     if ai_config.provider.lower() == "groq":
-        # Fallback between qwen3.8-27b and compound-mini to avoid per-model daily quota limits
-        if "qwen/qwen3.8-27b" not in models_to_try:
-            models_to_try.append("qwen/qwen3.8-27b")
-        if "groq/compound-mini" not in models_to_try:
-            models_to_try.append("groq/compound-mini")
+        # Prioritize robust models with high token output limits and no OTPM bottlenecks
+        for candidate in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound-mini", "qwen/qwen3.8-27b"]:
+            if candidate not in models_to_try:
+                models_to_try.append(candidate)
+        if "openai/gpt-oss-120b" in models_to_try:
+            models_to_try.remove("openai/gpt-oss-120b")
+            models_to_try.insert(0, "openai/gpt-oss-120b")
 
     last_error = None
     for current_model in models_to_try:
         max_retries = 3
+        max_toks = 1000 if "qwen" in current_model else 3500
         for attempt in range(max_retries):
             try:
                 response = client.chat.completions.create(
@@ -225,7 +241,7 @@ def execute_round_analysis(
                         {"role": "user", "content": f"Ecco la trascrizione del giro da golf da analizzare:\n\n{transcript_text}"}
                     ],
                     response_format={"type": "json_object"},
-                    max_tokens=2500,
+                    max_tokens=max_toks,
                     temperature=0.1
                 )
                 content = response.choices[0].message.content
