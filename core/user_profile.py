@@ -111,9 +111,12 @@ def get_default_bag() -> List[ClubDetail]:
         ClubDetail(club_name="Legno 3", brand="Callaway", model_type="Paradym Ai Smoke", shaft_flex=ShaftFlex.STIFF, carry_meters=195),
         ClubDetail(club_name="Ibrido 4", brand="Ping", model_type="G430", shaft_flex=ShaftFlex.REGULAR, carry_meters=175),
         ClubDetail(club_name="Ferro 5", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=160),
+        ClubDetail(club_name="Ferro 6", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=152),
         ClubDetail(club_name="Ferro 7", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=145),
+        ClubDetail(club_name="Ferro 8", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=135),
         ClubDetail(club_name="Ferro 9", brand="Titleist", model_type="T200", shaft_flex=ShaftFlex.STIFF, carry_meters=125),
         ClubDetail(club_name="Pitching Wedge", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=110),
+        ClubDetail(club_name="Approach Wedge (AW)", brand="TaylorMade", model_type="Qi / Stealth (AW)", shaft_flex=ShaftFlex.STIFF, carry_meters=98),
         ClubDetail(club_name="Sand Wedge (56°)", brand="Titleist", model_type="Vokey SM9", shaft_flex=ShaftFlex.STIFF, carry_meters=85),
         ClubDetail(club_name="Putter", brand="Scotty Cameron", model_type="Phantom X", shaft_flex=ShaftFlex.REGULAR, carry_meters=0)
     ]
@@ -309,7 +312,7 @@ class UserProfile(BaseModel):
         # 4. Sincronizzazione intelligente (Fault-Tolerant & Anti-Loss):
         # Se esistono sia DB che file, privilegia quello con la sacca più completa (più bastoni)
         if db_profile and file_profile:
-            if len(db_profile.clubs_in_bag) > len(file_profile.clubs_in_bag):
+            if len(db_profile.clubs_in_bag) >= len(file_profile.clubs_in_bag):
                 profile = db_profile
                 profile.save_to_file(file_path)
             else:
