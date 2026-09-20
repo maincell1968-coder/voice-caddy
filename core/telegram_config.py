@@ -13,6 +13,11 @@ USERS_MAP_FILE = DATA_DIR / "telegram_users.json"
 ENV_FILE = PROJECT_ROOT / ".env"
 
 
+DEFAULT_BOT_TOKEN = "8855332306:AAHd_SH6ei4jv8cY3OzrB2GDWdoV8tHzcRI"
+DEFAULT_BOT_USERNAME = "VoiceCaddyGolf_bot"
+DEFAULT_ADMIN_CHAT_ID = "7133743757"
+
+
 class TelegramConfigManager:
     """
     Gestore della configurazione del Bot Telegram e dell'abbinamento chat_id -> user_id.
@@ -30,7 +35,9 @@ class TelegramConfigManager:
         Recupera il token Telegram in ordine di priorità:
         1. File telegram_config.json
         2. File .env
-        3. Variabile d'ambiente TELEGRAM_BOT_TOKEN
+        3. Streamlit secrets
+        4. Variabile d'ambiente TELEGRAM_BOT_TOKEN
+        5. Token di default del bot di produzione
         """
         # 1. telegram_config.json
         if self.config_file.exists():
@@ -56,8 +63,23 @@ class TelegramConfigManager:
             except Exception:
                 pass
 
-        # 3. Ambiente di sistema
-        return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        # 3. Streamlit secrets
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets") and "TELEGRAM_BOT_TOKEN" in st.secrets:
+                tok = str(st.secrets["TELEGRAM_BOT_TOKEN"]).strip()
+                if tok:
+                    return tok
+        except Exception:
+            pass
+
+        # 4. Ambiente di sistema
+        env_tok = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        if env_tok:
+            return env_tok
+
+        # 5. Token predefinito
+        return DEFAULT_BOT_TOKEN
 
     def set_token(self, token: str):
         """Salva il token Telegram in formato persistente."""
@@ -74,7 +96,7 @@ class TelegramConfigManager:
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-    def get_bot_username(self) -> Optional[str]:
+    def get_bot_username(self) -> str:
         """Recupera l'username del bot se salvato in cache o interrogando Telegram."""
         if self.config_file.exists():
             try:
@@ -85,11 +107,11 @@ class TelegramConfigManager:
             except Exception:
                 pass
         tok = self.get_token()
-        if tok:
+        if tok and tok != DEFAULT_BOT_TOKEN:
             ok, _, uname = self.test_token(tok)
             if ok and uname:
                 return uname
-        return None
+        return DEFAULT_BOT_USERNAME
 
     def save_bot_username(self, username: str):
         """Salva l'username del bot nel file config."""
@@ -134,14 +156,64 @@ class TelegramConfigManager:
     # Mapping chat_id <-> Voice Caddy user_id
     # ---------------------------------------------------------
     def load_users_map(self) -> Dict[str, Dict[str, Any]]:
-        """Carica la mappa chat_id -> {user_id, group_name, first_name, active_course}."""
-        if not self.users_map_file.exists():
-            return {}
-        try:
-            with open(self.users_map_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+        """Carica la mappa chat_id -> {user_id, group_name, first_name, active_course} con persistenza dual-layer e fallback."""
+        mapping: Dict[str, Dict[str, Any]] = {}
+
+        # 1. Prova a caricare dal database SQLite (solo in ambiente di produzione)
+        if self.data_dir == DATA_DIR:
+            try:
+                from core.db import PROJECT_ROOT
+                import sqlite3
+                db_path = PROJECT_ROOT / "voice_caddy.db"
+                if db_path.exists():
+                    with sqlite3.connect(db_path) as conn:
+                        cur = conn.cursor()
+                        cur.execute("""
+                            CREATE TABLE IF NOT EXISTS telegram_user_mappings (
+                                chat_id TEXT PRIMARY KEY,
+                                user_id TEXT,
+                                group_name TEXT,
+                                first_name TEXT,
+                                active_course_name TEXT,
+                                mode TEXT DEFAULT 'training'
+                            )
+                        """)
+                        for row in cur.execute("SELECT chat_id, user_id, group_name, first_name, active_course_name, mode FROM telegram_user_mappings").fetchall():
+                            mapping[str(row[0])] = {
+                                "user_id": row[1],
+                                "group_name": row[2],
+                                "first_name": row[3],
+                                "active_course_name": row[4],
+                                "mode": row[5] or "training"
+                            }
+            except Exception:
+                pass
+
+        # 2. Prova a caricare dal file JSON
+        if self.users_map_file.exists():
+            try:
+                with open(self.users_map_file, "r", encoding="utf-8") as f:
+                    file_map = json.load(f)
+                    mapping.update(file_map)
+            except Exception:
+                pass
+
+        # 3. Assicurati che Stefano Pirani (Amministratore) sia associato nel file di produzione
+        if self.data_dir == DATA_DIR and not mapping and self.users_map_file == USERS_MAP_FILE:
+            mapping[DEFAULT_ADMIN_CHAT_ID] = {
+                "user_id": "strafatti_stefano_pirani",
+                "group_name": "strafatti",
+                "first_name": "Stefano",
+                "active_course_name": "Conero Golf Club",
+                "mode": "training"
+            }
+            try:
+                with open(self.users_map_file, "w", encoding="utf-8") as f:
+                    json.dump(mapping, f, indent=4, ensure_ascii=False)
+            except Exception:
+                pass
+
+        return mapping
 
     def link_chat_user(
         self,
@@ -151,16 +223,47 @@ class TelegramConfigManager:
         first_name: str,
         active_course_name: Optional[str] = "Conero Golf Club"
     ):
-        """Associa una chat Telegram a un utente Voice Caddy."""
-        mapping = self.load_users_map()
-        mapping[str(chat_id)] = {
+        """Associa una chat Telegram a un utente Voice Caddy sia su file JSON che in SQLite."""
+        cid_str = str(chat_id)
+        entry = {
             "user_id": user_id,
             "group_name": group_name,
             "first_name": first_name,
             "active_course_name": active_course_name or "Conero Golf Club"
         }
-        with open(self.users_map_file, "w", encoding="utf-8") as f:
-            json.dump(mapping, f, indent=4, ensure_ascii=False)
+        mapping = self.load_users_map()
+        mapping[cid_str] = entry
+        try:
+            with open(self.users_map_file, "w", encoding="utf-8") as f:
+                json.dump(mapping, f, indent=4, ensure_ascii=False)
+        except Exception:
+            pass
+
+        # Salva anche in SQLite per persistenza dual-layer (solo in produzione)
+        if self.data_dir == DATA_DIR:
+            try:
+                from core.db import PROJECT_ROOT
+                import sqlite3
+                db_path = PROJECT_ROOT / "voice_caddy.db"
+                with sqlite3.connect(db_path) as conn:
+                    cur = conn.cursor()
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS telegram_user_mappings (
+                            chat_id TEXT PRIMARY KEY,
+                            user_id TEXT,
+                            group_name TEXT,
+                            first_name TEXT,
+                            active_course_name TEXT,
+                            mode TEXT DEFAULT 'training'
+                        )
+                    """)
+                    cur.execute("""
+                        INSERT OR REPLACE INTO telegram_user_mappings (chat_id, user_id, group_name, first_name, active_course_name)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (cid_str, user_id, group_name, first_name, active_course_name or "Conero Golf Club"))
+                    conn.commit()
+            except Exception:
+                pass
 
     def get_linked_user(self, chat_id: int | str) -> Optional[Dict[str, Any]]:
         """Ritorna i dati dell'utente associato al chat_id, o None."""
@@ -216,12 +319,13 @@ class TelegramConfigManager:
     # ---------------------------------------------------------
     # Admin Notifications (Stefano Pirani)
     # ---------------------------------------------------------
-    def get_admin_chat_id(self) -> Optional[str]:
+    def get_admin_chat_id(self) -> str:
         """
         Recupera il chat_id dell'amministratore (Stefano Pirani):
         1. Da telegram_config.json ("admin_chat_id")
         2. Dalla mappa telegram_users.json (chat associata a Stefano)
         3. Da variabile d'ambiente TELEGRAM_ADMIN_CHAT_ID
+        4. Fallback costante DEFAULT_ADMIN_CHAT_ID
         """
         if self.config_file.exists():
             try:
@@ -242,7 +346,9 @@ class TelegramConfigManager:
 
         # Variabile d'ambiente
         env_admin = os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "").strip()
-        return env_admin if env_admin else None
+        if env_admin:
+            return env_admin
+        return DEFAULT_ADMIN_CHAT_ID
 
     def set_admin_chat_id(self, chat_id: int | str):
         """Salva il chat_id dell'amministratore in telegram_config.json."""
@@ -290,6 +396,17 @@ class TelegramConfigManager:
                 del mapping[cid]
             with open(self.users_map_file, "w", encoding="utf-8") as f:
                 json.dump(mapping, f, indent=4, ensure_ascii=False)
+            if self.data_dir == DATA_DIR:
+                try:
+                    from core.db import PROJECT_ROOT
+                    import sqlite3
+                    db_path = PROJECT_ROOT / "voice_caddy.db"
+                    with sqlite3.connect(db_path) as conn:
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM telegram_user_mappings WHERE user_id = ?", (user_id,))
+                        conn.commit()
+                except Exception:
+                    pass
             return True
         return False
 

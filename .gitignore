@@ -14,6 +14,8 @@ data/*
 !data/golf_courses.json
 !data/caddy_phrases.json
 !data/users.json
+!data/telegram_config.json
+!data/telegram_users.json
 !data/profiles/
 !data/profiles/*.json
 !voice_caddy.db
