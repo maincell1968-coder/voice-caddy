@@ -1480,7 +1480,10 @@ def execute_audio_round_pipeline(
             transcript_parts.append("[Messaggi di Testo dalla Chat Telegram]:\n" + "\n\n".join(json_texts))
 
         if additional_text and additional_text.strip():
-            transcript_parts.append("[Note e Messaggi Scritti dal Giocatore]:\n" + additional_text.strip())
+            if not has_audio and not json_texts:
+                transcript_parts.append(additional_text.strip())
+            else:
+                transcript_parts.append("[Note e Messaggi Scritti dal Giocatore]:\n" + additional_text.strip())
 
         transcript_text = "\n\n".join(transcript_parts)
         st.session_state.transcript = transcript_text
@@ -1861,7 +1864,7 @@ with nav_tab1:
             with col_btn:
                 st.write("")  # alignment spacing
                 if st.button("🚀 Elabora da Cloud", key="btn_elabora_data_cloud", type="secondary", use_container_width=True):
-                    with st.spinner(f"Recupero dati del {selected_date} dal Cloud..."):
+                    with st.spinner(f"Recupero ed elaborazione cronologica dati del {selected_date} dal Cloud..."):
                         if not hasattr(db, "get_telegram_messages_for_date"):
                             import importlib
                             import core.db
@@ -1870,29 +1873,57 @@ with nav_tab1:
 
                         msgs = db.get_telegram_messages_for_date(selected_date, chat_id=linked_cid, user_id=current_user.user_id) if hasattr(db, "get_telegram_messages_for_date") else []
                         if msgs:
-                            text_lines = []
-                            audio_files_to_transcribe = []
+                            # Ordina rigorosamente in sequenza cronologica
+                            msgs = sorted(msgs, key=lambda m: (m.get("timestamp") or "", m.get("id") or 0))
+
+                            whisper_choice = st.session_state.get("hero_whisper_choice", "Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)")
+                            engine_mode = "groq" if "Groq" in whisper_choice else ("cloud" if "Cloud" in whisper_choice or "OpenAI" in whisper_choice else "local")
+                            audio_engine = VoiceCaddyAudioEngine(model_size="base")
+                            whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+                            groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+                            if not groq_api_key:
+                                try:
+                                    from core.ai_provider import get_default_groq_key
+                                    groq_api_key = get_default_groq_key()
+                                except Exception:
+                                    pass
+
+                            timeline_lines = []
                             for m in msgs:
                                 m_type = m.get("message_type", "text")
                                 f_path = m.get("file_path")
                                 c_text = m.get("content_text")
-                                
+                                ts_short = m.get("timestamp", "")[11:16]
+
                                 if m_type in ("voice", "audio", "video_note") or (f_path and not c_text):
-                                    if f_path:
+                                    if not c_text and f_path:
                                         full_p = Path(f_path) if os.path.isabs(f_path) else (PROJECT_ROOT / f_path)
                                         if full_p.exists():
-                                            audio_files_to_transcribe.append(full_p)
-                                elif c_text:
-                                    ts_short = m.get("timestamp", "")[11:16]
-                                    text_lines.append(f"[{ts_short}] {c_text}" if ts_short else c_text)
+                                            try:
+                                                t_text, _ = audio_engine.transcribe(
+                                                    full_p, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                                                )
+                                                if t_text:
+                                                    c_text = t_text
+                                                    m["content_text"] = t_text
+                                                    if hasattr(db, "update_telegram_message_text") and m.get("id"):
+                                                        db.update_telegram_message_text(m["id"], t_text)
+                                            except Exception as tx_err:
+                                                logger.warning(f"Errore trascrizione audio {f_path}: {tx_err}")
 
-                            combined_text = "\n".join(text_lines)
-                            whisper_choice = st.session_state.get("hero_whisper_choice", "Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)")
-                            execute_audio_round_pipeline(
-                                audio_files_to_transcribe,
-                                whisper_engine=whisper_choice,
-                                additional_text=combined_text
-                            )
+                                if c_text and c_text.strip():
+                                    line = f"[{ts_short}] {c_text.strip()}" if ts_short else c_text.strip()
+                                    timeline_lines.append(line)
+
+                            unified_transcript = "\n".join(timeline_lines)
+                            if unified_transcript.strip():
+                                execute_audio_round_pipeline(
+                                    [],
+                                    whisper_engine=whisper_choice,
+                                    additional_text=unified_transcript
+                                )
+                            else:
+                                st.warning("Nessun contenuto testuale o vocale valido trovato per questa data.")
                         else:
                             st.info(f"Nessun dato registrato in cloud per la data {selected_date}. Se hai salvato il file sul PC, usa l'Opzione 2 a fianco!")
 

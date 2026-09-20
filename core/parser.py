@@ -251,6 +251,22 @@ Agisci come motore di calcolo e generazione report per gare di golf secondo le R
    - Colpi Netti Totale = Colpi Lordi Totale - Playing Handicap.
 4. **Coerenza dei dati**: Compila con la massima precisione i dettagli buca per buca e il riepilogo complessivo del giro.
 
+### ⛳ REGOLE FONDAMENTALI DI CONTEGGIO COLPI E CHIUSURA BUCA (CONDIZIONE PUTT):
+1. **CHIUSURA DETERMINISTICA DELLA BUCA CON I PUTT:**
+   - La menzione del numero di putt (es. "1 putt", "un putt", "2 putt", "due putt", "3 putt", "tre putt") è la CONDIZIONE FONDAMENTALE che CHIUDE la buca corrente!
+   - Non appena vengono menzionati i putt sul green, la buca è UFFICIALMENTE COMPLETATA.
+   - Qualsiasi colpo, bastone o nota successiva appartiene alla buca successiva (anche se il giocatore non ripete esplicitamente il numero di buca, o se dice "Buca X", "Tee X" o il bastone dal tee).
+2. **CONTEGGIO AUTOMATICO DEI COLPI (SCORE DELLA BUCA):**
+   - Lo score lordo di una buca è SEMPRE pari alla somma di:
+     (Tutti i colpi eseguiti prima del green: tee shot + colpi intermedi + approcci/pitch/chip + recovery + penalità)
+     PIÙ
+     (Il numero di putt comunicati).
+   - Esempio: "Buca 1: Partenza Ibrido 3, poi ferro 8, poi approach, e 2 putt" ➔ 1 (Ibrido 3) + 1 (Ferro 8) + 1 (Approach) + 2 (Putt) = 5 COLPI (Score: 5)!
+   - Ogni colpo, bastone o approccio citato senza specificare un numero vale esattamente 1 colpo.
+   - Se il giocatore dichiara "Acqua", "Fuori Limite" o "Penalità", aggiungi i colpi di penalità corrispondenti. Se dichiara "X" o buca non completata, assegna il punteggio massimo della buca (Net Double Bogey / 0 punti Stableford, tipicamente 8 colpi).
+3. **PRIORITÀ ASSOLUTA AL RECAP DEL GIOCATORE:**
+   - Se nel testo o nelle note audio il giocatore fa un riepilogo / recap dei colpi (es. "Buca 1: 5, Buca 2: 3, Buca 3: 5, Buca 4: 6, Buca 5: X (8), Buca 6: 5..."), questi punteggi ufficiali hanno PRIORITÀ ASSOLUTA per il campo `score` di ciascuna buca!
+
 ### 🏌️‍♂️ DISTINZIONE TATTICA DELL'INTENTO DEI COLPI (SHOT INTENT TAXONOMY):
 Un colpo di golf non è mai un semplice valore numerico: lo stesso Ferro 6 può essere usato a 160m per il green o a 30m per un approccio a correre!
 Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagliato o un 'mishit':
@@ -296,6 +312,15 @@ Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagli
 
         t_front = transcript_text[:idx_b10].strip()
         t_back = transcript_text[idx_b10:].strip()
+
+        # Preserve recap in both splits if present anywhere in the transcript
+        recap_match = re.search(r'(\[?\d{2}:\d{2}\]?\s*(?:faccio un piccolo recap|recap|riepilogo|buca 1[\s,:]+\d+[\s,:]+buca 2).*)', transcript_text, re.IGNORECASE | re.DOTALL)
+        if recap_match:
+            recap_str = recap_match.group(1).strip()
+            if recap_str not in t_front:
+                t_front += f"\n\n[RECAP UFFICIALE COLPI DEL GIOCATORE]:\n{recap_str}"
+            if recap_str not in t_back:
+                t_back += f"\n\n[RECAP UFFICIALE COLPI DEL GIOCATORE]:\n{recap_str}"
 
         sys_front = f"{system_prompt}\n\n### ISTRUZIONE DI SPLIT: Analizza ed estrai ESCLUSIVAMENTE le PRIME 9 BUCHE (Buche 1-9)."
         sys_back = f"{system_prompt}\n\n### ISTRUZIONE DI SPLIT: Analizza ed estrai ESCLUSIVAMENTE le SECONDE 9 BUCHE (Buche 10-18)."

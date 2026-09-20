@@ -350,3 +350,10 @@ class DatabaseManager:
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
 
+    def update_telegram_message_text(self, msg_id: int, text: str) -> None:
+        """Aggiorna il testo trascritto per un messaggio Telegram archiviato."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE telegram_media_archive SET content_text = ? WHERE id = ?", (text, msg_id))
+            conn.commit()
+

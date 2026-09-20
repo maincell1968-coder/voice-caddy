@@ -232,7 +232,7 @@ class VoiceCaddyAudioEngine:
             text, meta = self.transcribe(
                 path, engine_mode=engine_mode, api_key=api_key, groq_api_key=groq_api_key, language=language
             )
-            full_transcripts.append(f"[Nota Audio Buca {idx}]: {text}")
+            full_transcripts.append(f"[Nota Audio {idx}]: {text}")
             all_metadata.append(meta)
 
         combined_text = "\n\n".join(full_transcripts)
