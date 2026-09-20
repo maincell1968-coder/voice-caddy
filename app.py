@@ -1532,13 +1532,22 @@ with nav_tab1:
                 use_container_width=True
             )
 
-        # Top KPI Metrics Cards
-        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-        kpi1.metric("Score Finale", f"{summary.total_score} ({rel_par_str})")
-        kpi2.metric("Fairway Presi (FIR)", f"{summary.fairway_accuracy_pct}%")
-        kpi3.metric("Green in Regulation", f"{summary.gir_pct}%")
-        kpi4.metric("Course Mgmt Score", f"{diag.course_management_score}/100")
-        kpi5.metric("Scrambling %", f"{summary.scrambling_pct}%")
+        # Top KPI Metrics Cards (Lordo, Netto, Stableford WHS)
+        is_stbl = "stableford" in (data.round_info.game_format or "stableford").lower()
+        kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+        if is_stbl:
+            kpi1.metric("Stableford Netto", f"{summary.total_stableford_points or 0} pt", f"{summary.total_stableford_gross_points or 0} pt Lordo")
+            kpi2.metric("Colpi Lordi / Netti", f"{summary.total_score} L / {summary.total_score_net or summary.total_score} N", f"Rel. Par {rel_par_str}")
+        else:
+            kpi1.metric("Colpi Lordi", f"{summary.total_score} ({rel_par_str})")
+            kpi2.metric("Colpi Netti", f"{summary.total_score_net or summary.total_score}")
+
+        phcp_display = f"{data.round_info.playing_hcp}" if data.round_info.playing_hcp is not None else "-"
+        ehcp_display = f"{data.round_info.exact_hcp}" if data.round_info.exact_hcp is not None else str(st.session_state.user_profile.handicap)
+        kpi3.metric("Playing HCP", f"{phcp_display} colpi", f"Exact: {ehcp_display}")
+        kpi4.metric("Fairway Presi (FIR)", f"{summary.fairway_accuracy_pct}%")
+        kpi5.metric("Green in Reg. (GIR)", f"{summary.gir_pct}%")
+        kpi6.metric("Course Mgmt", f"{diag.course_management_score}/100")
 
         st.markdown("---")
 

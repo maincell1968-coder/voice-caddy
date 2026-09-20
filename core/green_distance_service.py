@@ -59,6 +59,9 @@ def calculate_geodetic_distance(lat1: float, lon1: float, lat2: float, lon2: flo
     return int(round(R * c))
 
 
+haversine_distance_meters = calculate_geodetic_distance
+
+
 def derive_front_back_green_points(
     tee_lat: float,
     tee_lon: float,

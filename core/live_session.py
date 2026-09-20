@@ -269,6 +269,22 @@ class LiveSessionManager:
             conn.commit()
             return cursor.lastrowid
 
+    def get_hole_shots(self, chat_id: int | str, hole_number: int) -> List[Dict[str, Any]]:
+        """Recupera la sequenza cronologica dei colpi registrati per una specifica buca."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT shot_index, club, lie, latitude, longitude, altitude,
+                       distance_covered, raw_distance_to_green, plays_like_distance,
+                       elevation_diff, notes, created_at
+                FROM live_shots
+                WHERE chat_id = ? AND hole_number = ?
+                ORDER BY shot_index ASC
+            """, (c_id, hole_number))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
     def set_pin_override(self, chat_id: int | str, hole_number: int, lat: float, lon: float, alt: Optional[float] = None):
         c_id = str(chat_id)
         with self._get_connection() as conn:

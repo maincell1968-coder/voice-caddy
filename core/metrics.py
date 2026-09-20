@@ -39,10 +39,30 @@ class GolfMetricsCalculator:
             if h.par == 3:
                 h.fairway_hit = None
 
+            # Calcolo Netto e Stableford deterministico (Regole 3 & 21.1)
+            received = h.received_strokes if h.received_strokes is not None else 0
+            h.received_strokes = received
+            h.net_score = h.score - received
+            h.stableford_points = max(0, 2 + h.par - h.net_score)
+            h.stableford_gross_points = max(0, 2 + h.par - h.score)
+
         total_holes = len(holes)
         total_score = sum(h.score for h in holes)
         total_putts = sum(h.putts for h in holes)
         total_penalties = sum(h.penalties for h in holes)
+
+        # Calcolo Colpi Netti totali
+        playing_hcp = round_data.round_info.playing_hcp
+        if playing_hcp is not None:
+            if playing_hcp >= 0:
+                total_score_net = total_score - playing_hcp
+            else:
+                total_score_net = total_score + abs(playing_hcp)
+        else:
+            total_score_net = sum(h.net_score for h in holes)
+
+        total_stbl_net = sum(h.stableford_points for h in holes)
+        total_stbl_gross = sum(h.stableford_gross_points for h in holes)
 
         # 3. Fairway Accuracy %
         eligible_drive_holes = [h for h in holes if h.par in (4, 5)]
@@ -73,6 +93,9 @@ class GolfMetricsCalculator:
         # Re-build validated PerformanceSummary (with professional_diagnosis preserved)
         updated_summary = PerformanceSummary(
             total_score=total_score,
+            total_score_net=total_score_net,
+            total_stableford_points=total_stbl_net,
+            total_stableford_gross_points=total_stbl_gross,
             total_putts=total_putts,
             fairway_accuracy_pct=fairway_pct,
             gir_pct=gir_pct,
@@ -138,10 +161,19 @@ class GolfMetricsCalculator:
             else:
                 status = "Double+ Bogey"
 
+            net_sc = h.net_score if h.net_score is not None else (h.score - (h.received_strokes or 0))
+            stbl_gross = h.stableford_gross_points if h.stableford_gross_points is not None else max(0, 2 + h.par - h.score)
+            stbl_net = h.stableford_points if h.stableford_points is not None else max(0, 2 + h.par - net_sc)
+
             rows.append({
                 "Buca": h.hole_number,
                 "Par": h.par,
+                "SI": h.stroke_index if h.stroke_index is not None else "-",
+                "HCP": h.received_strokes if h.received_strokes is not None else 0,
                 "Score": h.score,
+                "Score Netto": net_sc,
+                "Stabl. Lordo": stbl_gross,
+                "Stabl. Netto": stbl_net,
                 "+/-": f"{'+' if diff > 0 else ''}{diff}" if diff != 0 else "E",
                 "Status": status,
                 "FIR": "Sì" if h.fairway_hit is True else ("No" if h.fairway_hit is False else "-"),

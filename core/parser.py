@@ -74,6 +74,20 @@ Per OGNI buca analizzata, compila obbligatoriamente l'oggetto `target_landing_an
    - Se è finita fuori bersaglio: Assegna il verdetto corretto ("Deviazione Tattica a Destra", "Errore di Selezione Target", "Scelta Troppo Aggressiva").
 4. **`caddie_tactical_note`**: Spiegazione di come la posizione atterrata e l'orografia del terreno hanno condizionato il colpo.
 
+### 🏆 REGOLE DI CALCOLO PUNTEGGIO E RIEPILOGO DI GARA (LORDO E NETTO):
+Agisci come motore di calcolo e generazione report per gare di golf secondo le Regole R&A/USGA e World Handicap System (WHS):
+1. **Formule di gara**: Distingui sempre tra gara "Stableford" (default 95% WHS) e gara a colpi / "Stroke Play" / "Medal" (100%).
+2. **Punteggio Lordo vs Netto**:
+   - In TUTTI i riepiloghi e nella diagnosi executive (`executive_narrative`) cita SEMPRE sia il risultato LORDO che il risultato NETTO.
+   - Nelle gare Stableford indica sempre sia i punti Stableford netti che i punti Stableford lordi, oltre ai colpi netti e lordi.
+   - Nelle gare a colpi indica sempre sia i colpi lordi che i colpi netti.
+3. **Calcoli ufficiali (Regole 21.1 e 3 R&A/USGA)**:
+   - Colpi Netti Buca = Colpi Lordi Buca - Colpi HCP ricevuti (distribuiti secondo lo Stroke Index della buca).
+   - Punti Stableford Netti = max(0, 2 + Par - Colpi Netti).
+   - Punti Stableford Lordi = max(0, 2 + Par - Colpi Lordi).
+   - Colpi Netti Totale = Colpi Lordi Totale - Playing Handicap.
+4. **Coerenza dei dati**: Compila con la massima precisione i dettagli buca per buca e il riepilogo complessivo del giro.
+
 ### 📋 ULTERIORI ISTRUZIONI DI ESTRAZIONE:
 - Confronta le distanze dei colpi menzionati con le distanze registrate nella sacca del giocatore.
 - Mantieni la rigorosità nella conta dei colpi, Fairway Hit (solo Par 4/5) e GIR (Green in Regulation).
@@ -97,6 +111,34 @@ Per OGNI buca analizzata, compila obbligatoriamente l'oggetto `target_landing_an
 
     if not parsed_data.round_info.course_name or parsed_data.round_info.course_name == "Circolo Golf Non Specificato":
         parsed_data.round_info.course_name = active_course.name
+
+    # Arricchimento deterministico parametri giocatore e handicap di gara
+    parsed_data.round_info.player_name = parsed_data.round_info.player_name or profile.player_name
+    parsed_data.round_info.exact_hcp = parsed_data.round_info.exact_hcp if parsed_data.round_info.exact_hcp is not None else profile.handicap
+    parsed_data.round_info.category = parsed_data.round_info.category or profile.category.value
+
+    # Calcolo Course HCP, Playing HCP e Stroke Index dalle buche del campo
+    try:
+        from core.whs_rules import calculate_course_handicap, calculate_playing_handicap, allocate_hole_strokes
+        tee = active_course.get_tee("gialli")
+        if tee:
+            chcp = calculate_course_handicap(profile.handicap, tee.slope_rating, tee.course_rating, tee.par)
+            phcp = calculate_playing_handicap(chcp, 0.95)
+            parsed_data.round_info.course_hcp = chcp
+            parsed_data.round_info.playing_hcp = phcp
+            parsed_data.round_info.tee_name = tee.tee_name
+
+            si_map = {ch.hole_number: ch.handicap_index for ch in active_course.holes if ch.handicap_index}
+            received_map = allocate_hole_strokes(phcp, si_map, len(active_course.holes))
+            for h in parsed_data.holes:
+                if h.stroke_index is None and h.hole_number in si_map:
+                    h.stroke_index = si_map[h.hole_number]
+                h.received_strokes = received_map.get(h.hole_number, 0)
+                h.net_score = h.score - h.received_strokes
+                h.stableford_points = max(0, 2 + h.par - h.net_score)
+                h.stableford_gross_points = max(0, 2 + h.par - h.score)
+    except Exception:
+        pass
 
     return parsed_data
 
@@ -280,8 +322,38 @@ def parse_hole_closure_intent(text: str) -> Dict[str, Any]:
             gross = word_or_digit_to_int(m_fallback.group(1))
             putts = word_or_digit_to_int(m_fallback.group(2))
 
-    if gross is not None and putts is not None:
-        if gross < 1:
+    # Pattern 4: Solo putt menzionati (es. '2 putt', 'chiuso con 2 putt', 'fatto 1 putt', 'due putt', 'imbucato in 1 putt')
+    if putts is None and re.search(r"\b(putt|putts|putter)\b", text_clean):
+        m_putts_only = re.search(
+            rf"(?:chiuso(?:\s+con)?|fatto|imbucato(?:\s+con)?|con)?\s*{pat_num}\s+putts?",
+            text_clean
+        )
+        if m_putts_only:
+            putts = word_or_digit_to_int(m_putts_only.group(1))
+
+    # Pattern 5: Chiusura buca con solo score dichiarato (es. 'chiuso in 5', 'fatto 4', 'score 4', 'fatta in 5')
+    if gross is None and not re.search(r"\b(putt|putts)\b", text_clean):
+        m_score_only = re.search(
+            rf"\b(?:fatto|score|chiuso(?:\s+in)?|chiusa(?:\s+in)?|conclusa(?:\s+in)?|totale)\s+{pat_num}\b",
+            text_clean
+        )
+        if m_score_only:
+            gross = word_or_digit_to_int(m_score_only.group(1))
+            putts = 2  # Default standard golfistico
+
+    # Pattern 6: Frase generica di chiusura buca (es. 'buca finita', 'buca chiusa', 'fine buca')
+    if gross is None and putts is None and re.search(r"\b(buca\s+finita|buca\s+chiusa|fine\s+buca|chiuso\s+la\s+buca|chiusa\s+la\s+buca)\b", text_clean):
+        return {
+            "is_closure": True,
+            "valid": True,
+            "gross_strokes": None,
+            "putts": 2,
+            "error": None
+        }
+
+    # Se abbiamo identificato la chiusura della buca
+    if putts is not None or gross is not None:
+        if gross is not None and gross < 1:
             return {
                 "is_closure": True,
                 "valid": False,
@@ -289,7 +361,7 @@ def parse_hole_closure_intent(text: str) -> Dict[str, Any]:
                 "putts": putts,
                 "error": f"I colpi totali ({gross}) devono essere almeno 1."
             }
-        if putts < 0:
+        if putts is not None and putts < 0:
             return {
                 "is_closure": True,
                 "valid": False,
@@ -297,8 +369,8 @@ def parse_hole_closure_intent(text: str) -> Dict[str, Any]:
                 "putts": putts,
                 "error": f"Il numero di putt ({putts}) non può essere negativo."
             }
-        # Controllo di validità: il numero di putt non può superare i colpi totali
-        if putts > gross:
+        # Controllo di validità se entrambi sono presenti
+        if gross is not None and putts is not None and putts > gross:
             return {
                 "is_closure": True,
                 "valid": False,
@@ -311,7 +383,7 @@ def parse_hole_closure_intent(text: str) -> Dict[str, Any]:
             "is_closure": True,
             "valid": True,
             "gross_strokes": gross,
-            "putts": putts,
+            "putts": putts if putts is not None else 2,
             "error": None
         }
 

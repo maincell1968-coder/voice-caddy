@@ -61,7 +61,12 @@ class Shot(BaseModel):
 class HoleData(BaseModel):
     hole_number: int = Field(..., ge=1, le=18, description="Numero della buca (1-18)")
     par: int = Field(..., ge=3, le=5, description="Par della buca (3, 4 o 5)")
-    score: int = Field(..., ge=1, description="Numero totale di colpi effettuati compresi i putt ed eventuali penalità")
+    score: int = Field(..., ge=1, description="Numero totale di colpi effettuati compresi i putt ed eventuali penalità (Score Lordo)")
+    stroke_index: Optional[int] = Field(default=None, description="Stroke Index / HCP della buca")
+    received_strokes: Optional[int] = Field(default=0, description="Colpi di handicap ricevuti sulla buca")
+    net_score: Optional[int] = Field(default=None, description="Colpi netti della buca (score lordo - colpi ricevuti)")
+    stableford_points: Optional[int] = Field(default=None, description="Punti Stableford netti della buca")
+    stableford_gross_points: Optional[int] = Field(default=None, description="Punti Stableford lordi della buca")
     fairway_hit: Optional[bool] = Field(None, description="True se il primo colpo resta in fairway (solo Par 4 e 5), None su Par 3")
     gir: bool = Field(..., description="True se la palla raggiunge il green con (Par - 2) colpi o meno")
     putts: int = Field(..., ge=0, description="Numero totale di putt effettuati sul green")
@@ -96,6 +101,9 @@ class TrainingDrill(BaseModel):
 
 class PerformanceSummary(BaseModel):
     total_score: int = Field(..., description="Score totale lordo del giro")
+    total_score_net: Optional[int] = Field(default=None, description="Score totale netto del giro")
+    total_stableford_points: Optional[int] = Field(default=None, description="Totale punti Stableford netti del giro")
+    total_stableford_gross_points: Optional[int] = Field(default=None, description="Totale punti Stableford lordi del giro")
     total_putts: int = Field(..., description="Numero totale di putt del giro")
     fairway_accuracy_pct: float = Field(..., description="Percentuale di fairway presi dal tee nei Par 4 e Par 5")
     gir_pct: float = Field(..., description="Percentuale di Green in Regulation ottenuti nel giro")
@@ -112,6 +120,13 @@ class RoundInfo(BaseModel):
     course_name: Optional[str] = Field(default="Circolo Golf Non Specificato", description="Nome del campo da golf")
     date: Optional[str] = Field(default=None, description="Data del giro se menzionata")
     holes_played: int = Field(default=18, ge=1, le=18, description="Numero totale di buche analizzate")
+    game_format: Optional[str] = Field(default="stableford", description="Formula di gara: 'stableford', 'stroke_play', 'medal'")
+    player_name: Optional[str] = Field(default=None, description="Nome del giocatore")
+    exact_hcp: Optional[float] = Field(default=None, description="Handicap Index WHS")
+    course_hcp: Optional[float] = Field(default=None, description="Handicap di Campo (Course Handicap)")
+    playing_hcp: Optional[int] = Field(default=None, description="Handicap di Gioco (Playing Handicap)")
+    tee_name: Optional[str] = Field(default=None, description="Colore/Tee di partenza giocato")
+    category: Optional[str] = Field(default=None, description="Categoria di gioco")
 
 
 class GolfRoundData(BaseModel):
