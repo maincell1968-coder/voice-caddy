@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -13,6 +13,8 @@ class LieType(str, Enum):
     GREEN = "green"
     HAZARD = "hazard"
     OUT_OF_BOUNDS = "out_of_bounds"
+    COLLAR = "collar"
+    FRINGE = "fringe"
     UNKNOWN = "unknown"
 
 
@@ -33,6 +35,9 @@ class ShotResult(str, Enum):
     MISS_RIGHT = "miss_right"
     BUNKER = "bunker"
     WATER = "water"
+    HOLE = "hole"
+    IN_HOLE = "in_hole"
+    UNKNOWN = "unknown"
 
 
 class ShotIntent(str, Enum):
@@ -57,8 +62,8 @@ class Shot(BaseModel):
     shot_index: int = Field(..., description="Indice progressivo del colpo alla buca (1, 2, 3...)")
     club: Optional[str] = Field(None, description="Bastone utilizzato (es. Driver, Ferro 7, Pitching Wedge, Putter)")
     distance_meters: Optional[float] = Field(None, description="Distanza del colpo o al bersaglio in metri")
-    lie: LieType = Field(..., description="Superficie da cui si esegue il colpo")
-    result: ShotResult = Field(..., description="Esito balistico o destinazione del colpo")
+    lie: Union[LieType, str] = Field(default=LieType.FAIRWAY, description="Superficie da cui si esegue il colpo")
+    result: Union[ShotResult, str] = Field(default=ShotResult.GOOD, description="Esito balistico o destinazione del colpo")
     intent: ShotIntent = Field(default=ShotIntent.FULL_SHOT, description="Intento tattico del colpo (pieno, layup, recovery, bump & run, ecc.)")
     is_recovery: bool = Field(default=False, description="True se il colpo è un'uscita da situazione di difficoltà (alberi, rough profondo, ecc.)")
     is_layup: bool = Field(default=False, description="True se il colpo è un piazzamento strategico conservativo (es. Par 5 o prima di ostacoli)")
@@ -74,16 +79,16 @@ class Shot(BaseModel):
 
 class HoleData(BaseModel):
     hole_number: int = Field(..., ge=1, le=18, description="Numero della buca (1-18)")
-    par: int = Field(..., ge=3, le=5, description="Par della buca (3, 4 o 5)")
+    par: int = Field(default=4, ge=3, le=5, description="Par della buca (3, 4 o 5)")
     score: int = Field(..., ge=1, description="Numero totale di colpi effettuati compresi i putt ed eventuali penalità (Score Lordo)")
     stroke_index: Optional[int] = Field(default=None, description="Stroke Index / HCP della buca")
     received_strokes: Optional[int] = Field(default=0, description="Colpi di handicap ricevuti sulla buca")
     net_score: Optional[int] = Field(default=None, description="Colpi netti della buca (score lordo - colpi ricevuti)")
     stableford_points: Optional[int] = Field(default=None, description="Punti Stableford netti della buca")
     stableford_gross_points: Optional[int] = Field(default=None, description="Punti Stableford lordi della buca")
-    fairway_hit: Optional[bool] = Field(None, description="True se il primo colpo resta in fairway (solo Par 4 e 5), None su Par 3")
-    gir: bool = Field(..., description="True se la palla raggiunge il green con (Par - 2) colpi o meno")
-    putts: int = Field(..., ge=0, description="Numero totale di putt effettuati sul green")
+    fairway_hit: Optional[bool] = Field(default=None, description="True se il primo colpo resta in fairway (solo Par 4 e 5), None su Par 3")
+    gir: bool = Field(default=False, description="True se la palla raggiunge il green con (Par - 2) colpi o meno")
+    putts: int = Field(default=2, ge=0, description="Numero totale di putt effettuati sul green")
     penalties: int = Field(default=0, ge=0, description="Numero di colpi di penalità subiti")
     shots: List[Shot] = Field(default_factory=list, description="Sequenza dettagliata dei colpi della buca")
     target_landing_analysis: Optional[TargetLandingAnalysis] = Field(None, description="Analisi comparativa dell'area di target ideale vs reale")

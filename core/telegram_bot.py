@@ -33,6 +33,7 @@ from core.live_session import LiveSessionManager
 from core.weather_service import weather_service
 from core.whs_rules import RoundHandicapProfile, build_round_handicap_profile, calculate_hole_score, TeeRating
 from core.green_distance_service import parse_green_distance_intent, calculate_green_distances, format_distance_response
+from core.club_distance_service import ClubDistanceService
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -78,6 +79,26 @@ class VoiceCaddyTelegramBot:
         except Exception as e:
             logging.error(f"Errore chiamata Telegram API ({method}): {e}")
             return {"ok": False, "error": str(e)}
+
+    def answer_callback_query(self, callback_query_id: str, text: Optional[str] = None, show_alert: bool = False) -> dict:
+        """Invia conferma a Telegram per un click su pulsante inline."""
+        payload: Dict[str, Any] = {"callback_query_id": str(callback_query_id)}
+        if text:
+            payload["text"] = text
+            payload["show_alert"] = show_alert
+        return self._api_request("answerCallbackQuery", payload)
+
+    def edit_message_text(self, chat_id: int | str, message_id: int, text: str, parse_mode: str = "HTML", reply_markup: Optional[dict] = None) -> dict:
+        """Modifica un messaggio esistente con nuovo testo o tastiera inline."""
+        payload: Dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": parse_mode
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        return self._api_request("editMessageText", payload)
 
     # ---------------------------------------------------------
     # Game Mode (Gara vs Training) & Weather Round Startup
@@ -247,6 +268,7 @@ class VoiceCaddyTelegramBot:
         return {
             "keyboard": [
                 [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
+                [{"text": "🟢 Inizia Gara a Pulsanti"}, {"text": "📊 Score"}],
                 [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
                 [{"text": "🎭 Tono Caddie"}, {"text": "🎒 Profilo & Sacca"}],
                 [{"text": "🎯 Modalità Training"}, {"text": "⚖️ Modalità Gara"}],
@@ -255,6 +277,699 @@ class VoiceCaddyTelegramBot:
             "resize_keyboard": True,
             "is_persistent": True
         }
+
+    # ---------------------------------------------------------
+    # INTERACTIVE INLINE KEYBOARDS (ZERO AUDIO TRACKER)
+    # ---------------------------------------------------------
+    def get_interactive_main_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "🟢 Inizia Gara", "callback_data": "start_interactive_round"}],
+                [{"text": "📊 Score", "callback_data": "show_score"}],
+                [{"text": "⚙️ Impostazioni", "callback_data": "show_settings"}]
+            ]
+        }
+
+    def get_interactive_tee_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "🟡 Tee Gialli", "callback_data": "tee_gialli"}, {"text": "🔴 Tee Rossi", "callback_data": "tee_rossi"}],
+                [{"text": "⚪ Tee Bianchi", "callback_data": "tee_bianchi"}, {"text": "🔵 Tee Blu", "callback_data": "tee_blu"}]
+            ]
+        }
+
+    def get_interactive_start_hole_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "1", "callback_data": "start_hole_1"}, {"text": "2", "callback_data": "start_hole_2"}, {"text": "3", "callback_data": "start_hole_3"}],
+                [{"text": "4", "callback_data": "start_hole_4"}, {"text": "5", "callback_data": "start_hole_5"}, {"text": "6", "callback_data": "start_hole_6"}],
+                [{"text": "7", "callback_data": "start_hole_7"}, {"text": "8", "callback_data": "start_hole_8"}, {"text": "9", "callback_data": "start_hole_9"}],
+                [{"text": "10", "callback_data": "start_hole_10"}, {"text": "11", "callback_data": "start_hole_11"}, {"text": "12", "callback_data": "start_hole_12"}],
+                [{"text": "13", "callback_data": "start_hole_13"}, {"text": "14", "callback_data": "start_hole_14"}, {"text": "15", "callback_data": "start_hole_15"}],
+                [{"text": "16", "callback_data": "start_hole_16"}, {"text": "17", "callback_data": "start_hole_17"}, {"text": "18", "callback_data": "start_hole_18"}]
+            ]
+        }
+
+    def get_interactive_shot_menu(self, is_on_tee: bool = True, par: int = 4) -> dict:
+        if is_on_tee:
+            buttons = [
+                [{"text": "🏌️ Drive", "callback_data": "shot_drive"}, {"text": "🌲 Legno / Ibrido", "callback_data": "shot_wood"}],
+                [{"text": "🎯 Ferro", "callback_data": "shot_iron"}, {"text": "🟢 In Green", "callback_data": "reached_green"} if par == 3 else {"text": "🥪 Wedge", "callback_data": "shot_wedge"}],
+                [{"text": "❌ Penalità", "callback_data": "penalty_menu"}, {"text": "📊 Score", "callback_data": "show_score"}],
+                [{"text": "🏁 Termina Gara", "callback_data": "confirm_end_round"}]
+            ]
+        else:
+            buttons = [
+                [{"text": "🌲 Legno / Ibrido", "callback_data": "shot_wood"}, {"text": "🎯 Ferro", "callback_data": "shot_iron"}],
+                [{"text": "🥪 Wedge / Approccio", "callback_data": "shot_wedge"}, {"text": "🟢 Sono in Green", "callback_data": "reached_green"}],
+                [{"text": "❌ Penalità", "callback_data": "penalty_menu"}, {"text": "↩️ Annulla colpo", "callback_data": "undo_shot"}],
+                [{"text": "📊 Score", "callback_data": "show_score"}, {"text": "🏁 Termina Gara", "callback_data": "confirm_end_round"}]
+            ]
+        return {"inline_keyboard": buttons}
+
+    def get_interactive_shot_in_progress_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "📍 Calcola Distanza", "callback_data": "calc_dist"}],
+                [{"text": "🟢 Sono in Green", "callback_data": "reached_green"}],
+                [{"text": "↩️ Annulla ultimo colpo", "callback_data": "undo_shot"}]
+            ]
+        }
+
+    def get_interactive_lie_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "✅ Fairway", "callback_data": "lie_fairway"}, {"text": "🌾 Rough", "callback_data": "lie_rough"}],
+                [{"text": "🌲 Alberi", "callback_data": "lie_trees"}, {"text": "🏖️ Bunker", "callback_data": "lie_bunker"}],
+                [{"text": "💧 Acqua", "callback_data": "lie_water"}, {"text": "🚫 Fuori Limite", "callback_data": "lie_out"}],
+                [{"text": "🟢 Green", "callback_data": "lie_green"}, {"text": "↩️ Annulla", "callback_data": "undo_shot"}]
+            ]
+        }
+
+    def get_interactive_putts_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "0 Putt (Chip-in!)", "callback_data": "putts_0"}],
+                [{"text": "1 Putt", "callback_data": "putts_1"}, {"text": "2 Putt (Standard)", "callback_data": "putts_2"}],
+                [{"text": "3 Putt", "callback_data": "putts_3"}, {"text": "4+ Putt", "callback_data": "putts_4p"}],
+                [{"text": "↩️ Annulla", "callback_data": "undo_shot"}]
+            ]
+        }
+
+    def get_interactive_hole_completed_menu(self, next_hole: int) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": f"➡️ Buca {next_hole}", "callback_data": "next_hole"}],
+                [{"text": "✏️ Modifica Buca", "callback_data": "edit_hole"}, {"text": "📊 Score", "callback_data": "show_score"}],
+                [{"text": "🏁 Termina Gara", "callback_data": "confirm_end_round"}]
+            ]
+        }
+
+    def get_interactive_penalty_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "💧 Acqua +1", "callback_data": "penalty_water"}, {"text": "🚫 Fuori Limite +1", "callback_data": "penalty_out"}],
+                [{"text": "🔴 Palla Persa +1", "callback_data": "penalty_lost"}, {"text": "🟡 Droppaggio +1", "callback_data": "penalty_drop"}],
+                [{"text": "⚪ Altro +1", "callback_data": "penalty_other"}, {"text": "↩️ Annulla", "callback_data": "penalty_cancel"}]
+            ]
+        }
+
+    def get_interactive_scorecard_menu(self) -> dict:
+        return {
+            "inline_keyboard": [
+                [{"text": "🔙 Torna alla Buca Corrente", "callback_data": "back_to_hole"}],
+                [{"text": "🏁 Termina Gara", "callback_data": "confirm_end_round"}]
+            ]
+        }
+
+    # ---------------------------------------------------------
+    # INTERACTIVE HANDLERS (FSM & ZERO AUDIO FLOW)
+    # ---------------------------------------------------------
+    def start_interactive_wizard(self, chat_id: int | str, message_id: Optional[int] = None) -> dict:
+        """Avvia la procedura guidata di inizio gara a pulsanti (scelta tee)."""
+        user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+        text = (
+            "🟢 <b>AVVIO GARA INTERATTIVA A PULSANTI</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name} (HCP {user_profile.handicap})\n"
+            f"⛳ <b>Campo:</b> {active_course.name}\n\n"
+            "Seleziona il <b>Tee di partenza</b> per calcolare il Playing Handicap (WHS):"
+        )
+        if message_id is not None:
+            return self.edit_message_text(chat_id, message_id, text, reply_markup=self.get_interactive_tee_menu())
+        return self.send_message(chat_id, text, reply_markup=self.get_interactive_tee_menu())
+
+    def show_interactive_hole_screen(
+        self,
+        chat_id: int | str,
+        message_id: Optional[int] = None,
+        prompt_suffix: str = ""
+    ) -> dict:
+        """Mostra la schermata attiva della buca corrente con i bastoni selezionabili."""
+        istate = self.session_mgr.get_interactive_state(chat_id)
+        cur_h = istate.get("current_hole", 1)
+        whs_profile = self._resolve_handicap_profile(chat_id)
+
+        par = whs_profile.hole_pars.get(cur_h, 4)
+        si = whs_profile.hole_stroke_indices.get(cur_h, cur_h)
+        rec_strokes = whs_profile.get_received_strokes(cur_h)
+        net_par = whs_profile.get_net_par(cur_h)
+        shot_num = istate.get("current_shot_number", 1)
+        shots = istate.get("hole_shots", [])
+        penalties = istate.get("hole_penalties", [])
+
+        is_on_tee = (len(shots) == 0)
+
+        shots_desc = []
+        for s in shots:
+            dist_str = f" ({s['distance_meters']}m)" if s.get("distance_meters") else ""
+            lie_str = f" ➔ {s.get('lie', '').title()}" if s.get("lie") else ""
+            shots_desc.append(f"  • Colpo {s.get('shot_number')}: <b>{s.get('club')}</b>{dist_str}{lie_str}")
+        for p in penalties:
+            shots_desc.append(f"  • ⚠️ <i>{p.get('type')} (+{p.get('strokes', 1)})</i>")
+
+        shots_block = "\n".join(shots_desc) + "\n\n" if shots_desc else ""
+
+        text = (
+            f"⛳ <b>BUCA {cur_h}</b> (Par {par} • HCP Buca {si})\n"
+            f"🎯 <b>HCP:</b> {rec_strokes} colpi ricevuti ➔ <b>Par Netto: {net_par}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{shots_block}"
+            f"🏌️ <b>COLPO {shot_num}:</b> Che bastone giochi?"
+        )
+        if prompt_suffix:
+            text += f"\n\n{prompt_suffix}"
+
+        reply_markup = self.get_interactive_shot_menu(is_on_tee=is_on_tee, par=par)
+        if message_id is not None:
+            return self.edit_message_text(chat_id, message_id, text, reply_markup=reply_markup)
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
+
+    def show_interactive_putts_screen(self, chat_id: int | str, message_id: Optional[int] = None) -> dict:
+        """Mostra la schermata di selezione dei putt quando la palla è in green."""
+        istate = self.session_mgr.get_interactive_state(chat_id)
+        cur_h = istate.get("current_hole", 1)
+        shots = istate.get("hole_shots", [])
+        shots_to_green = len(shots)
+
+        text = (
+            f"🟢 <b>ARRIVO IN GREEN — BUCA {cur_h}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"• Colpi per raggiungere il green: <b>{shots_to_green}</b>\n\n"
+            f"Quanti putt hai effettuato per imbucare?"
+        )
+        reply_markup = self.get_interactive_putts_menu()
+        if message_id is not None:
+            return self.edit_message_text(chat_id, message_id, text, reply_markup=reply_markup)
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
+
+    def show_interactive_scorecard(self, chat_id: int | str, message_id: Optional[int] = None) -> dict:
+        """Mostra lo score progressivo con colpi lordi, netti e punti Stableford (netti e lordi)."""
+        card = self.session_mgr.get_round_scorecard(chat_id)
+        whs_profile = self._resolve_handicap_profile(chat_id)
+        user_rec, _, active_course, _ = self._resolve_context(chat_id)
+
+        from core.whs_rules import calculate_stableford_points_gross
+        tot_gross_stb = sum(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4)) for h in card["completed_holes"])
+        diff_par = card["gross_to_par"]
+        diff_str = f"+{diff_par}" if diff_par > 0 else ("Par" if diff_par == 0 else str(diff_par))
+
+        lines = [
+            f"📊 <b>SCORECARD UFFICIALE — {active_course.name}</b>",
+            f"👤 <b>{user_rec.first_name} {user_rec.last_name}</b> | HCP {whs_profile.exact_hcp} (Playing: {whs_profile.playing_hcp})",
+            f"Tee: {whs_profile.tee_name.title()} | Buche: {card['holes_played']}/{whs_profile.holes_count}",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "<code>Buca | Par | SI | Lor | Net | StbN | StbL | Put</code>",
+            "<code>----------------------------------------</code>"
+        ]
+
+        for h in card["completed_holes"]:
+            h_n = str(h.get("hole_number", 1)).rjust(4)
+            par_v = str(h.get("par", 4)).rjust(3)
+            si_v = str(h.get("stroke_index", 1)).rjust(2)
+            g_s = str(h.get("gross_strokes", 4)).rjust(3)
+            n_s = str(h.get("net_strokes", 4)).rjust(3)
+            stb_n = str(h.get("stableford_points", 2)).rjust(4)
+            stb_l = str(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4))).rjust(4)
+            putt_v = str(h.get("putts", 2)).rjust(3)
+            lines.append(f"<code>{h_n} | {par_v} | {si_v} | {g_s} | {n_s} | {stb_n} | {stb_l} | {putt_v}</code>")
+
+        lines.append("<code>----------------------------------------</code>")
+        lines.append(
+            f"🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} pt Netti</b> | {tot_gross_stb} pt Lordi\n"
+            f"🏌️ <b>Colpi Totali:</b> {card['total_gross']} Lordi ({diff_str}) | {card['total_net']} Netti\n"
+            f"⛳ <b>Totale Putt:</b> {card['total_putts']} (Media {card['putts_avg']}/buca)"
+        )
+
+        text = "\n".join(lines)
+        reply_markup = self.get_interactive_scorecard_menu()
+        if message_id is not None:
+            return self.edit_message_text(chat_id, message_id, text, reply_markup=reply_markup)
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
+
+    def show_bag_comparison(self, chat_id: int | str, message_id: Optional[int] = None, sync_done: bool = False) -> dict:
+        """Mostra il confronto tra distanze di allenamento e distanze reali misurate su erba via GPS."""
+        user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+        stats = ClubDistanceService.get_club_grass_performance(
+            db_path=self.db.db_path,
+            user_id=user_rec.user_id,
+            chat_id=chat_id
+        )
+        # Sincronizza temporaneamente per il confronto (senza sovrascrivere il carry)
+        user_profile.sync_with_grass_statistics(stats, update_carry=False)
+        comparison = user_profile.get_club_comparison_summary()
+
+        lines = [
+            f"🎒 <b>CONFRONTO SACCA: ALLENAMENTO vs ERBA IN GARA</b>",
+            f"👤 <b>{user_rec.first_name} {user_rec.last_name}</b> | HCP {user_profile.handicap}",
+            f"⛳ Campo: {active_course.name}",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "<code>Mazza        | All. | Erba | Diff. | N°</code>",
+            "<code>----------------------------------------</code>"
+        ]
+
+        has_any_grass_data = False
+        for item in comparison:
+            c_name = item["club_name"][:12].ljust(12)
+            t_m = f"{int(item['training_meters'])}m".rjust(4)
+            if item["grass_meters"] is not None:
+                has_any_grass_data = True
+                g_m = f"{int(item['grass_meters'])}m".rjust(4)
+                d_val = int(item["delta_meters"])
+                d_str = f"{'+' if d_val > 0 else ''}{d_val}m".rjust(5)
+                cnt = str(item["shots_count"]).rjust(3)
+            else:
+                g_m = "  - ".rjust(4)
+                d_str = "    -".rjust(5)
+                cnt = "  0".rjust(3)
+
+            lines.append(f"<code>{c_name} | {t_m} | {g_m} | {d_str} |{cnt}</code>")
+
+        lines.append("<code>----------------------------------------</code>")
+
+        if sync_done:
+            lines.append("✅ <b>Sacca sincronizzata con successo con le distanze reali su erba!</b>\n")
+        elif has_any_grass_data:
+            lines.append("💡 <i>I dati su erba provengono dai colpi reali tracciati con GPS in gara.</i>\n")
+        else:
+            lines.append("ℹ️ <i>Nessun colpo ancora misurato su erba per questo account. Usa la modalità gara a pulsanti per iniziare a raccogliere i dati!</i>\n")
+
+        text = "\n".join(lines)
+        buttons = []
+        if has_any_grass_data:
+            buttons.append([{"text": "🔄 Sincronizza Valori in Sacca", "callback_data": "sync_bag_values"}])
+        buttons.append([{"text": "🔙 Torna in Campo", "callback_data": "back_to_hole"}])
+
+        reply_markup = {"inline_keyboard": buttons}
+        if message_id is not None:
+            return self.edit_message_text(chat_id, message_id, text, reply_markup=reply_markup)
+        return self.send_message(chat_id, text, reply_markup=reply_markup)
+
+    def finalize_interactive_round(self, chat_id: int | str, message_id: Optional[int] = None) -> dict:
+        """Archivia il giro completato e invia il report finale conforme WHS."""
+        card = self.session_mgr.get_round_scorecard(chat_id)
+        whs_profile = self._resolve_handicap_profile(chat_id)
+        user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+
+        from core.whs_rules import calculate_stableford_points_gross
+        tot_gross_stb = sum(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4)) for h in card["completed_holes"])
+        diff_par = card["gross_to_par"]
+        diff_str = f"+{diff_par}" if diff_par > 0 else ("Par" if diff_par == 0 else str(diff_par))
+
+        # Notifica Admin se giocatore != Stefano
+        if user_rec and user_rec.user_id != "strafatti_stefano_pirani":
+            self.config_mgr.notify_admin(
+                f"🏁 <b>Giro di Gara Completato (Pulsanti)</b>\n"
+                f"👤 <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name}\n"
+                f"⛳ <b>Campo:</b> {active_course.name}\n"
+                f"🏆 <b>Score:</b> {card['total_gross']} Lordo | {card['total_net']} Netto\n"
+                f"✨ <b>Stableford:</b> {card['total_stableford']} pt Netti | {tot_gross_stb} pt Lordi"
+            )
+
+        text = (
+            f"🏁 <b>GARA CONCLUSA & REGISTRATA!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name}\n"
+            f"⛳ <b>Campo:</b> {active_course.name} ({whs_profile.tee_name.title()})\n"
+            f"🎯 <b>Playing HCP:</b> {whs_profile.playing_hcp} colpi\n\n"
+            f"🏆 <b>RISULTATO FINALE (WHS):</b>\n"
+            f"• <b>Punti Stableford Netti:</b> <b>{card['total_stableford']} pt</b>\n"
+            f"• <b>Punti Stableford Lordi:</b> <b>{tot_gross_stb} pt</b>\n"
+            f"• <b>Colpi Lordi Totali:</b> <b>{card['total_gross']} ({diff_str})</b>\n"
+            f"• <b>Colpi Netti Totali:</b> <b>{card['total_net']}</b>\n"
+            f"• <b>Totale Putt:</b> {card['total_putts']} (Media {card['putts_avg']}/buca)\n"
+            f"• <b>Buche Giocate:</b> {card['holes_played']}/{whs_profile.holes_count}\n\n"
+            f"✨ <i>I dati sono stati archiviati su Voice Caddy Pro e sincronizzati con la dashboard web!</i>"
+        )
+        return self.send_message(chat_id, text, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+
+    def handle_callback_query(self, query: dict):
+        """
+        Gestisce i click sui pulsanti inline (InlineKeyboardMarkup).
+        Esegue la transizione di stato FSM e aggiorna la schermata Telegram.
+        """
+        cb_id = str(query.get("id"))
+        message = query.get("message", {})
+        chat_id = message.get("chat", {}).get("id")
+        message_id = message.get("message_id")
+        data = query.get("data", "")
+
+        if not chat_id or not data:
+            self.answer_callback_query(cb_id)
+            return
+
+        user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
+
+        # 1. Avvio wizard gara interattiva
+        if data == "start_interactive_round":
+            self.answer_callback_query(cb_id)
+            return self.start_interactive_wizard(chat_id, message_id=message_id)
+
+        # 2. Selezione Tee
+        elif data.startswith("tee_"):
+            chosen_tee = data.replace("tee_", "").strip().lower()
+            self.session_mgr.set_selected_tee(chat_id, chosen_tee)
+            whs_profile = self._resolve_handicap_profile(chat_id, tee_name=chosen_tee, force_refresh=True)
+            self.answer_callback_query(cb_id, text=f"Tee {chosen_tee.title()} selezionato!")
+
+            text = (
+                f"🟡 <b>Tee {chosen_tee.title()} confermato!</b>\n"
+                f"🎯 <b>Playing HCP:</b> {whs_profile.playing_hcp} colpi\n\n"
+                f"Seleziona la <b>buca di partenza</b>:"
+            )
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=self.get_interactive_start_hole_menu()
+            )
+
+        # 3. Selezione Buca di partenza
+        elif data.startswith("start_hole_"):
+            h_num = int(data.replace("start_hole_", ""))
+            cur_tee = self.session_mgr.get_selected_tee(chat_id)
+            self.session_mgr.start_interactive_round(
+                chat_id=chat_id,
+                tee_name=cur_tee,
+                start_hole=h_num,
+                course_id=active_course.course_id
+            )
+            self.answer_callback_query(cb_id, text=f"Partenza da Buca {h_num}!")
+            return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 4. Scelta del colpo / bastone
+        elif data.startswith("shot_"):
+            club_key = data.replace("shot_", "")
+            club_names = {
+                "drive": "Drive",
+                "wood": "Legno / Ibrido",
+                "iron": "Ferro",
+                "wedge": "Wedge"
+            }
+            club_name = club_names.get(club_key, "Ferro")
+
+            # Coordinate iniziali (dal tee se primo colpo, o dall'ultima posizione registrata)
+            istate = self.session_mgr.get_interactive_state(chat_id)
+            cur_hole = istate.get("current_hole", 1)
+            hole_info = active_course.get_hole(cur_hole)
+
+            start_lat = None
+            start_lon = None
+            if istate.get("current_shot_number", 1) == 1 and hole_info and hole_info.coordinates:
+                start_lat = hole_info.coordinates.tee_lat
+                start_lon = hole_info.coordinates.tee_lon
+            else:
+                last_lat, last_lon, _, _ = self.session_mgr.get_last_position(chat_id)
+                start_lat = last_lat
+                start_lon = last_lon
+
+            self.session_mgr.record_interactive_shot_start(chat_id, club_name, start_lat, start_lon)
+            self.answer_callback_query(cb_id)
+
+            shot_num = istate.get("current_shot_number", 1)
+            text = (
+                f"🏌️ <b>Colpo {shot_num}: {club_name}</b>\n\n"
+                f"Effettua il tiro! Quando arrivi sulla palla:\n"
+                f"• Tocca <b>[📍 Calcola Distanza]</b> per misurare i metri via GPS\n"
+                f"• Oppure tocca <b>[🟢 Sono in Green]</b> se la palla è arrivata in green."
+            )
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=self.get_interactive_shot_in_progress_menu()
+            )
+
+        # 5. Richiesta invio GPS per calcolo distanza colpo
+        elif data == "calc_dist":
+            # Segna che stiamo attendendo il GPS
+            istate = self.session_mgr.get_interactive_state(chat_id)
+            istate["waiting_location"] = True
+            self.session_mgr.set_interactive_state(chat_id, istate)
+            self.answer_callback_query(cb_id)
+
+            gps_prompt_kb = {
+                "keyboard": [
+                    [{"text": "📍 Invia Posizione Ora", "request_location": True}],
+                    [{"text": "🔙 Annulla"}]
+                ],
+                "resize_keyboard": True,
+                "one_time_keyboard": True
+            }
+            return self.send_message(
+                chat_id,
+                "📍 <b>Tocca il pulsante qui sotto per inviare la posizione GPS esatta della palla:</b>",
+                reply_markup=gps_prompt_kb
+            )
+
+        # 6. Palla arrivata in Green
+        elif data == "reached_green":
+            self.session_mgr.set_interactive_shot_lie(chat_id, "Green")
+            self.answer_callback_query(cb_id, text="Ottimo approccio in green!")
+            return self.show_interactive_putts_screen(chat_id, message_id=message_id)
+
+        # 7. Scelta Lie della palla
+        elif data.startswith("lie_"):
+            lie_raw = data.replace("lie_", "").lower()
+            self.answer_callback_query(cb_id)
+
+            if lie_raw == "green":
+                self.session_mgr.set_interactive_shot_lie(chat_id, "Green")
+                return self.show_interactive_putts_screen(chat_id, message_id=message_id)
+            elif lie_raw in ["water", "out"]:
+                lie_label = "Acqua" if lie_raw == "water" else "Fuori Limite"
+                self.session_mgr.set_interactive_shot_lie(chat_id, lie_label)
+                text = (
+                    f"⚠️ <b>Palla in {lie_label}!</b>\n\n"
+                    f"Seleziona la penalità da applicare (+1 colpo):"
+                )
+                return self.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    reply_markup=self.get_interactive_penalty_menu()
+                )
+            else:
+                lie_names = {
+                    "fairway": "Fairway",
+                    "rough": "Rough",
+                    "trees": "Alberi",
+                    "bunker": "Bunker"
+                }
+                lie_name = lie_names.get(lie_raw, lie_raw.capitalize())
+                self.session_mgr.set_interactive_shot_lie(chat_id, lie_name)
+                return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 8. Menu Penalità
+        elif data == "penalty_menu":
+            self.answer_callback_query(cb_id)
+            text = "❌ <b>REGISTRA PENALITÀ:</b>\nSeleziona il tipo di penalità (+1 colpo):"
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=self.get_interactive_penalty_menu()
+            )
+
+        elif data.startswith("penalty_"):
+            pen_type = data.replace("penalty_", "")
+            self.answer_callback_query(cb_id)
+            if pen_type != "cancel":
+                pen_labels = {
+                    "water": "Ostacolo d'Acqua (+1)",
+                    "out": "Fuori Limite (+1)",
+                    "lost": "Palla Persa (+1)",
+                    "drop": "Droppaggio (+1)",
+                    "other": "Altro (+1)"
+                }
+                label = pen_labels.get(pen_type, "Penalità (+1)")
+                self.session_mgr.add_interactive_penalty(chat_id, penalty_type=label, strokes=1)
+                return self.show_interactive_hole_screen(chat_id, message_id=message_id, prompt_suffix=f"<i>⚠️ {label} registrata!</i>")
+            else:
+                return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 9. Annulla Colpo
+        elif data == "undo_shot":
+            res = self.session_mgr.undo_interactive_last_shot(chat_id)
+            if res:
+                self.answer_callback_query(cb_id, text="↩️ Ultimo colpo annullato!", show_alert=False)
+            else:
+                self.answer_callback_query(cb_id, text="⚠️ Nessun colpo da annullare.", show_alert=False)
+            return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 10. Chiusura Buca con Putt
+        elif data.startswith("putts_"):
+            putts_str = data.replace("putts_", "")
+            putts_val = 4 if putts_str == "4p" else int(putts_str)
+            self.answer_callback_query(cb_id)
+
+            whs_profile = self._resolve_handicap_profile(chat_id)
+            istate = self.session_mgr.get_interactive_state(chat_id)
+            h_num = istate.get("current_hole", 1)
+            par = whs_profile.hole_pars.get(h_num, 4)
+            si = whs_profile.hole_stroke_indices.get(h_num, h_num)
+            rec_strokes = whs_profile.get_received_strokes(h_num)
+
+            res = self.session_mgr.close_interactive_hole(
+                chat_id=chat_id,
+                putts=putts_val,
+                par=par,
+                stroke_index=si,
+                received_strokes=rec_strokes
+            )
+
+            from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
+            personality_engine = CaddyPersonalityEngine.get_instance()
+            raw_tone = getattr(user_profile, "caddy_tone", None) or CaddyTone.PROFESSIONALE
+            caddy_tone = raw_tone if isinstance(raw_tone, CaddyTone) else CaddyTone.PROFESSIONALE
+
+            diff_hole = res["gross_score"] - par
+            if diff_hole <= -2:
+                sit = "BUCA_EAGLE"
+            elif diff_hole == -1:
+                sit = "BUCA_BIRDIE"
+            elif diff_hole == 0:
+                sit = "BUCA_PAR"
+            elif diff_hole == 1:
+                sit = "BUCA_BOGEY"
+            elif diff_hole == 2:
+                sit = "BUCA_DOPPIO"
+            else:
+                sit = "BUCA_DISASTRO"
+
+            next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
+            caddy_quote = personality_engine.get_phrase(
+                sit,
+                tone=caddy_tone,
+                session_id=str(chat_id),
+                buca=h_num,
+                par=par,
+                score=res["gross_score"],
+                buca_next=next_h
+            )
+
+            card = self.session_mgr.get_round_scorecard(chat_id)
+            from core.whs_rules import calculate_stableford_points_gross
+            tot_gross_stb = sum(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4)) for h in card["completed_holes"])
+            diff_par = card["gross_to_par"]
+            diff_str = f"+{diff_par}" if diff_par > 0 else ("Par" if diff_par == 0 else str(diff_par))
+            hole_chips = " | ".join([f"B{h['hole_number']}: {h['gross_strokes']}c ({h['stableford_points']}pt)" for h in card["completed_holes"]])
+
+            text = (
+                f"⛳ <b>BUCA {h_num} COMPLETATA!</b> (Par {par} • HCP {si})\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• 🏌️ <b>Score Lordo:</b> <b>{res['gross_score']} colpi</b> ➔ <b>{res['stableford_gross']} pt Lordi</b>\n"
+                f"• 🎯 <b>Colpi Ricevuti:</b> {rec_strokes} ➔ <b>Par Netto: {res['net_par']}</b>\n"
+                f"• ⚖️ <b>Score Netto:</b> <b>{res['net_score']} colpi</b> <i>({res['score_label']})</i>\n"
+                f"• 🏆 <b>Punti Stableford:</b> <b>{res['stableford_points']} pt Netti</b> | {res['stableford_gross']} pt Lordi\n\n"
+                f"💬 <i>Caddie ({caddy_tone.short_label}):</i> «{caddy_quote}»\n\n"
+                f"📊 <b>RIEPILOGO PROGRESSIVO ({card['holes_played']}/{whs_profile.holes_count} Buche)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} pt Netti</b> | {tot_gross_stb} pt Lordi\n"
+                f"• 🏌️ <b>Colpi Totali:</b> {card['total_gross']} Lordi ({diff_str}) | {card['total_net']} Netti\n"
+                f"• ⛳ <b>Totale Putt:</b> {card['total_putts']} (Media {card['putts_avg']}/buca)\n"
+                f"• 📝 <b>Scorecard:</b> [ {hole_chips} ]"
+            )
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=self.get_interactive_hole_completed_menu(next_h)
+            )
+
+        # 11. Avanzamento Buca Successiva
+        elif data == "next_hole":
+            self.session_mgr.advance_to_next_interactive_hole(chat_id)
+            self.answer_callback_query(cb_id)
+            return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 12. Modifica Buca
+        elif data == "edit_hole":
+            self.answer_callback_query(cb_id)
+            text = "✏️ <b>Seleziona la buca da modificare o riaprire:</b>"
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=self.get_interactive_start_hole_menu()
+            )
+
+        # 13. Visualizzazione Score
+        elif data == "show_score":
+            self.answer_callback_query(cb_id)
+            return self.show_interactive_scorecard(chat_id, message_id=message_id)
+
+        # 14. Torna alla Buca Corrente
+        elif data == "back_to_hole":
+            self.answer_callback_query(cb_id)
+            return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 15. Conferma Fine Gara
+        elif data == "confirm_end_round":
+            self.answer_callback_query(cb_id)
+            text = (
+                "🏁 <b>TERMINARE IL GIRO DI GARA?</b>\n\n"
+                "I dati registrati verranno archiviati nella scorecard ufficiale e sincronizzati su PC."
+            )
+            confirm_kb = {
+                "inline_keyboard": [
+                    [{"text": "✅ Sì, Termina e Salva Score", "callback_data": "finalize_round"}],
+                    [{"text": "🔙 No, Continua a Giocare", "callback_data": "back_to_hole"}]
+                ]
+            }
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=confirm_kb
+            )
+
+        # 16. Finalizza e Salva Giro
+        elif data == "finalize_round":
+            self.answer_callback_query(cb_id, text="Gara completata e salvata!")
+            return self.finalize_interactive_round(chat_id, message_id=message_id)
+
+        # 17. Impostazioni
+        elif data == "show_settings":
+            self.answer_callback_query(cb_id)
+            text = (
+                "⚙️ <b>IMPOSTAZIONI GARA & CADDIE:</b>\n\n"
+                "• Per cambiare Tee: tocca [🟡 Tee Gialli / 🔴 Rossi]\n"
+                "• Per cambiare stile Caddie: usa <code>/tono</code>\n"
+                "• Per il calcolo handicap completo: usa <code>/whs</code>\n"
+                "• Per confrontare o sincronizzare la sacca: tocca <b>[🎒 Sacca & Distanze Erba]</b>"
+            )
+            settings_kb = {
+                "inline_keyboard": [
+                    [{"text": "🎒 Confronto Sacca (All. vs Erba)", "callback_data": "show_bag_comparison"}],
+                    [{"text": "🟡 Tee Gialli", "callback_data": "tee_gialli"}, {"text": "🔴 Tee Rossi", "callback_data": "tee_rossi"}],
+                    [{"text": "🔙 Torna alla Buca", "callback_data": "back_to_hole"}]
+                ]
+            }
+            return self.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=settings_kb
+            )
+
+        # 18. Confronto Sacca (Allenamento vs Erba)
+        elif data == "show_bag_comparison":
+            self.answer_callback_query(cb_id)
+            return self.show_bag_comparison(chat_id, message_id=message_id)
+
+        # 19. Sincronizzazione Sacca con distanze reali su erba
+        elif data == "sync_bag_values":
+            stats = ClubDistanceService.get_club_grass_performance(
+                db_path=self.db.db_path,
+                user_id=user_rec.user_id,
+                chat_id=chat_id
+            )
+            user_profile.sync_with_grass_statistics(stats, update_carry=True, user_id=user_rec.user_id)
+            self.answer_callback_query(cb_id, text="✅ Sacca sincronizzata con successo!", show_alert=True)
+            return self.show_bag_comparison(chat_id, message_id=message_id, sync_done=True)
+
+        self.answer_callback_query(cb_id)
 
     def send_message(self, chat_id: int | str, text: str, parse_mode: str = "HTML", reply_markup: Optional[dict] = None) -> dict:
         mode = self.get_user_mode(chat_id)
@@ -382,6 +1097,34 @@ class VoiceCaddyTelegramBot:
         5. Suggerisce il bastone ideale dalla sacca personale del giocatore.
         6. Invia una risposta sintetica ed immediata.
         """
+        # Controllo se c'è un colpo interattivo in attesa della posizione GPS (calcolo distanza del colpo)
+        istate = self.session_mgr.get_interactive_state(chat_id)
+        if istate.get("waiting_location") or istate.get("state") == "WAITING_LOCATION":
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            act = istate.get("active_shot") or {}
+            start_lat = act.get("start_lat")
+            start_lon = act.get("start_lon")
+            c_hole = istate.get("current_hole", 1)
+            hole_info = active_course.get_hole(c_hole)
+
+            if (start_lat is None or start_lon is None) and hole_info and hole_info.coordinates:
+                start_lat = hole_info.coordinates.tee_lat
+                start_lon = hole_info.coordinates.tee_lon
+                act["start_lat"] = start_lat
+                act["start_lon"] = start_lon
+
+            dist_calc = None
+            if start_lat is not None and start_lon is not None:
+                dist_calc = haversine_distance(start_lat, start_lon, lat, lon)
+
+            self.session_mgr.record_interactive_shot_end(chat_id, lat, lon, distance_meters=dist_calc)
+            dist_str = f"<b>{int(round(dist_calc))} m</b>" if dist_calc is not None else "<i>Non determinabile</i>"
+            msg = (
+                f"📍 <b>Distanza Colpo Calcolata:</b> {dist_str}\n\n"
+                f"Dove si trova la palla?"
+            )
+            return self.send_message(chat_id, msg, reply_markup=self.get_interactive_lie_menu())
+
         # Controllo se è la posizione iniziale richiesta per meteo & vento
         cid = str(chat_id)
         if self.pending_weather.get(cid, False):
@@ -1017,12 +1760,23 @@ class VoiceCaddyTelegramBot:
         """Elabora il resoconto testuale dei colpi digitato dal golfista."""
         clean = text.strip()
         clean_lower = clean.lower()
+
+        # 0. Trigger prioritario per Gara a Pulsanti (Zero Audio) e Scorecard
+        if any(w in clean_lower for w in ["gara a pulsanti", "inizia gara a pulsanti", "gara_bot", "pulsanti", "tasti"]) or clean == "🟢 Inizia Gara a Pulsanti":
+            return self.start_interactive_wizard(chat_id)
+
+        if clean in ["📊 Score"] or clean_lower in ["score", "scorecard", "classifica"]:
+            return self.show_interactive_scorecard(chat_id)
+
+        if clean in ["🎒 Profilo & Sacca", "🎒 Sacca & Distanze Erba"] or any(w in clean_lower for w in ["confronto sacca", "sincronizza sacca", "distanze sacca", "la mia sacca"]):
+            return self.show_bag_comparison(chat_id)
+
         # Intercettazione avvio round con richiesta meteo & vento a 1 tocco
         start_keywords = [
-            "gara", "training", "allenamento", "meteo", "vento",
-            "start round", "start_round", "inizio round", "avvia giro"
+            "training", "allenamento", "meteo", "vento",
+            "start round", "start_round", "inizio round", "avvia giro", "inizio gara"
         ]
-        if clean in ["⚖️ Modalità Gara", "🎯 Modalità Training"] or any(kw in clean_lower for kw in start_keywords):
+        if clean in ["⚖️ Modalità Gara", "🎯 Modalità Training"] or clean_lower == "gara" or any(kw in clean_lower for kw in start_keywords):
             if "gara" in clean_lower:
                 new_mode = "gara"
             elif any(k in clean_lower for k in ["training", "allenamento"]):
@@ -1067,7 +1821,15 @@ class VoiceCaddyTelegramBot:
             except Exception:
                 caddy_tone = CaddyTone.PROFESSIONALE
 
-        # 0. Se siamo nello stato di verifica dell'audit (Prompt 2), gestisci correzioni o conferma
+        # 0. Trigger prioritario di avvio Gara Interattiva a Pulsanti
+        if any(w in clean_lower for w in ["inizia gara a pulsanti", "gara a pulsanti", "inizia gara"]) and not any(w in clean_lower for w in ["ho tirato", "colpo", "putt"]):
+            return self.start_interactive_wizard(chat_id)
+
+        # 0a. Trigger rapido visualizzazione Scorecard interattiva
+        if clean_lower in ["score", "scorecard", "punti", "classifica"] or clean == "📊 Score":
+            return self.show_interactive_scorecard(chat_id)
+
+        # 0b. Se siamo nello stato di verifica dell'audit (Prompt 2), gestisci correzioni o conferma
         if self.session_mgr.get_round_state(chat_id) == "AWAITING_VERIFICATION":
             if self.handle_audit_correction(chat_id, clean):
                 return
@@ -1441,6 +2203,8 @@ class VoiceCaddyTelegramBot:
             cmd = "/prossima"
         elif "stato" in clean_text.lower() and not clean_text.startswith("/"):
             cmd = "/stato"
+        elif any(k in clean_text.lower() for k in ["profilo & sacca", "sacca", "confronto sacca", "sincronizza sacca", "distanze sacca", "la mia sacca"]) and not clean_text.startswith("/"):
+            cmd = "/sacca"
         elif "profilo" in clean_text.lower() and not clean_text.startswith("/"):
             cmd = "/profilo"
         elif "nuovo giro" in clean_text.lower() and not clean_text.startswith("/"):
@@ -1465,6 +2229,10 @@ class VoiceCaddyTelegramBot:
             args = ["psicologo"]
         elif "torna in campo" in clean_text.lower():
             return self.send_message(chat_id, "⛳ Di nuovo sul percorso!", reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+        elif any(k in clean_text.lower() for k in ["gara a pulsanti", "inizia gara a pulsanti", "gara_bot"]):
+            cmd = "/gara_bot"
+        elif clean_text.lower().strip() in ["score", "scorecard", "📊 score"]:
+            cmd = "/score_bot"
         elif any(k in clean_text.lower() for k in ["start_round", "start round", "meteo", "vento"]):
             cmd = "/start_round"
 
@@ -1474,7 +2242,7 @@ class VoiceCaddyTelegramBot:
             "/buca", "/h", "/distanza", "/paletto", "/tee", "/whs", "/handicap",
             "/hcp", "/formato", "/score", "/punti", "/tono", "/caddy", "/personalita"
         ]:
-            if cmd.startswith(prefix) and cmd != prefix and not args:
+            if cmd.startswith(prefix) and cmd != prefix and not args and not cmd.startswith(prefix + "_"):
                 args = [text.strip()[len(prefix):].strip()]
                 cmd = prefix
                 break
@@ -1867,6 +2635,12 @@ class VoiceCaddyTelegramBot:
             )
             self.send_message(chat_id, msg)
 
+        elif cmd in ["/gara_bot", "/play", "/tasti", "/pulsanti", "/bot", "/iniziagara"]:
+            return self.start_interactive_wizard(chat_id)
+
+        elif cmd in ["/score_bot", "/scorecard_bot"]:
+            return self.show_interactive_scorecard(chat_id)
+
         elif cmd in ["/nuovogiro", "/reset"]:
             self.session_mgr.reset_session(chat_id)
             self.send_message(
@@ -1963,6 +2737,9 @@ class VoiceCaddyTelegramBot:
                     f"Usa <code>/start</code> per vedere la lista dei giocatori registrati."
                 )
 
+        elif cmd in ["/sacca", "/confronto_sacca", "/sincronizza_sacca", "/distanze_sacca"]:
+            return self.show_bag_comparison(chat_id)
+
         elif cmd in ["/profilo", "/chi"]:
             user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
             bag_summary = "\n".join([f"• <b>{c.club_name}:</b> {c.carry_meters}m ({c.shaft_flex.value})" for c in user_profile.clubs_in_bag[:8]])
@@ -1976,7 +2753,8 @@ class VoiceCaddyTelegramBot:
                 f"• <b>Campo attivo:</b> {active_course.name}\n"
                 f"• <b>Provider IA:</b> {ai_cfg.provider.upper()}\n\n"
                 f"🎒 <b>Prime mazze in sacca:</b>\n{bag_summary}\n\n"
-                f"<i>Per cambiare giocatore scrivi: <code>/giocatore [Nome]</code></i>"
+                f"• <i>Per confrontare con i colpi reali su erba usa: <code>/sacca</code></i>\n"
+                f"• <i>Per cambiare giocatore scrivi: <code>/giocatore [Nome]</code></i>"
             )
 
         elif cmd in ["/campo", "/circolo"]:
@@ -2083,6 +2861,11 @@ class VoiceCaddyTelegramBot:
                 if res.get("ok"):
                     for update in res.get("result", []):
                         offset = update["update_id"] + 1
+
+                        # 0. Callback Query (Click su pulsanti inline)
+                        if "callback_query" in update:
+                            self.handle_callback_query(update["callback_query"])
+                            continue
 
                         # Supporta sia nuovi messaggi che aggiornamenti Live Location (edited_message)
                         message = update.get("message") or update.get("edited_message")

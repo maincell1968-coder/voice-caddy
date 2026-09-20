@@ -35,6 +35,7 @@ from core.elevation_service import elevation_service, haversine_distance, calcul
 from core.live_session import LiveSessionManager
 from core.backup_manager import backup_manager
 from golf_rules_module import render_rules_academy
+from core.club_distance_service import ClubDistanceService
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
@@ -1494,7 +1495,15 @@ def execute_audio_round_pipeline(
         status_text.info(f"🧠 Analisi semantica NLU tramite la tua IA ({ai_desc}) per {st.session_state.user_profile.category.value} su {active_course.name}...")
         progress_bar.progress(70)
 
-        raw_round_data = parse_golf_audio_transcript(
+        import importlib
+        import core.parser
+        import core.ai_provider
+        import core.metrics
+        importlib.reload(core.parser)
+        importlib.reload(core.ai_provider)
+        importlib.reload(core.metrics)
+
+        raw_round_data = core.parser.parse_golf_audio_transcript(
             transcript_text=transcript_text,
             user_profile=st.session_state.user_profile,
             course=active_course,
@@ -1504,7 +1513,7 @@ def execute_audio_round_pipeline(
         status_text.info("📊 Riconciliazione matematica e calcolo metriche balistiche...")
         progress_bar.progress(90)
 
-        validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_round_data)
+        validated_data = core.metrics.GolfMetricsCalculator.recompute_and_reconcile(raw_round_data)
         st.session_state.round_data = validated_data
 
         # Save round tagged with current user ID and group
@@ -2606,6 +2615,71 @@ with nav_tab2:
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
             st.rerun()
+
+        # ---------------------------------------------------------
+        # 🎯 Sincronizza Sacca: Allenamento vs Gara sull'Erba
+        # ---------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 🎯 Sincronizza Sacca: Allenamento vs Gara sull'Erba")
+        st.caption("Confronta le distanze nominali impostate in allenamento/campo pratica con la media reale dei colpi misurati su erba via GPS durante le gare.")
+
+        grass_stats = ClubDistanceService.get_club_grass_performance(
+            db_path=db.db_path,
+            user_id=current_user.user_id
+        )
+
+        # Allinea temporaneamente per calcolare la sintesi (senza sovrascrivere il carry)
+        prof.sync_with_grass_statistics(grass_stats, update_carry=False)
+        comparison_list = prof.get_club_comparison_summary()
+
+        has_grass_data = any(item["grass_meters"] is not None for item in comparison_list)
+
+        comp_rows = []
+        for item in comparison_list:
+            c_name = item["club_name"]
+            train_m = f"{int(item['training_meters'])} m"
+            if item["grass_meters"] is not None:
+                g_m = f"{int(item['grass_meters'])} m"
+                delta_val = int(item["delta_meters"])
+                delta_str = f"{'+' if delta_val > 0 else ''}{delta_val} m"
+                cnt = item["shots_count"]
+                if abs(delta_val) <= 5:
+                    status = "🎯 Allineato (±5m)"
+                elif delta_val > 5:
+                    status = f"🚀 Su erba vola più lungo (+{delta_val}m)"
+                else:
+                    status = f"⚠️ Su erba vola più corto ({delta_val}m)"
+            else:
+                g_m = "—"
+                delta_str = "—"
+                cnt = 0
+                status = "Dati in attesa (nessun colpo su erba)"
+
+            comp_rows.append({
+                "Bastone": c_name,
+                "Allenamento (m)": train_m,
+                "Media Erba (m)": g_m,
+                "Differenza (Delta)": delta_str,
+                "Colpi Misurati": cnt,
+                "Analisi Performance": status
+            })
+
+        df_comp = pd.DataFrame(comp_rows)
+        st.dataframe(df_comp, use_container_width=True, hide_index=True)
+
+        col_sync1, col_sync2 = st.columns([2, 1])
+        with col_sync1:
+            if has_grass_data:
+                st.info("💡 **Consiglio Tattico:** Se i colpi misurati su erba sono attendibili (es. > 3 colpi per bastone), puoi sincronizzare la sacca per permettere al caddie di suggerire i bastoni in base alla tua reale resa sul campo da golf.")
+            else:
+                st.info("ℹ️ **Nessun colpo ancora rilevato su erba:** Registra i colpi via GPS con il Bot Telegram durante la gara per popolare automaticamente questo confronto.")
+
+        with col_sync2:
+            if st.button("🔄 Sincronizza Sacca con i Colpi su Erba", type="secondary", use_container_width=True, disabled=not has_grass_data, key="sync_grass_bag_btn"):
+                prof.sync_with_grass_statistics(grass_stats, update_carry=True, user_id=current_user.user_id)
+                st.session_state.user_profile = prof
+                st.success("✅ Sacca sincronizzata con successo con le distanze reali su erba!")
+                st.rerun()
 
         # ---------------------------------------------------------
         # SAFEVAULT: Protezione Dati, Esportazione & Ripristino 1-Clic

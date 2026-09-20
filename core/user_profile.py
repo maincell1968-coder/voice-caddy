@@ -32,6 +32,9 @@ class ClubDetail(BaseModel):
     model_type: Optional[str] = Field(default="", description="Modello o tipo bastone (es. Qi10, Stealth 2, Apex 21, T200, G430, CB/Blade)")
     shaft_flex: Optional[ShaftFlex] = Field(default=ShaftFlex.REGULAR, description="Flessibilità dello shaft")
     carry_meters: float = Field(..., description="Distanza media di volo/totale in metri")
+    real_grass_meters: Optional[float] = Field(default=None, description="Distanza media reale misurata su erba in campo/gara")
+    measured_shots_count: int = Field(default=0, description="Numero di colpi reali misurati in campo con questo bastone")
+    last_synced_at: Optional[str] = Field(default=None, description="Timestamp dell'ultima sincronizzazione con i colpi in campo")
 
 
 CLUB_HIERARCHY_RANK = {
@@ -191,6 +194,85 @@ class UserProfile(BaseModel):
             brand_str = f" [{c.brand} {c.model_type}]" if c.brand else ""
             lines.append(f"- {c.club_name}{brand_str}: ~{int(c.carry_meters)} metri (Shaft: {c.shaft_flex.value if hasattr(c.shaft_flex, 'value') else c.shaft_flex})")
         return "Dettaglio Sacca e Distanze del Giocatore:\n" + "\n".join(lines)
+
+    def sync_with_grass_statistics(
+        self,
+        stats: dict,
+        update_carry: bool = False,
+        user_id: Optional[str] = None
+    ) -> bool:
+        """
+        Sincronizza la sacca con le statistiche reali misurate su erba in gara.
+        - Memorizza 'real_grass_meters', 'measured_shots_count' e 'last_synced_at'.
+        - Se update_carry=True, allinea anche 'carry_meters' con la media reale su erba.
+        """
+        import time
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+
+        norm_stats = {}
+        for k, v in stats.items():
+            norm_stats[k.lower().strip()] = v
+
+        for club in self.clubs_in_bag:
+            c_name_norm = club.club_name.lower().strip()
+            matched_stat = norm_stats.get(c_name_norm)
+            if not matched_stat:
+                for s_key, s_val in norm_stats.items():
+                    if s_key in c_name_norm or c_name_norm in s_key:
+                        matched_stat = s_val
+                        break
+
+            if matched_stat and matched_stat.get("avg_meters"):
+                grass_avg = float(matched_stat["avg_meters"])
+                club.real_grass_meters = round(grass_avg, 1)
+                club.measured_shots_count = int(matched_stat.get("count", 0))
+                club.last_synced_at = now_str
+                if update_carry and grass_avg > 0:
+                    club.carry_meters = round(grass_avg, 1)
+
+        self.sort_clubs()
+        if user_id:
+            return self.save_for_user(user_id)
+        return True
+
+    def get_club_comparison_summary(self) -> List[dict]:
+        """
+        Genera la lista di confronto per la sacca:
+        Mazza | Allenamento (m) | Erba (m) | Delta (m) | Colpi | Stato
+        """
+        summary = []
+        for c in self.clubs_in_bag:
+            if "putt" in c.club_name.lower():
+                continue
+            training_m = float(c.carry_meters) if c.carry_meters is not None else 0.0
+            grass_m = c.real_grass_meters
+            shots = c.measured_shots_count
+
+            if grass_m is not None and shots > 0:
+                delta = round(grass_m - training_m, 1)
+                if abs(delta) <= 3.0:
+                    status = "✅ Allineato (±3m)"
+                elif delta < -3.0:
+                    status = f"📉 {int(delta)}m (Più corto su erba)"
+                else:
+                    status = f"🚀 +{int(delta)}m (Più lungo su erba)"
+            else:
+                delta = None
+                status = "⚪ Nessun dato su erba"
+
+            summary.append({
+                "club_name": c.club_name,
+                "brand": c.brand or "Generica",
+                "model_type": c.model_type or "",
+                "shaft_flex": c.shaft_flex.value if hasattr(c.shaft_flex, "value") else str(c.shaft_flex),
+                "training_meters": training_m,
+                "grass_meters": grass_m,
+                "delta_meters": delta,
+                "shots_count": shots,
+                "status": status,
+                "last_synced_at": c.last_synced_at
+            })
+        return summary
 
     def save_to_file(self, file_path: str | Path = "user_profile.json") -> bool:
         self.sort_clubs()

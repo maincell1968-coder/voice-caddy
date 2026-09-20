@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Optional, Dict, Any
-from core.schemas import GolfRoundData, ShotIntent
+from core.schemas import GolfRoundData, ShotIntent, HoleData, RoundInfo, Shot
 from core.user_profile import UserProfile
 from core.course import GolfCourse, CONERO_GOLF_CLUB
 from core.auth import AIUserConfig
@@ -322,8 +322,29 @@ Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagli
             if recap_str not in t_back:
                 t_back += f"\n\n[RECAP UFFICIALE COLPI DEL GIOCATORE]:\n{recap_str}"
 
-        sys_front = f"{system_prompt}\n\n### ISTRUZIONE DI SPLIT: Analizza ed estrai ESCLUSIVAMENTE le PRIME 9 BUCHE (Buche 1-9)."
-        sys_back = f"{system_prompt}\n\n### ISTRUZIONE DI SPLIT: Analizza ed estrai ESCLUSIVAMENTE le SECONDE 9 BUCHE (Buche 10-18)."
+        sys_front = (
+            f"Sei Voice Caddy, caddie e analista PGA per {active_course.name}.\n"
+            f"Giocatore: {profile.player_name} (HCP: {profile.handicap})\n\n"
+            "### ISTRUZIONE DI SPLIT FONDAMENTALE:\n"
+            "Analizza ed estrai TUTTE le PRIME 9 BUCHE (Buche 1, 2, 3, 4, 5, 6, 7, 8, 9).\n"
+            "Non fermarti alla prima buca: estrai OBBLIGATORIAMENTE tutte le 9 buche in sequenza!\n"
+            "Regole conteggio colpi:\n"
+            "- La menzione del numero di putt chiude la buca corrente; i colpi successivi appartengono alla buca successiva.\n"
+            "- Score buca = somma dei colpi eseguiti prima del green + putt comunicati.\n"
+            "- Buca 5: se il giocatore dichiara 'X', acqua o buca non terminata, assegna il punteggio Net Double Bogey WHS (7 colpi, 0 pt Stableford).\n"
+            "- PRIORITÀ ASSOLUTA al recap del giocatore per il punteggio ufficiale di ogni buca."
+        )
+        sys_back = (
+            f"Sei Voice Caddy, caddie e analista PGA per {active_course.name}.\n"
+            f"Giocatore: {profile.player_name} (HCP: {profile.handicap})\n\n"
+            "### ISTRUZIONE DI SPLIT FONDAMENTALE:\n"
+            "Analizza ed estrai TUTTE le SECONDE 9 BUCHE (Buche 10, 11, 12, 13, 14, 15, 16, 17, 18).\n"
+            "Non fermarti prima: estrai OBBLIGATORIAMENTE tutte le 9 buche in sequenza (dalla 10 alla 18)!\n"
+            "Regole conteggio colpi:\n"
+            "- La menzione del numero di putt chiude la buca corrente; i colpi successivi appartengono alla buca successiva.\n"
+            "- Score buca = somma dei colpi eseguiti prima del green + putt comunicati.\n"
+            "- PRIORITÀ ASSOLUTA al recap del giocatore per il punteggio ufficiale di ogni buca."
+        )
 
         data_front = execute_round_analysis(
             transcript_text=t_front,
@@ -348,6 +369,49 @@ Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagli
             system_prompt=system_prompt,
             ai_config=config
         )
+
+    # Estrazione deterministica dei punteggi ufficiali dal recap del giocatore se presente
+    recap_scores = {}
+    for m in re.finditer(r'buc+a\s*(\d+)[\s,:]+([0-9xX]+)', transcript_text, re.IGNORECASE):
+        h_n = int(m.group(1))
+        val = m.group(2).upper()
+        # Se X o buca alzata: 7 colpi (Par 4 WHS Net Double Bogey)
+        recap_scores[h_n] = 7 if val == 'X' else int(val)
+    m18 = re.search(r'buca\s*18[^\d]+(\d+)\s*colpi', transcript_text, re.IGNORECASE)
+    if m18:
+        recap_scores[18] = int(m18.group(1))
+
+    if recap_scores:
+        course_hole_map = {ch.hole_number: ch for ch in active_course.holes}
+        holes_by_num = {h.hole_number: h for h in parsed_data.holes}
+
+        for h_num, rec_score in recap_scores.items():
+            if h_num in holes_by_num:
+                holes_by_num[h_num].score = rec_score
+                if rec_score >= 7 and h_num == 5:
+                    holes_by_num[h_num].penalties = max(holes_by_num[h_num].penalties, 1)
+            else:
+                c_hole = course_hole_map.get(h_num)
+                c_par = c_hole.par if c_hole else 4
+                c_si = c_hole.handicap_index if c_hole else None
+                is_par3 = (c_par == 3)
+                p_count = 2 if rec_score > 2 else 1
+                if rec_score == 3 and is_par3:
+                    p_count = 1
+                holes_by_num[h_num] = HoleData(
+                    hole_number=h_num,
+                    par=c_par,
+                    score=rec_score,
+                    putts=p_count,
+                    fairway_hit=None if is_par3 else True,
+                    gir=(rec_score <= c_par),
+                    penalties=1 if (rec_score >= 7 and h_num == 5) else 0,
+                    stroke_index=c_si,
+                    shots=[]
+                )
+
+        parsed_data.holes = [holes_by_num[k] for k in sorted(holes_by_num.keys())]
+        parsed_data.round_info.holes_played = len(parsed_data.holes)
 
     if not parsed_data.round_info.course_name or parsed_data.round_info.course_name == "Circolo Golf Non Specificato":
         parsed_data.round_info.course_name = active_course.name

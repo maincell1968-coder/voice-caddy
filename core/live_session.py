@@ -91,6 +91,7 @@ class LiveSessionManager:
                 ("round_sequence_json", "TEXT", "'[]'"),
                 ("pending_round_state", "TEXT", "'IDLE'"),
                 ("pending_round_data_json", "TEXT", "'{}'"),
+                ("interactive_state_json", "TEXT", "'{}'"),
             ]
             for col_name, col_type, default_val in new_columns:
                 if col_name not in existing_cols:
@@ -230,6 +231,27 @@ class LiveSessionManager:
             if row:
                 return row["last_latitude"], row["last_longitude"], row["last_altitude"], row["last_location_timestamp"]
         return None, None, None, None
+
+    def set_last_position(
+        self,
+        chat_id: int | str,
+        latitude: float,
+        longitude: float,
+        altitude: Optional[float] = None
+    ) -> bool:
+        """Salva direttamente l'ultima posizione GPS nella sessione."""
+        c_id = str(chat_id)
+        now_ts = time.time()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET last_latitude = ?, last_longitude = ?, last_altitude = ?,
+                    last_location_timestamp = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (latitude, longitude, altitude, now_ts, c_id))
+            conn.commit()
+            return cursor.rowcount > 0
 
 
     def record_live_shot(
@@ -789,5 +811,332 @@ class LiveSessionManager:
             """, (c_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    # ---------------------------------------------------------
+    # INTERACTIVE BUTTON-BASED (NO-AUDIO) GOLF TRACKER
+    # ---------------------------------------------------------
+    def get_interactive_state(self, chat_id: int | str) -> Dict[str, Any]:
+        """Recupera lo stato corrente del flusso interattivo a pulsanti per la chat."""
+        c_id = str(chat_id)
+        default_state = {
+            "state": "IDLE",
+            "tee_name": "gialli",
+            "start_hole": 1,
+            "current_hole": 1,
+            "current_shot_number": 1,
+            "hole_shots": [],
+            "hole_penalties": [],
+            "active_shot": None,
+            "waiting_location": False
+        }
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT interactive_state_json FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            if row and row["interactive_state_json"]:
+                try:
+                    data = json.loads(row["interactive_state_json"])
+                    if isinstance(data, dict) and data:
+                        for k, v in default_state.items():
+                            if k not in data:
+                                data[k] = v
+                        return data
+                except Exception:
+                    pass
+        return default_state
+
+    def set_interactive_state(self, chat_id: int | str, state_data: Dict[str, Any]) -> bool:
+        """Salva lo stato corrente del flusso interattivo."""
+        self._ensure_session_exists(chat_id)
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET interactive_state_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (json.dumps(state_data), c_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def start_interactive_round(
+        self,
+        chat_id: int | str,
+        user_id: str = "default_user",
+        course_id: str = "conero_golf_club",
+        tee_name: str = "gialli",
+        start_hole: int = 1
+    ) -> Dict[str, Any]:
+        """Inizializza una nuova partita interattiva azzerando la scorecard precedente."""
+        c_id = str(chat_id)
+        self._ensure_session_exists(c_id)
+        clean_tee = str(tee_name).strip().lower()
+        h_num = max(1, min(18, int(start_hole)))
+
+        state = {
+            "state": "PLAYING_HOLE",
+            "tee_name": clean_tee,
+            "start_hole": h_num,
+            "current_hole": h_num,
+            "current_shot_number": 1,
+            "hole_shots": [],
+            "hole_penalties": [],
+            "active_shot": None,
+            "waiting_location": False
+        }
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET user_id = ?, course_id = ?, selected_tee = ?, current_hole = ?, current_shot_index = 1,
+                    completed_scores_json = '[]', interactive_state_json = ?,
+                    last_latitude = NULL, last_longitude = NULL, last_altitude = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (user_id, course_id, clean_tee, h_num, json.dumps(state), c_id))
+            # Pulisci colpi live precedenti per la chat
+            cursor.execute("DELETE FROM live_shots WHERE chat_id = ?", (c_id,))
+            conn.commit()
+
+        return state
+
+    def record_interactive_shot_start(
+        self,
+        chat_id: int | str,
+        club_type: str,
+        start_lat: Optional[float] = None,
+        start_lon: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Registra l'inizio di un colpo (selezione bastone e coordinate di partenza)."""
+        state = self.get_interactive_state(chat_id)
+        shot_num = state.get("current_shot_number", 1)
+        state["active_shot"] = {
+            "shot_number": shot_num,
+            "club": club_type,
+            "start_lat": start_lat,
+            "start_lon": start_lon,
+            "distance_meters": None,
+            "lie": None,
+            "timestamp_start": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+        state["waiting_location"] = False
+        self.set_interactive_state(chat_id, state)
+        return state
+
+    def record_interactive_shot_end(
+        self,
+        chat_id: int | str,
+        end_lat: float,
+        end_lon: float,
+        distance_meters: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Registra le coordinate finali della palla e calcola o salva la distanza percorsa."""
+        state = self.get_interactive_state(chat_id)
+        act = state.get("active_shot")
+        if not act:
+            act = {
+                "shot_number": state.get("current_shot_number", 1),
+                "club": "Ferro",
+                "start_lat": None,
+                "start_lon": None,
+                "timestamp_start": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
+
+        act["end_lat"] = end_lat
+        act["end_lon"] = end_lon
+        act["timestamp_end"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        if distance_meters is not None:
+            act["distance_meters"] = int(round(distance_meters))
+        elif act.get("start_lat") and act.get("start_lon"):
+            d = haversine_distance(act["start_lat"], act["start_lon"], end_lat, end_lon)
+            act["distance_meters"] = int(round(d))
+
+        state["active_shot"] = act
+        state["waiting_location"] = False
+        state["state"] = "WAITING_LIE"
+        self.set_interactive_state(chat_id, state)
+
+        # Aggiorna anche last_latitude e last_longitude nella sessione
+        self.set_last_position(chat_id, end_lat, end_lon)
+        return state
+
+    def set_interactive_shot_lie(self, chat_id: int | str, lie: str) -> Dict[str, Any]:
+        """Assegna la posizione della palla (lie) al colpo attivo e lo aggiunge alla buca."""
+        state = self.get_interactive_state(chat_id)
+        act = state.get("active_shot")
+        if not act:
+            act = {
+                "shot_number": state.get("current_shot_number", 1),
+                "club": "Ferro",
+                "distance_meters": None,
+                "timestamp_start": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            }
+
+        act["lie"] = lie
+        state["hole_shots"].append(act)
+
+        # Salva anche nella tabella live_shots per coerenza con app.py
+        c_id = str(chat_id)
+        h_num = state.get("current_hole", 1)
+        s_num = act["shot_number"]
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO live_shots (chat_id, hole_number, shot_index, club, lie, latitude, longitude, distance_covered)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (c_id, h_num, s_num, act["club"], lie, act.get("end_lat"), act.get("end_lon"), act.get("distance_meters")))
+            conn.commit()
+
+        state["active_shot"] = None
+        state["waiting_location"] = False
+
+        if lie.lower() == "green":
+            state["state"] = "ON_GREEN"
+        else:
+            state["current_shot_number"] = len(state["hole_shots"]) + 1
+            state["state"] = "PLAYING_HOLE"
+
+        self.set_interactive_state(chat_id, state)
+        return state
+
+    def add_interactive_penalty(self, chat_id: int | str, penalty_type: str, strokes: int = 1) -> Dict[str, Any]:
+        """Aggiunge una penalità alla buca corrente."""
+        state = self.get_interactive_state(chat_id)
+        pen_entry = {
+            "type": penalty_type,
+            "strokes": strokes,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+        state["hole_penalties"].append(pen_entry)
+        self.set_interactive_state(chat_id, state)
+        return state
+
+    def undo_interactive_last_shot(self, chat_id: int | str) -> Optional[Dict[str, Any]]:
+        """Annulla l'ultimo colpo registrato nella buca corrente."""
+        state = self.get_interactive_state(chat_id)
+        # Se c'era un colpo attivo non ancora completato, annulla quello
+        if state.get("active_shot"):
+            state["active_shot"] = None
+            state["waiting_location"] = False
+            state["state"] = "PLAYING_HOLE"
+            self.set_interactive_state(chat_id, state)
+            return state
+
+        # Altrimenti rimuovi l'ultimo colpo confermato dalla lista
+        if state.get("hole_shots"):
+            removed = state["hole_shots"].pop()
+            c_id = str(chat_id)
+            h_num = state.get("current_hole", 1)
+            s_idx = removed.get("shot_number", len(state["hole_shots"]) + 1)
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM live_shots WHERE chat_id = ? AND hole_number = ? AND shot_index = ?", (c_id, h_num, s_idx))
+                conn.commit()
+
+            state["current_shot_number"] = len(state["hole_shots"]) + 1
+            state["state"] = "PLAYING_HOLE"
+            self.set_interactive_state(chat_id, state)
+            return state
+
+        # Se non ci sono colpi ma ci sono penalità, rimuovi l'ultima penalità
+        if state.get("hole_penalties"):
+            state["hole_penalties"].pop()
+            self.set_interactive_state(chat_id, state)
+            return state
+
+        return None
+
+    def close_interactive_hole(
+        self,
+        chat_id: int | str,
+        putts: int,
+        par: int = 4,
+        stroke_index: int = 1,
+        received_strokes: int = 0
+    ) -> Dict[str, Any]:
+        """Chiude la buca corrente calcolando colpi lordi, netti e Stableford."""
+        state = self.get_interactive_state(chat_id)
+        h_num = state.get("current_hole", 1)
+        shots_count = len(state.get("hole_shots", []))
+        penalties_count = sum(p.get("strokes", 1) for p in state.get("hole_penalties", []))
+
+        gross_score = shots_count + putts + penalties_count
+        if gross_score == 0:
+            gross_score = max(par, putts + 1)
+
+        net_score = gross_score - received_strokes
+        net_par = par + received_strokes
+        stbl_net = max(0, 2 + par - net_score)
+        stbl_gross = max(0, 2 + par - gross_score)
+
+        # Determina label punteggio
+        diff = gross_score - par
+        if diff <= -2:
+            score_label = "Eagle or Better"
+        elif diff == -1:
+            score_label = "Birdie"
+        elif diff == 0:
+            score_label = "Par"
+        elif diff == 1:
+            score_label = "Bogey"
+        else:
+            score_label = "Double+ Bogey"
+
+        # Salva tramite record_completed_hole (advance_hole=False finché l'utente non clicca 'Prossima Buca')
+        card = self.record_completed_hole(
+            chat_id=chat_id,
+            hole_number=h_num,
+            par=par,
+            stroke_index=stroke_index,
+            gross_strokes=gross_score,
+            putts=putts,
+            received_strokes=received_strokes,
+            net_par=net_par,
+            stableford_points=stbl_net,
+            net_strokes=net_score,
+            score_label=score_label,
+            advance_hole=False
+        )
+
+        state["state"] = "HOLE_COMPLETED"
+        state["last_completed_hole"] = h_num
+        self.set_interactive_state(chat_id, state)
+
+        return {
+            "hole_number": h_num,
+            "par": par,
+            "stroke_index": stroke_index,
+            "gross_score": gross_score,
+            "net_score": net_score,
+            "putts": putts,
+            "penalties": penalties_count,
+            "received_strokes": received_strokes,
+            "net_par": net_par,
+            "stableford_points": stbl_net,
+            "stableford_gross": stbl_gross,
+            "score_label": score_label,
+            "scorecard": card
+        }
+
+    def advance_to_next_interactive_hole(self, chat_id: int | str) -> int:
+        """Avanza alla buca successiva, azzerando i colpi e le penalità temporanee."""
+        state = self.get_interactive_state(chat_id)
+        cur_h = state.get("current_hole", 1)
+        next_h = 1 if cur_h >= 18 else cur_h + 1
+
+        state["current_hole"] = next_h
+        state["current_shot_number"] = 1
+        state["hole_shots"] = []
+        state["hole_penalties"] = []
+        state["active_shot"] = None
+        state["waiting_location"] = False
+        state["state"] = "PLAYING_HOLE"
+
+        self.set_interactive_state(chat_id, state)
+        self.set_current_hole(chat_id, next_h)
+        return next_h
+
 
 
