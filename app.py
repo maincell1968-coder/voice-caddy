@@ -1345,57 +1345,104 @@ with st.sidebar:
 def execute_audio_round_pipeline(
     files_or_paths,
     whisper_engine="Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)",
-    whisper_model_local="base"
+    whisper_model_local="base",
+    additional_text=""
 ):
     if user_ai.provider == "openai" and not user_ai.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
         st.error("⚠️ Inserisci la tua OpenAI API Key personale nella barra laterale prima di avviare l'analisi.")
         return
 
     temp_paths = []
+    json_texts = []
     try:
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        status_text.info("⚙️ Preparazione e caricamento note vocali...")
+        status_text.info("⚙️ Preparazione e caricamento note vocali e dati di testo...")
         progress_bar.progress(15)
 
-        for item in files_or_paths:
+        for item in (files_or_paths or []):
             if hasattr(item, "read"):
-                fname = getattr(item, "name", "audio.ogg")
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{fname}")
-                temp_file.write(item.read())
-                temp_file.close()
-                temp_paths.append(temp_file.name)
+                fname = getattr(item, "name", "audio.ogg").lower()
+                if fname.endswith(".json"):
+                    try:
+                        raw_bytes = item.read()
+                        tg_data = json.loads(raw_bytes.decode("utf-8"))
+                        if isinstance(tg_data, dict) and "messages" in tg_data:
+                            user_texts = []
+                            for m in tg_data["messages"]:
+                                # Skip bot responses
+                                if m.get("from") == "Voice Caddy Pro" or "bot" in str(m.get("from_id", "")):
+                                    continue
+                                txt_obj = m.get("text", "")
+                                if isinstance(txt_obj, list):
+                                    t_parts = []
+                                    for p in txt_obj:
+                                        if isinstance(p, dict):
+                                            t_parts.append(p.get("text", ""))
+                                        elif isinstance(p, str):
+                                            t_parts.append(p)
+                                    m_txt = "".join(t_parts).strip()
+                                else:
+                                    m_txt = str(txt_obj).strip()
+                                d_str = m.get("date", "")
+                                if m_txt:
+                                    user_texts.append(f"[{d_str}] {m_txt}")
+                            if user_texts:
+                                json_texts.append("\n".join(user_texts))
+                    except Exception:
+                        pass
+                else:
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{fname}")
+                    temp_file.write(item.read())
+                    temp_file.close()
+                    temp_paths.append(temp_file.name)
             elif isinstance(item, (str, Path)) and os.path.exists(str(item)):
                 temp_paths.append(str(item))
 
-        if not temp_paths:
-            st.error("⚠️ Nessun file audio valido trovato per l'elaborazione.")
+        # Check if we have anything to process
+        has_audio = bool(temp_paths)
+        has_text = bool(json_texts or (additional_text and additional_text.strip()))
+
+        if not has_audio and not has_text:
+            st.error("⚠️ Nessun file audio o testo valido trovato per l'elaborazione.")
             return
 
-        status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
-        progress_bar.progress(40)
+        transcript_parts = []
 
-        if "Groq" in whisper_engine:
-            engine_mode = "groq"
-        elif "Cloud" in whisper_engine or "OpenAI" in whisper_engine:
-            engine_mode = "cloud"
-        else:
-            engine_mode = "local"
+        if has_audio:
+            status_text.info(f"🎙️ Trascrizione speech-to-text in corso ({whisper_engine})...")
+            progress_bar.progress(40)
 
-        audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
-        whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-        groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
+            if "Groq" in whisper_engine:
+                engine_mode = "groq"
+            elif "Cloud" in whisper_engine or "OpenAI" in whisper_engine:
+                engine_mode = "cloud"
+            else:
+                engine_mode = "local"
 
-        if len(temp_paths) == 1:
-            transcript_text, meta = audio_engine.transcribe(
-                temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
-            )
-        else:
-            transcript_text, meta = audio_engine.transcribe_multiple(
-                temp_paths, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
-            )
+            audio_engine = VoiceCaddyAudioEngine(model_size=whisper_model_local)
+            whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
+            groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
 
+            if len(temp_paths) == 1:
+                t_text, _ = audio_engine.transcribe(
+                    temp_paths[0], engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                )
+            else:
+                t_text, _ = audio_engine.transcribe_multiple(
+                    temp_paths, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                )
+            if t_text:
+                transcript_parts.append(t_text)
+
+        if json_texts:
+            transcript_parts.append("[Messaggi di Testo dalla Chat Telegram]:\n" + "\n\n".join(json_texts))
+
+        if additional_text and additional_text.strip():
+            transcript_parts.append("[Note e Messaggi Scritti dal Giocatore]:\n" + additional_text.strip())
+
+        transcript_text = "\n\n".join(transcript_parts)
         st.session_state.transcript = transcript_text
 
         ai_desc = f"Ollama ({user_ai.ollama_model})" if user_ai.provider == "ollama" else (
@@ -1768,10 +1815,18 @@ with nav_tab1:
             """, unsafe_allow_html=True)
 
             hero_uploaded_files = st.file_uploader(
-                "File audio (.m4a, .mp3, .wav, .opus, .ogg)",
-                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr"],
+                "File audio (.m4a, .mp3, .wav, .opus, .ogg) o esportazione Telegram (result.json)",
+                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr", "json"],
                 accept_multiple_files=True,
                 key="hero_uploader_files_box"
+            )
+
+            hero_text_notes = st.text_area(
+                "📝 Note o Messaggi di Testo della Gara (Opzionale):",
+                placeholder="Hai scritto alcune buche o colpi come messaggi di testo in chat? Incollali qui...",
+                help="Se durante il giro hai alternato vocali e messaggi di testo scritti, incolla qui il testo. Verrà unito in automatico alle note vocali per un'analisi completa a 18 buche!",
+                height=90,
+                key="hero_text_notes_area"
             )
 
             hero_whisper = st.radio(
@@ -1782,16 +1837,22 @@ with nav_tab1:
                 horizontal=False
             )
 
-            if st.button("🚀 TRASCRIVI ED ELABORA LA GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not hero_uploaded_files):
-                execute_audio_round_pipeline(hero_uploaded_files, whisper_engine=hero_whisper, whisper_model_local="base")
+            can_process = bool(hero_uploaded_files or (hero_text_notes and hero_text_notes.strip()))
 
-            with st.expander("💡 Come salvare i file vocali da Telegram sul PC", expanded=False):
+            if st.button("🚀 TRASCRIVI ED ELABORA LA GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not can_process):
+                execute_audio_round_pipeline(
+                    hero_uploaded_files or [],
+                    whisper_engine=hero_whisper,
+                    whisper_model_local="base",
+                    additional_text=hero_text_notes.strip() if hero_text_notes else ""
+                )
+
+            with st.expander("💡 Come gestire audio + messaggi scritti o esportazione Telegram", expanded=False):
                 st.markdown("""
                     <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
-                        <b>1.</b> Apri Telegram sul computer o su Telegram Web.<br>
-                        <b>2.</b> Nella chat col bot o nel gruppo, clicca con il <b>tasto destro</b> sul messaggio vocale.<br>
-                        <b>3.</b> Clicca su <b>«Salva con nome...»</b> o <b>«Scarica»</b> (salverà un file <code>.ogg</code> o <code>.mp3</code>).<br>
-                        <b>4.</b> Trascina il file scaricato nel box qui sopra e clicca <b>[ 🚀 TRASCRIVI ED ELABORA LA GARA ORA ]</b>!
+                        <b>• Se hai vocali e messaggi di testo:</b> trascina i file vocali nel riquadro sopra e fai <i>Copia & Incolla</i> dei messaggi di testo nel box «Note o Messaggi di Testo». Il sistema unirà tutto in automatico!<br>
+                        <b>• Se hai esportato la chat da Telegram Desktop:</b> puoi trascinare direttamente il file <code>result.json</code> nel riquadro: Voice Caddy estrarrà i tuoi messaggi e li elaborerà all'istante!<br>
+                        <b>• Per salvare i singoli vocali da Telegram:</b> tasto destro sul vocale ➔ «Salva con nome...» ➔ trascinalo qui.
                     </div>
                 """, unsafe_allow_html=True)
 
