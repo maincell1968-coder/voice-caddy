@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 from core.audio import VoiceCaddyAudioEngine
-from core.parser import parse_golf_audio_transcript, parse_quick_shot_update, parse_hole_closure_intent
+from core.parser import (
+    parse_golf_audio_transcript,
+    parse_quick_shot_update,
+    parse_hole_closure_intent,
+    parse_retroactive_correction,
+    parse_round_sequence_intent,
+    detect_hole_anomalies,
+    parse_audit_correction
+)
 from core.metrics import GolfMetricsCalculator
 from core.db import DatabaseManager
 from core.auth import AuthManager, AIUserConfig, UserRecord
@@ -41,7 +49,7 @@ class VoiceCaddyTelegramBot:
     5. Fallback trasparente su distanze piane se GPS o elevazione sono disattivati.
     """
 
-    def __init__(self, bot_token: Optional[str] = None):
+    def __init__(self, bot_token: Optional[str] = None, db: Optional[DatabaseManager] = None, auth_mgr: Optional[AuthManager] = None):
         self.config_mgr = TelegramConfigManager()
         self.bot_token = bot_token or self.config_mgr.get_token()
         if not self.bot_token:
@@ -49,8 +57,8 @@ class VoiceCaddyTelegramBot:
 
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}"
         self.audio_engine = VoiceCaddyAudioEngine(model_size="base")
-        self.db = DatabaseManager()
-        self.auth_mgr = AuthManager()
+        self.db = db or DatabaseManager()
+        self.auth_mgr = auth_mgr or AuthManager()
         self.course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
         self.session_mgr = LiveSessionManager()
         self.user_modes: Dict[str, str] = {}
@@ -116,6 +124,47 @@ class VoiceCaddyTelegramBot:
             "one_time_keyboard": True
         }
 
+    def get_round_sequence_keyboard(self) -> dict:
+        """Tastiera rapida per confermare la sequenza delle buche giocate (Prompt 1)."""
+        return {
+            "keyboard": [
+                [{"text": "⛳ 18 Buche (1-18)"}, {"text": "⛳ Prime 9 (1-9)"}],
+                [{"text": "⛳ Seconde 9 (10-18)"}, {"text": "🎯 Shotgun da Buca 7"}],
+                [{"text": "🟡 Tee Gialli (Uomo)"}, {"text": "🔴 Tee Rossi (Donna)"}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+
+    def get_audit_keyboard(self) -> dict:
+        """Tastiera rapida per confermare o correggere lo score buca per buca (Prompt 2)."""
+        return {
+            "keyboard": [
+                [{"text": "✅ Tutto Corretto, Analizza!"}],
+                [{"text": "💧 Aggiungi Penalità Acqua"}, {"text": "🚫 Aggiungi Fuori Limite"}],
+                [{"text": "🔄 Nuovo Giro"}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+
+    def _resolve_default_tee_for_gender(self, chat_id: int | str, gender: Optional[str] = None) -> Tuple[str, str]:
+        """
+        Determina il tee di default:
+        - Donna = tee rossi
+        - Uomo = tee gialli
+        """
+        user_rec, _, _, _ = self._resolve_context(chat_id)
+        resolved_gender = "Uomini"
+        if gender:
+            resolved_gender = "Donne" if any(w in gender.lower() for w in ["donna", "donne", "femm", "lady", "ladies"]) else "Uomini"
+        elif user_rec and getattr(user_rec, "gender", None):
+            g = str(user_rec.gender).lower()
+            resolved_gender = "Donne" if g in ["female", "donna", "donne"] else "Uomini"
+
+        default_tee = "rossi" if resolved_gender == "Donne" else "gialli"
+        return default_tee, resolved_gender
+
     def get_weather_request_keyboard(self) -> dict:
         """Restituisce la tastiera temporanea a 1 tocco per inviare la posizione all'avvio del round."""
         return {
@@ -130,24 +179,48 @@ class VoiceCaddyTelegramBot:
         """
         Avvia il round chiedendo prima il Tee di partenza (se non specificato) per
         applicare i parametri ufficiali WHS e calcolare il Playing HCP, poi
-        chiede la posizione per rilevare meteo e vento sul campo tramite Open-Meteo.
+        mostra meteo e vento sul campo e abilita il tracciamento GPS.
         """
         cid = str(chat_id)
         if mode:
             clean = "gara" if "gara" in str(mode).lower() else "training"
             self.user_modes[cid] = clean
             self.config_mgr.set_user_mode(cid, clean)
+        user_mode = self.get_user_mode(chat_id)
 
         # Se il tee è stato indicato esplicitamente (o appena scelto dal pulsante rapido)
         if tee_name:
             self.session_mgr.set_selected_tee(chat_id, tee_name)
             self.session_mgr.set_awaiting_tee_choice(chat_id, False)
-            whs_profile = self._resolve_handicap_profile(chat_id, tee_name=tee_name, force_refresh=True)
-
+            self.session_mgr.set_round_state(chat_id, "IDLE")
             self.pending_weather[cid] = True
+
+            whs_profile = self._resolve_handicap_profile(chat_id, tee_name=tee_name, force_refresh=True)
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+
+            # Rileva meteo e vento live (Open-Meteo)
+            c_lat = 43.5228
+            c_lon = 13.6060
+            if active_course.holes and active_course.holes[0].coordinates:
+                c_lat = active_course.holes[0].coordinates.tee_lat
+                c_lon = active_course.holes[0].coordinates.tee_lon
+            try:
+                w = weather_service.get_current_weather(c_lat, c_lon, timeout=2.0) or {}
+            except Exception:
+                w = {}
+            cond = w.get("weather_desc", "Sereno ☀️")
+            temp = w.get("temperature", 21.0)
+            w_speed = w.get("wind_speed", 8.0)
+            w_card = w.get("wind_cardinal", "NE")
+            w_arrow = w.get("wind_arrow", "↙️")
+            w_gusts = w.get("wind_gusts", w_speed)
+
             msg = (
                 f"{whs_profile.format_summary_card()}\n"
-                f"🌤️ <b>Tee {tee_name.title()} confermato!</b>\n"
+                f"📍 <b>Tee {tee_name.title()} confermato!</b>\n\n"
+                f"🌤️ <b>Meteo e Vento sul Percorso:</b>\n"
+                f"• Condizioni: {cond}, {temp}°C\n"
+                f"• Vento: {w_speed} km/h da {w_card} {w_arrow} (raffiche: {w_gusts} km/h)\n\n"
                 f"Tocca il pulsante qui sotto per rilevare il campo e calcolare vento e meteo sul percorso."
             )
             return self.send_message(
@@ -169,13 +242,13 @@ class VoiceCaddyTelegramBot:
         )
 
     def get_on_course_keyboard(self, mode: str = "training") -> dict:
-        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e toggle Modalità Gara/Training."""
-        mode_btn = "⚖️ Modalità Gara" if mode == "training" else "🎯 Modalità Training"
+        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e pulsanti separati Modalità Training e Gara."""
         return {
             "keyboard": [
                 [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
                 [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
-                [{"text": mode_btn}, {"text": "🎒 Profilo & Sacca"}],
+                [{"text": "🎭 Tono Caddie"}, {"text": "🎒 Profilo & Sacca"}],
+                [{"text": "🎯 Modalità Training"}, {"text": "⚖️ Modalità Gara"}],
                 [{"text": "🔄 Nuovo Giro"}]
             ],
             "resize_keyboard": True,
@@ -447,20 +520,39 @@ class VoiceCaddyTelegramBot:
 
         hcp_info_str = f"🎯 <b>HCP Buca:</b> {rec_strokes} colpi ricevuti (<b>Par Netto: {net_par}</b>)"
 
+        # Calcola distanze a Inizio e Fondo Green se disponibili
+        green_info = active_course.get_green_coordinates(current_hole)
+        d_front = None
+        d_back = None
+        if green_info:
+            from core.green_distance_service import haversine_distance_meters
+            d_front = int(round(haversine_distance_meters(lat, lon, green_info.front.lat, green_info.front.lon)))
+            d_back = int(round(haversine_distance_meters(lat, lon, green_info.back.lat, green_info.back.lon)))
+
         if user_mode == "gara":
-            # MODALITÀ GARA (R&A Regola 4.3): Solo distanze regolamentari, divieto assoluto consiglio bastone
+            # MODALITÀ GARA (R&A Regola 4.3): Solo distanze regolamentari (Inizio, Bandiera, Fondo)
+            green_ref = ""
+            if d_front is not None and d_back is not None:
+                green_ref = f"🟢 <b>Green:</b> Inizio {d_front}m | Pin <b>{raw_dist}m</b> | Fondo {d_back}m\n\n"
+
             reply_msg = (
-                f"⛳ <b>Buca {current_hole}</b> (Par {par_val} • SI {si_val}) — <b>Colpo {current_shot}</b>\n"
+                f"⛳ <b>Buca {current_hole}</b> — DISTANZA AL GREEN (Par {par_val} • SI {si_val}) — <b>Colpo {current_shot}</b>\n"
                 f"{hcp_info_str}\n\n"
-                f"📏 <b>Distanza alla bandiera:</b> <b>{raw_dist}m</b>\n\n"
-                f"⚖️ <i>Modalità Gara attiva: per la <b>Regola 4.3</b> delle Regole del Golf non posso suggerire il bastone.</i>\n"
+                f"📏 <b>Distanza alla bandiera:</b> <b>{raw_dist}m</b>\n"
+                f"{green_ref}"
+                f"⚖️ <i>Modalità Gara attiva: per la <b>Regola 4.3</b> sono permesse solo le distanze regolamentari.</i>\n"
             )
         else:
-            # MODALITÀ TRAINING: Distanza reale, dislivello, Plays Like e raccomandazione bastone
+            # MODALITÀ TRAINING: Distanza reale, dislivello, green e raccomandazione bastone
+            green_ref = ""
+            if d_front is not None and d_back is not None:
+                green_ref = f"🟢 <b>Green:</b> Inizio {d_front}m | Pin {raw_dist}m | Fondo {d_back}m\n"
+
             reply_msg = (
-                f"⛳ <b>Buca {current_hole}</b> (Par {par_val} • SI {si_val}) — <b>Colpo {current_shot}</b>\n"
+                f"⛳ <b>Buca {current_hole}</b> — DISTANZA AL GREEN (Par {par_val} • SI {si_val}) — <b>Colpo {current_shot}</b>\n"
                 f"{hcp_info_str}\n\n"
                 f"📏 <b>Distanza reale:</b> {raw_dist}m | ⛰️ <b>Dislivello:</b> {elev_str}\n"
+                f"{green_ref}"
                 f"🎯 <b>Plays Like:</b> ~{pl_dist}m (Consigliato: <b>{rec_club_str}</b>)\n"
             )
 
@@ -468,9 +560,18 @@ class VoiceCaddyTelegramBot:
             prev_shot = max(1, current_shot - 1)
             reply_msg += f"\n🚀 <i>Distanza percorsa dal Colpo {prev_shot}: <b>{int(round(distance_covered))}m</b></i>\n"
 
+        # Rilevamento di prossimità a un altro tee (se il giocatore è disallineato)
+        from core.green_distance_service import haversine_distance_meters
+        for h in active_course.holes:
+            if h.hole_number != current_hole and h.coordinates:
+                d_tee = haversine_distance_meters(lat, lon, h.coordinates.tee_lat, h.coordinates.tee_lon)
+                if d_tee <= 50:
+                    reply_msg += f"\n💡 <i>Ti trovi vicino al Tee della <b>Buca {h.hole_number}</b>? Usa <code>/buca {h.hole_number}</code> per allinearti.</i>\n"
+                    break
+
         reply_msg += (
             f"\n💡 <i>Dopo il colpo, detta/scrivi il bastone (es. 'Ferro 7 in green') "
-            f"oppure usa <code>/prossima</code> per passare alla buca successiva.</i>"
+            f"oppure chiudi la buca (es. '2 putt'). Per cambiare buca usa <code>/buca [N]</code>.</i>"
         )
 
         return self.send_message(chat_id, reply_msg)
@@ -593,6 +694,223 @@ class VoiceCaddyTelegramBot:
         return reply_msg
 
     # ---------------------------------------------------------
+    # Round Audit Gate & Interactive Verification (Prompt 1 & 2)
+    # ---------------------------------------------------------
+    def initiate_round_audit_flow(self, chat_id: int | str, transcript_or_text: str):
+        """
+        Fase 2 & 3: Elabora la trascrizione del round, associa le buche secondo la sequenza confermata
+        (Prompt 1), rileva automaticamente le anomalie (Prompt 2) e presenta il riepilogo
+        interattivo prima dell'analisi definitiva e del salvataggio.
+        """
+        user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
+        player_name = f"{user_rec.first_name} {user_rec.last_name}"
+
+        # Verifica se la sequenza o il tee sono specificati nel testo stesso
+        seq_intent = parse_round_sequence_intent(transcript_or_text, active_course.holes_count)
+        if seq_intent["is_sequence_intent"]:
+            self.session_mgr.set_round_sequence(chat_id, seq_intent["sequence"])
+            if seq_intent["tee"]:
+                self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
+
+        confirmed_sequence = self.session_mgr.get_round_sequence(chat_id)
+        selected_tee = self.session_mgr.get_selected_tee(chat_id)
+
+        self.send_message(
+            chat_id,
+            f"🧠 <i>Trascrizione completata:</i>\n«<i>{transcript_or_text[:180]}...</i>»\n\n"
+            f"⛳ <i>Ricostruzione sequenza buche ({len(confirmed_sequence)} buche, Tee {selected_tee.title()}) in corso...</i>"
+        )
+
+        try:
+            raw_data = parse_golf_audio_transcript(
+                transcript_text=transcript_or_text,
+                user_profile=user_profile,
+                course=active_course,
+                ai_config=ai_cfg
+            )
+
+            raw_dict = raw_data.model_dump()
+            holes_dict = {h["hole_number"]: h for h in raw_dict.get("holes", [])}
+
+            ordered_holes = []
+            for h_num in confirmed_sequence:
+                if h_num in holes_dict:
+                    h_obj = holes_dict[h_num]
+                else:
+                    course_hole = next((ch for ch in active_course.holes if ch.hole_number == h_num), None)
+                    par_val = course_hole.par if course_hole else 4
+                    h_obj = {
+                        "hole_number": h_num,
+                        "par": par_val,
+                        "score": par_val,
+                        "fairway_hit": None,
+                        "gir": False,
+                        "putts": 2,
+                        "penalties": 0,
+                        "shots": [],
+                        "target_landing_analysis": None,
+                        "root_cause_error": None
+                    }
+
+                # Anomaly detection (Prompt 2)
+                h_obj["anomalies"] = detect_hole_anomalies(h_obj)
+                ordered_holes.append(h_obj)
+
+            raw_dict["holes"] = ordered_holes
+            raw_dict["round_info"]["holes_played"] = len(ordered_holes)
+
+            # Salva nella sessione provvisoria (Gate di Audit)
+            self.session_mgr.set_pending_round(chat_id, raw_dict, state="AWAITING_VERIFICATION")
+
+            # Messaggio con tono da maestro PGA e marcatore
+            msg = (
+                "🏌️‍♂️ <b>CONTROLLO SCORE & VERIFICA COLPI (MAESTRO PGA)</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "Prima di procedere con l'analisi definitiva, facciamo un controllo da maestro e da marcatore.\n\n"
+                "Durante una gara o un giro impegnativo, la tensione o la stanchezza possono far dimenticare "
+                "di comunicare un colpo, un ferro usato o una penalità. È assolutamente normale.\n\n"
+                f"📍 <b>Tee:</b> {selected_tee.title()} | <b>Buche giocate:</b> {len(ordered_holes)}\n\n"
+            )
+
+            for h in ordered_holes:
+                h_num = h.get("hole_number")
+                par = h.get("par", 4)
+                gross = h.get("score") or len(h.get("shots", []))
+                putts = h.get("putts", 0)
+                pen = h.get("penalties", 0)
+                shots = h.get("shots", [])
+                anomalies = h.get("anomalies", [])
+
+                msg += f"⛳ <b>Buca {h_num}</b> (Par {par}) ➔ <b>{gross} colpi</b> ({putts} putt, {pen} pen.)\n"
+                for s in shots:
+                    s_idx = s.get("shot_index", 1)
+                    cb = s.get("club") or "Bastone N/D"
+                    lie = s.get("lie", "fairway")
+                    res = s.get("result", "")
+                    msg += f"  • Colpo {s_idx}: {cb} ({lie} ➔ {res})\n"
+
+                for anom in anomalies:
+                    msg += f"  {anom}\n"
+                msg += "\n"
+
+            msg += (
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "✏️ <b>Se manca qualcosa, indicamelo così:</b>\n"
+                "• <i>«Buca 4: manca un colpo con ferro 7 verso il green»</i>\n"
+                "• <i>«Buca 8: aggiungi una penalità per palla in acqua»</i>\n"
+                "• <i>«Buca 12: ho fatto 3 putt, non 2»</i>\n"
+                "• <i>«Buca 15: il secondo colpo era con ibrido, non ferro 5»</i>\n\n"
+                "✅ <i>Se invece è tutto a posto, tocca <b>[✅ Tutto Corretto, Analizza!]</b> o scrivi «Confermo» per lanciare l'analisi completa!</i>"
+            )
+
+            return self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+
+        except Exception as e:
+            logging.error(f"Errore durante l'avvio dell'audit: {e}", exc_info=True)
+            return self.send_message(chat_id, f"❌ Errore durante l'elaborazione del giro: {str(e)}")
+
+    def handle_audit_correction(self, chat_id: int | str, text: str) -> bool:
+        """
+        Gestisce le correzioni inviate dall'utente durante lo stato AWAITING_VERIFICATION.
+        Riconosce colpi mancanti, penalità, rettifiche bastone o putt.
+        """
+        corr = parse_audit_correction(text)
+        if corr.get("is_confirmation") or text.strip() == "✅ Tutto Corretto, Analizza!":
+            self.complete_pending_round_analysis(chat_id)
+            return True
+
+        if not corr.get("is_correction"):
+            return False
+
+        hole_num = corr.get("hole_number")
+        if not hole_num:
+            self.send_message(
+                chat_id,
+                "⚠️ <b>Specifica il numero della buca da correggere.</b>\n"
+                "Esempio: <i>«Buca 4: manca un colpo con ferro 7»</i> o <i>«Buca 8: aggiungi una penalità per acqua»</i>."
+            )
+            return True
+
+        action = corr.get("action")
+        details = corr.get("details", {})
+
+        if action == "add_penalty":
+            p_type = details.get("penalty_type", "Penalità")
+            p_strokes = details.get("penalty_strokes", 1)
+            self.session_mgr.add_pending_hole_penalty(chat_id, hole_num, p_type, p_strokes)
+            msg = (
+                f"💧 <b>Buca {hole_num}:</b> Aggiunta penalità di {p_strokes} colpo/i ({p_type}).\n"
+                f"Il totale della buca è stato ricalcolato.\n\n"
+                f"<i>Confermi o ci sono altre modifiche? Tocca [✅ Tutto Corretto, Analizza!] se è tutto ok.</i>"
+            )
+            self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+            return True
+
+        elif action == "update_putts":
+            putts_val = details.get("putts", 2)
+            self.session_mgr.update_pending_hole_putts(chat_id, hole_num, putts_val)
+            msg = (
+                f"⛳ <b>Buca {hole_num}:</b> Conteggio putt aggiornato a {putts_val}.\n\n"
+                f"<i>Confermi o ci sono altre modifiche? Tocca [✅ Tutto Corretto, Analizza!] se è tutto ok.</i>"
+            )
+            self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+            return True
+
+        elif action == "add_or_update_shot":
+            self.session_mgr.update_pending_hole_shot(chat_id, hole_num, details)
+            cb = details.get("club", "Bastone")
+            msg = (
+                f"🏌️‍♂️ <b>Buca {hole_num}:</b> Registrato colpo ({cb}).\n"
+                f"Il totale della buca è stato aggiornato.\n\n"
+                f"<i>Ci sono altri colpi da inserire o confermi? Tocca [✅ Tutto Corretto, Analizza!] se è tutto ok.</i>"
+            )
+            self.send_message(chat_id, msg, reply_markup=self.get_audit_keyboard())
+            return True
+
+        return False
+
+    def complete_pending_round_analysis(self, chat_id: int | str):
+        """
+        Fase 4: Convalida finale dell'utente ricevuta. Esegue il calcolo metriche WHS,
+        salva la partita nel database protetto (SafeVault) e invia il giudizio finale del Maestro PGA.
+        """
+        pending = self.session_mgr.get_pending_round(chat_id)
+        if not pending:
+            return self.send_message(chat_id, "ℹ️ Nessun giro in attesa di conferma. Avvia un nuovo giro con <code>/nuovo_giro</code>.")
+
+        user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+        player_name = f"{user_rec.first_name} {user_rec.last_name}"
+
+        self.send_message(
+            chat_id,
+            "🏆 <i>Tutto confermato! Generazione dell'analisi tecnica definitiva e calcolo WHS in corso...</i>"
+        )
+
+        try:
+            from core.schemas import GolfRoundData
+            # Rimuove campo provvisorio "anomalies" prima di validare con lo schema Pydantic
+            for h in pending.get("holes", []):
+                h.pop("anomalies", None)
+
+            raw_data = GolfRoundData.model_validate(pending)
+            validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
+
+            round_id = self.db.save_round(
+                round_data=validated_data,
+                user_id=user_rec.user_id,
+                group_name=user_rec.group
+            )
+
+            self.session_mgr.clear_pending_round(chat_id)
+
+            reply_msg = self._format_round_summary(validated_data, round_id, player_name, active_course.name)
+            return self.send_message(chat_id, reply_msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+
+        except Exception as e:
+            logging.error(f"Errore durante la finalizzazione dell'analisi: {e}", exc_info=True)
+            return self.send_message(chat_id, f"❌ Errore durante la finalizzazione: {str(e)}")
+
+    # ---------------------------------------------------------
     # Processing Voice & Text Messages
     # ---------------------------------------------------------
     def process_voice_message(self, chat_id: int | str, file_id: str):
@@ -625,90 +943,11 @@ class VoiceCaddyTelegramBot:
                 api_key=whisper_key,
                 groq_api_key=groq_key
             )
+            if not transcript or not transcript.strip():
+                return self.send_message(chat_id, "🎙️ <i>Audio non riconosciuto o vuoto. Riprova registrando la tua nota vocale.</i>")
 
-            # Controllo se è una richiesta vocale di distanza al green (Rapida o Dettagliata)
-            dist_intent = parse_green_distance_intent(transcript)
-            if dist_intent:
-                self.send_message(chat_id, f"🎙️ <i>Voce riconosciuta: «{transcript}»</i>")
-                return self.handle_green_distance_request(chat_id, dist_intent)
-
-            # Controllo se è un update rapido di un singolo colpo durante la buca
-            quick = parse_quick_shot_update(transcript)
-            import re
-            score_match = re.search(r"\b(?:fatto|score|chiuso(?:\s+in)?|chiusa(?:\s+in)?|totale)\s*(\d+)\b", transcript.lower())
-            if score_match and not quick["is_quick_shot"]:
-                gross_score = int(score_match.group(1))
-                session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
-                h_num = session.get("current_hole", 1)
-                whs_profile = self._resolve_handicap_profile(chat_id)
-                score_res = whs_profile.calculate_hole_score(h_num, gross_score)
-
-                next_h = self.session_mgr.next_hole(chat_id)
-                n_strokes = whs_profile.get_received_strokes(next_h)
-                n_net_par = whs_profile.get_net_par(next_h)
-
-                msg = (
-                    f"🎙️ <i>Voce riconosciuta: «{transcript}»</i>\n\n"
-                    f"⛳ <b>Buca {h_num} Conclusa!</b> (Par {score_res['par']} • SI {score_res['stroke_index']})\n\n"
-                    f"• <b>Colpi Lordi:</b> {gross_score}\n"
-                    f"• <b>Colpi Ricevuti:</b> {score_res['received_strokes']} ➔ <b>Par Netto: {score_res['net_par']}</b>\n"
-                    f"• <b>Colpi Netti:</b> {score_res['net_strokes']}\n"
-                    f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt</b> ({score_res['score_label']})\n\n"
-                    f"⏩ <i>Avanzato a <b>Buca {next_h}</b> (Colpi ricevuti: {n_strokes} • Par Netto: {n_net_par}). Buon tiro!</i>"
-                )
-                self.send_message(chat_id, msg)
-                return
-
-            if quick["is_quick_shot"]:
-                session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
-                h_num = session.get("current_hole", 1)
-                s_idx = quick["shot_index"] or session.get("current_shot_index", 1)
-                club = quick["club"]
-                lie = quick["lie"]
-
-                self.session_mgr.record_live_shot(
-                    chat_id=chat_id,
-                    hole_number=h_num,
-                    shot_index=s_idx,
-                    club=club,
-                    lie=lie,
-                    notes=transcript
-                )
-                next_shot = self.session_mgr.advance_shot(chat_id)
-
-                self.send_message(
-                    chat_id,
-                    f"🏌️‍♂️ <b>Buca {h_num} — Colpo {s_idx} Registrato!</b>\n"
-                    f"• <b>Bastone:</b> {club or 'Non specificato'}\n"
-                    f"• <b>Lie:</b> {lie.title()}\n"
-                    f"• <i>Trascrizione:</i> «{transcript}»\n\n"
-                    f"📍 <i>Raggiungi la palla e invia la posizione GPS per preparare il <b>Colpo {next_shot}</b>!</i>"
-                )
-                return
-
-            # Altrimenti è un resoconto completo della partita
-            self.send_message(
-                chat_id,
-                f"🧠 <i>Trascrizione completata:</i>\n«<i>{transcript[:180]}...</i>»\n\n<i>Analisi giro completo con l'IA in corso...</i>"
-            )
-
-            raw_data = parse_golf_audio_transcript(
-                transcript_text=transcript,
-                user_profile=user_profile,
-                course=active_course,
-                ai_config=ai_cfg
-            )
-
-            validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
-
-            round_id = self.db.save_round(
-                round_data=validated_data,
-                user_id=user_rec.user_id,
-                group_name=user_rec.group
-            )
-
-            reply_msg = self._format_round_summary(validated_data, round_id, player_name, active_course.name)
-            self.send_message(chat_id, reply_msg)
+            self.send_message(chat_id, f"🎙️ <i>Voce riconosciuta: «{transcript}»</i>")
+            return self.process_text_message(chat_id, transcript)
 
         except Exception as e:
             logging.error(f"Errore durante l'elaborazione vocale: {e}", exc_info=True)
@@ -738,20 +977,63 @@ class VoiceCaddyTelegramBot:
                 new_mode = self.get_user_mode(chat_id)
             return self.start_round_flow(chat_id, new_mode)
 
-        if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"]:
+        if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎭 Tono Caddie", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"] or any(t in clean_lower for t in ["tono caddie", "tono professionale", "tono arrabbiato", "tono spensierato", "tono psicologo", "torna in campo"]):
             return self.handle_command(chat_id, clean)
 
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         player_name = f"{user_rec.first_name} {user_rec.last_name}"
         user_mode = self.get_user_mode(chat_id)
+        from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
+        personality_engine = CaddyPersonalityEngine.get_instance()
+        raw_tone = getattr(user_profile, "caddy_tone", None) or CaddyTone.PROFESSIONALE
+        if isinstance(raw_tone, CaddyTone):
+            caddy_tone = raw_tone
+        else:
+            try:
+                caddy_tone = CaddyTone(str(raw_tone).lower().strip())
+            except Exception:
+                caddy_tone = CaddyTone.PROFESSIONALE
 
-        # Se in modalità gara e l'utente fa domande esplicite sul bastone da tirare
-        if user_mode == "gara" and any(w in clean_lower for w in ["bastone", "mazza", "ferro", "legno", "ibrido", "che tiro", "cosa tiro", "consiglio"]):
+        # 0. Se siamo nello stato di verifica dell'audit (Prompt 2), gestisci correzioni o conferma
+        if self.session_mgr.get_round_state(chat_id) == "AWAITING_VERIFICATION":
+            if self.handle_audit_correction(chat_id, clean):
+                return
+
+        # 0b. Controllo se il messaggio specifica la sequenza di buche giocate (Prompt 1)
+        seq_intent = parse_round_sequence_intent(clean, active_course.holes_count)
+        if seq_intent["is_sequence_intent"] and (self.session_mgr.get_round_state(chat_id) in ["AWAITING_SETUP", "IDLE"] or len(clean.split()) <= 8):
+            self.session_mgr.set_round_sequence(chat_id, seq_intent["sequence"])
+            if seq_intent["tee"]:
+                self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
+            self.session_mgr.set_round_state(chat_id, "IDLE")
+            whs_p = self._resolve_handicap_profile(chat_id, tee_name=seq_intent["tee"])
+            t_name = self.session_mgr.get_selected_tee(chat_id)
+            msg = (
+                f"🏌️‍♂️ <b>Sequenza Buche Confermata!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"• <b>Percorso:</b> {seq_intent['description']}\n"
+                f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
+                f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
+                f"🎙️ <i>Invia ora le tue note vocali o il testo con i colpi giocati buca per buca!</i>"
+            )
+            return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+
+        # Regola 4.3 / 10.2: Controllo richiesta consiglio bastone in Modalità Gara
+        advice_triggers = [
+            "cosa tiro", "che tiro", "che bastone", "quale bastone", "consigliami",
+            "dammi un consiglio", "che mazza", "cosa gioco", "che ferro tiro",
+            "quale ferro", "consiglio sul bastone", "cosa dovrei tirare", "bastone consigliato"
+        ]
+        is_asking_advice = any(q in clean_lower for q in advice_triggers) or (
+            ("bastone" in clean_lower or "consiglio" in clean_lower or "ferro" in clean_lower) and "?" in clean
+        )
+        is_reporting_shot = any(w in clean_lower for w in ["ho tirato", "tirato", "giocato", "colpo", "putt", "chiuso", "preso"])
+        if user_mode == "gara" and is_asking_advice and not is_reporting_shot:
             return self.send_message(
                 chat_id,
                 "⚖️ <b>Modalità Gara attiva:</b>\n"
-                "In conformità alla <b>Regola 4.3 (R&A / USGA)</b>, è severamente vietato "
-                "ricevere consigli sul bastone o sulla strategia durante una gara ufficiale.\n\n"
+                "In conformità alla <b>Regola 4.3 e 10.2 (R&A / USGA)</b>, durante una gara ufficiale "
+                "è severamente vietato ricevere consigli sul bastone o sulla strategia di gioco.\n\n"
                 "📍 <i>Tocca <b>[📍 Calcola Distanza & Plays Like]</b> per ottenere la sola distanza regolamentare in metri.</i>"
             )
 
@@ -771,17 +1053,27 @@ class VoiceCaddyTelegramBot:
         # Controllo se è un update rapido di un singolo colpo durante la buca
         quick = parse_quick_shot_update(text)
 
-        # 1. Trigger prioritario di CHIUSURA BUCA sui PUTT (es. "buca finita, 5 colpi e 2 putt", "chiuso con 2 putt per un totale di 4", "fatto 6, 3 putt")
+        # 1. Trigger prioritario di CHIUSURA BUCA sui PUTT (es. "buca finita, 5 colpi e 2 putt", "chiuso con 2 putt", "fatto 6, 3 putt")
         closure = parse_hole_closure_intent(clean)
         if closure["is_closure"]:
             if not closure["valid"]:
-                return self.send_message(chat_id, f"⚠️ <b>Errore nei colpi comunicati:</b>\n{closure['error']}\n\n<i>Riprova comunicando ad es. '5 colpi e 2 putt'</i>")
+                return self.send_message(chat_id, f"⚠️ <b>Errore nei colpi comunicati:</b>\n{closure['error']}\n\n<i>Riprova comunicando ad es. '5 colpi e 2 putt' o '2 putt'</i>")
 
-            gross_score = closure["gross_strokes"]
-            putts = closure["putts"]
+            putts = closure["putts"] if closure["putts"] is not None else 2
             session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
             h_num = session.get("current_hole", 1)
             whs_profile = self._resolve_handicap_profile(chat_id)
+            h_par = whs_profile.hole_pars.get(h_num, 4)
+
+            gross_score = closure["gross_strokes"]
+            if gross_score is None:
+                # Calcola dai colpi registrati sulla buca o stima in base ai putt
+                hole_shots = self.session_mgr.get_hole_shots(chat_id, h_num)
+                if hole_shots:
+                    gross_score = len(hole_shots) + putts
+                else:
+                    gross_score = max(h_par, putts + 1)
+
             score_res = whs_profile.calculate_hole_score(h_num, gross_score)
 
             card = self.session_mgr.record_completed_hole(
@@ -795,7 +1087,8 @@ class VoiceCaddyTelegramBot:
                 net_par=score_res["net_par"],
                 stableford_points=score_res["stableford_points"],
                 net_strokes=score_res["net_strokes"],
-                score_label=score_res["score_label"]
+                score_label=score_res["score_label"],
+                advance_hole=True
             )
 
             next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
@@ -806,21 +1099,52 @@ class VoiceCaddyTelegramBot:
 
             diff_par = card["gross_to_par"]
             diff_str = f"+{diff_par}" if diff_par > 0 else ("Par" if diff_par == 0 else str(diff_par))
-            hole_chips = " | ".join([f"B{h['hole_number']}: {h['stableford_points']}pt" for h in card["completed_holes"]])
+            hole_chips = " | ".join([f"B{h['hole_number']}: {h['gross_strokes']}c ({h['stableford_points']}pt)" for h in card["completed_holes"]])
+
+            # Battuta Caddie in base al risultato
+            diff_hole = gross_score - score_res["par"]
+            if diff_hole <= -2:
+                sit = "BUCA_EAGLE"
+            elif diff_hole == -1:
+                sit = "BUCA_BIRDIE"
+            elif diff_hole == 0:
+                sit = "BUCA_PAR"
+            elif diff_hole == 1:
+                sit = "BUCA_BOGEY"
+            elif diff_hole == 2:
+                sit = "BUCA_DOPPIO"
+            else:
+                sit = "BUCA_DISASTRO"
+
+            caddy_quote = personality_engine.get_phrase(
+                sit,
+                tone=caddy_tone,
+                session_id=str(chat_id),
+                buca=h_num,
+                par=score_res["par"],
+                score=gross_score,
+                buca_next=next_h
+            )
+
+            # Calcolo Stableford Lordo (Regola 21.1)
+            from core.whs_rules import calculate_stableford_points_gross
+            gross_stableford = calculate_stableford_points_gross(gross_score, score_res["par"])
+            tot_gross_stb = sum(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4)) for h in card["completed_holes"])
 
             msg = (
                 f"⛳ <b>BUCA {h_num} COMPLETATA</b> (Par {score_res['par']} • HCP Buca {score_res['stroke_index']})\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"• <b>Score Lordo:</b> {gross_score} colpi <i>({gross_score - putts} colpi + {putts} putt)</i>\n"
+                f"• <b>Score Lordo:</b> {gross_score} colpi <i>({gross_score - putts} colpi + {putts} putt)</i> ➔ <b>{gross_stableford} pt Lordi</b>\n"
                 f"• <b>Colpi Ricevuti:</b> {score_res['received_strokes']} ➔ <b>Par Netto: {score_res['net_par']}</b>\n"
                 f"• <b>Score Netto:</b> {score_res['net_strokes']} colpi <i>({score_res['score_label']})</i>\n"
-                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt</b>\n\n"
+                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt Netti</b> | {gross_stableford} pt Lordi\n\n"
+                f"💬 <i>Caddie ({caddy_tone.short_label}):</i> «{caddy_quote}»\n\n"
                 f"📊 <b>RIEPILOGO PROGRESSIVO ({card['holes_played']}/{whs_profile.holes_count} Buche)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} Punti</b>\n"
-                f"• 🏌️ <b>Colpi Lordi Totali:</b> {card['total_gross']} ({diff_str})\n"
+                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} pt Netti</b> | {tot_gross_stb} pt Lordi\n"
+                f"• 🏌️ <b>Colpi Totali:</b> {card['total_gross']} Lordi ({diff_str}) | {card['total_net']} Netti\n"
                 f"• ⛳ <b>Totale Putt:</b> {card['total_putts']} (Media {card['putts_avg']} / buca)\n"
-                f"• 📝 <b>Dettaglio:</b> [ {hole_chips} ]\n\n"
+                f"• 📝 <b>Scorecard:</b> [ {hole_chips} ]\n\n"
                 f"⏩ <i>Sei alla <b>Buca {next_h}</b> (Par {n_par} • SI {n_si} • Ricevi {n_strokes} colpi ➔ Par Netto: {n_net_par}). Buon tiro!</i>"
             )
             return self.send_message(chat_id, msg)
@@ -846,7 +1170,8 @@ class VoiceCaddyTelegramBot:
                 net_par=score_res["net_par"],
                 stableford_points=score_res["stableford_points"],
                 net_strokes=score_res["net_strokes"],
-                score_label=score_res["score_label"]
+                score_label=score_res["score_label"],
+                advance_hole=True
             )
 
             next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
@@ -855,24 +1180,53 @@ class VoiceCaddyTelegramBot:
             n_par = whs_profile.hole_pars.get(next_h, 4)
             n_si = whs_profile.hole_stroke_indices.get(next_h, next_h)
 
-            hole_chips = " | ".join([f"B{h['hole_number']}: {h['stableford_points']}pt" for h in card["completed_holes"]])
+            diff_hole = gross_score - score_res["par"]
+            if diff_hole <= -2:
+                sit = "BUCA_EAGLE"
+            elif diff_hole == -1:
+                sit = "BUCA_BIRDIE"
+            elif diff_hole == 0:
+                sit = "BUCA_PAR"
+            elif diff_hole == 1:
+                sit = "BUCA_BOGEY"
+            elif diff_hole == 2:
+                sit = "BUCA_DOPPIO"
+            else:
+                sit = "BUCA_DISASTRO"
+
+            caddy_quote = personality_engine.get_phrase(
+                sit,
+                tone=caddy_tone,
+                session_id=str(chat_id),
+                buca=h_num,
+                par=score_res["par"],
+                score=gross_score,
+                buca_next=next_h
+            )
+
+            from core.whs_rules import calculate_stableford_points_gross
+            gross_stableford = calculate_stableford_points_gross(gross_score, score_res["par"])
+            tot_gross_stb = sum(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4)) for h in card["completed_holes"])
+            hole_chips = " | ".join([f"B{h['hole_number']}: {h['gross_strokes']}c ({h['stableford_points']}pt)" for h in card["completed_holes"]])
 
             msg = (
                 f"⛳ <b>BUCA {h_num} COMPLETATA</b> (Par {score_res['par']} • HCP Buca {score_res['stroke_index']})\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"• <b>Colpi Lordi:</b> {gross_score}\n"
+                f"• <b>Colpi Lordi:</b> {gross_score} ➔ <b>{gross_stableford} pt Lordi</b>\n"
                 f"• <b>Colpi Ricevuti:</b> {score_res['received_strokes']} ➔ <b>Par Netto: {score_res['net_par']}</b>\n"
                 f"• <b>Score Netto:</b> {score_res['net_strokes']} colpi <i>({score_res['score_label']})</i>\n"
-                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt</b>\n\n"
+                f"• 🏆 <b>Punti Stableford:</b> <b>{score_res['stableford_points']} pt Netti</b> | {gross_stableford} pt Lordi\n\n"
+                f"💬 <i>Caddie ({caddy_tone.short_label}):</i> «{caddy_quote}»\n\n"
                 f"📊 <b>RIEPILOGO PROGRESSIVO ({card['holes_played']}/{whs_profile.holes_count} Buche)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} Punti</b>\n"
-                f"• 🏌️ <b>Colpi Lordi Totali:</b> {card['total_gross']}\n"
-                f"• 📝 <b>Dettaglio:</b> [ {hole_chips} ]\n\n"
+                f"• 🏆 <b>Totale Stableford:</b> <b>{card['total_stableford']} pt Netti</b> | {tot_gross_stb} pt Lordi\n"
+                f"• 🏌️ <b>Colpi Totali:</b> {card['total_gross']} Lordi | {card['total_net']} Netti\n"
+                f"• 📝 <b>Scorecard:</b> [ {hole_chips} ]\n\n"
                 f"⏩ <i>Sei alla <b>Buca {next_h}</b> (Par {n_par} • SI {n_si} • Ricevi {n_strokes} colpi ➔ Par Netto: {n_net_par}). Buon tiro!</i>"
             )
             return self.send_message(chat_id, msg)
 
+        # 3. Registrazione singolo colpo giocato (Quick shot update)
         if quick["is_quick_shot"]:
             session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
             h_num = session.get("current_hole", 1)
@@ -890,10 +1244,29 @@ class VoiceCaddyTelegramBot:
             )
             next_shot = self.session_mgr.advance_shot(chat_id)
 
+            if lie in ["bunker", "sabbia"]:
+                sit = "BUNKER"
+            elif lie in ["acqua", "ostacolo"]:
+                sit = "ACQUA"
+            elif lie in ["rough", "alberi"]:
+                sit = "ROUGH"
+            else:
+                sit = "FERRO_OK"
+
+            caddy_quote = personality_engine.get_phrase(
+                sit,
+                tone=caddy_tone,
+                session_id=str(chat_id),
+                ferro=club or "Bastone",
+                buca=h_num,
+                distanza=str(quick.get("manual_distance") or "150")
+            )
+
             msg = (
                 f"🏌️‍♂️ <b>Buca {h_num} — Colpo {s_idx} Registrato!</b>\n"
                 f"• <b>Bastone:</b> {club or 'Non specificato'}\n"
                 f"• <b>Lie:</b> {lie.title()}\n\n"
+                f"💬 <i>Caddie ({caddy_tone.short_label}):</i> «{caddy_quote}»\n\n"
             )
             if quick["manual_distance"]:
                 self.send_message(chat_id, msg)
@@ -903,34 +1276,60 @@ class VoiceCaddyTelegramBot:
                 self.send_message(chat_id, msg)
             return
 
-        # Altrimenti è un resoconto completo della partita
-        self.send_message(
-            chat_id,
-            f"📝 <i>Resoconto testuale ricevuto per <b>{player_name}</b> su <b>{active_course.name}</b>.\nAnalisi colpi con l'IA in corso...</i>"
+        # 4. Controllo se è un resoconto completo della partita o richiesta di termine giro -> Avvia Audit
+        finish_keywords = [
+            "fine giro", "termina giro", "fine partita", "termina partita",
+            "fine gara", "termina gara", "chiudi giro", "chiudi round",
+            "resoconto finale", "audit", "verifica score", "terminato il giro"
+        ]
+        is_finish_request = any(kw in clean_lower for kw in finish_keywords)
+        hole_mentions = len(re.findall(r"\bbuca\s*\d+\b", clean_lower))
+        is_multi_hole_transcript = hole_mentions >= 3
+
+        if is_finish_request or is_multi_hole_transcript:
+            return self.initiate_round_audit_flow(chat_id, text)
+
+        # 5. Se siamo in gioco e non è una chiusura/colpo: Risposta conversazionale del Caddie!
+        session = self.session_mgr.get_or_create_session(chat_id, user_rec.user_id, active_course.course_id)
+        h_num = session.get("current_hole", 1)
+        s_idx = session.get("current_shot_index", 1)
+
+        # Prova a consultare l'LLM con la personalità del Caddie
+        caddy_response = personality_engine.chat_with_caddy(
+            message=clean,
+            tone=caddy_tone,
+            history=[],
+            user_profile=user_profile,
+            ai_config=ai_cfg,
+            active_course=active_course,
+            current_hole=h_num
         )
 
-        try:
-            raw_data = parse_golf_audio_transcript(
-                transcript_text=text,
-                user_profile=user_profile,
-                course=active_course,
-                ai_config=ai_cfg
+        if caddy_response and not caddy_response.startswith("⚠️"):
+            return self.send_message(
+                chat_id,
+                f"💬 <i>Caddie ({caddy_tone.short_label}):</i>\n«{caddy_response}»\n\n"
+                f"⛳ <i>Sei alla <b>Buca {h_num}</b> (Colpo {s_idx}). Tocca [📍 Calcola Distanza] per la distanza al green.</i>"
             )
 
-            validated_data = GolfMetricsCalculator.recompute_and_reconcile(raw_data)
-
-            round_id = self.db.save_round(
-                round_data=validated_data,
-                user_id=user_rec.user_id,
-                group_name=user_rec.group
-            )
-
-            reply_msg = self._format_round_summary(validated_data, round_id, player_name, active_course.name)
-            self.send_message(chat_id, reply_msg)
-
-        except Exception as e:
-            logging.error(f"Errore durante l'elaborazione testuale: {e}", exc_info=True)
-            self.send_message(chat_id, f"❌ Errore durante l'analisi: {str(e)}")
+        # Fallback se AI non configurata o errore
+        sit_fallback = "DISTANZA" if "distanza" in clean_lower else "TEE"
+        caddy_quote = personality_engine.get_phrase(
+            sit_fallback,
+            tone=caddy_tone,
+            session_id=str(chat_id),
+            buca=h_num,
+            distanza="150"
+        )
+        return self.send_message(
+            chat_id,
+            f"💬 <i>Caddie ({caddy_tone.short_label}):</i> «{caddy_quote}»\n\n"
+            f"⛳ <b>Sei alla Buca {h_num} (Colpo {s_idx})</b>\n"
+            f"• Per registrare un colpo: es. <code>ferro 7 fairway</code>\n"
+            f"• Per chiudere la buca: es. <code>5 colpi e 2 putt</code> oppure <code>2 putt</code>\n"
+            f"• Per la distanza: tocca <b>[📍 Calcola Distanza & Plays Like]</b>\n"
+            f"• Per la scorecard: tocca <b>[📊 Stato & Buca]</b>"
+        )
 
     # ---------------------------------------------------------
     # Telegram Commands Handler
@@ -954,6 +1353,22 @@ class VoiceCaddyTelegramBot:
             cmd = "/gara"
         elif "training" in clean_text.lower() and not clean_text.startswith("/"):
             cmd = "/training"
+        elif "tono caddie" in clean_text.lower() or "personalità" in clean_text.lower():
+            cmd = "/tono"
+        elif "tono professionale" in clean_text.lower():
+            cmd = "/tono"
+            args = ["professionale"]
+        elif "tono arrabbiato" in clean_text.lower():
+            cmd = "/tono"
+            args = ["arrabbiato"]
+        elif "tono spensierato" in clean_text.lower():
+            cmd = "/tono"
+            args = ["spensierato"]
+        elif "tono psicologo" in clean_text.lower():
+            cmd = "/tono"
+            args = ["psicologo"]
+        elif "torna in campo" in clean_text.lower():
+            return self.send_message(chat_id, "⛳ Di nuovo sul percorso!", reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
         elif any(k in clean_text.lower() for k in ["start_round", "start round", "meteo", "vento"]):
             cmd = "/start_round"
 
@@ -961,12 +1376,52 @@ class VoiceCaddyTelegramBot:
         for prefix in [
             "/giocatore", "/utente", "/login", "/collega", "/campo", "/circolo",
             "/buca", "/h", "/distanza", "/paletto", "/tee", "/whs", "/handicap",
-            "/hcp", "/formato", "/score", "/punti"
+            "/hcp", "/formato", "/score", "/punti", "/tono", "/caddy", "/personalita"
         ]:
             if cmd.startswith(prefix) and cmd != prefix and not args:
                 args = [text.strip()[len(prefix):].strip()]
                 cmd = prefix
                 break
+
+        if cmd == "/start" and args:
+            target_key = args[0]
+            if target_key.startswith("link_"):
+                target_key = target_key[5:]
+            target_key = target_key.strip()
+
+            matched_user = self.auth_mgr.get_user(target_key)
+            if not matched_user:
+                for u in self.auth_mgr.get_all_users():
+                    if (
+                        u.user_id.lower() == target_key.lower()
+                        or u.first_name.lower() == target_key.lower()
+                        or u.username.lower() == target_key.lower()
+                    ):
+                        matched_user = u
+                        break
+
+            if matched_user:
+                self.config_mgr.link_chat_user(
+                    chat_id=chat_id,
+                    user_id=matched_user.user_id,
+                    group_name=matched_user.group,
+                    first_name=matched_user.first_name,
+                    active_course_name="Conero Golf Club"
+                )
+                success_msg = (
+                    f"🎉 <b>COLLEGAMENTO SMART COMPLETATO!</b>\n\n"
+                    f"Benvenuto <b>{matched_user.first_name} {matched_user.last_name}</b>! ⛳\n\n"
+                    f"📱 Il tuo smartphone è ora sincronizzato con Voice Caddy Pro del tuo PC.\n"
+                    f"🏌️ <b>Gruppo:</b> {matched_user.group.upper()}\n"
+                    f"📍 <b>Percorso Attivo:</b> Conero Golf Club\n"
+                    f"🎒 <b>Sacca & Distanze:</b> Sincronizzate in tempo reale\n\n"
+                    f"<i>Sei pronto a scendere in campo! Tocca uno dei pulsanti qui sotto per iniziare il giro o calcolare le distanze.</i>"
+                )
+                return self.send_message(
+                    chat_id,
+                    success_msg,
+                    reply_markup=self.get_on_course_keyboard("training")
+                )
 
         if cmd in ["/start", "/help", "/guida"]:
             all_users = self.auth_mgr.get_all_users()
@@ -1031,7 +1486,42 @@ class VoiceCaddyTelegramBot:
 
             help_msg += "\n⚖️ <i>Voice Caddy Pro &bull; Concept, Architettura e Sviluppo: <b>Stefano Pirani</b></i>\n"
 
-            self.send_message(chat_id, help_msg)
+            return self.send_message(chat_id, help_msg)
+
+        if cmd in ["/conferma", "/conferma_giro"]:
+            return self.complete_pending_round_analysis(chat_id)
+
+        if cmd in ["/sequenza", "/shotgun"]:
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            if args:
+                seq_text = " ".join(args)
+                seq_intent = parse_round_sequence_intent(seq_text, active_course.holes_count)
+                if seq_intent["is_sequence_intent"]:
+                    self.session_mgr.set_round_sequence(chat_id, seq_intent["sequence"])
+                    if seq_intent["tee"]:
+                        self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
+                    self.session_mgr.set_round_state(chat_id, "IDLE")
+                    whs_p = self._resolve_handicap_profile(chat_id, tee_name=seq_intent["tee"])
+                    t_name = self.session_mgr.get_selected_tee(chat_id)
+                    msg = (
+                        f"🏌️‍♂️ <b>Sequenza Buche Impostata!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"• <b>Percorso:</b> {seq_intent['description']}\n"
+                        f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
+                        f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
+                        f"🎙️ <i>Invia ora le tue note vocali o il testo con i colpi giocati!</i>"
+                    )
+                    return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+            return self.send_message(
+                chat_id,
+                "⛳ <b>Imposta la sequenza di buche giocate:</b>\n"
+                "Esempi:\n"
+                "• <code>/sequenza 1-18</code> (Giro standard)\n"
+                "• <code>/sequenza prime 9</code> (Buche 1-9)\n"
+                "• <code>/sequenza shotgun 7</code> (Da buca 7 a 18, poi 1 a 6)\n"
+                "• <code>/sequenza 1-6 e 15-18</code> (Giro parziale)",
+                reply_markup=self.get_round_sequence_keyboard()
+            )
 
         elif cmd in ["/gara", "/modalitagara"]:
             self.start_round_flow(chat_id, "gara")
@@ -1156,18 +1646,54 @@ class VoiceCaddyTelegramBot:
             h_strokes = whs_profile.get_received_strokes(h_num)
             h_net_par = whs_profile.get_net_par(h_num)
 
+            # 1. Colpi registrati sulla buca attiva
+            hole_shots = self.session_mgr.get_hole_shots(chat_id, h_num)
+            if hole_shots:
+                shots_lines = []
+                for s in hole_shots:
+                    shots_lines.append(f"  • Colpo {s.get('shot_index', 1)}: <b>{s.get('club', 'Bastone N/D')}</b> ({s.get('lie', 'fairway').title()})")
+                shots_str = "\n".join(shots_lines)
+            else:
+                shots_str = "  <i>Nessun colpo ancora registrato per la buca corrente (in attesa del tee shot o resoconto).</i>"
+
+            # 2. Scorecard progressiva buche completate
+            card = self.session_mgr.get_round_scorecard(chat_id)
+            from core.whs_rules import calculate_stableford_points_gross
+            tot_gross_stb = sum(calculate_stableford_points_gross(h.get("gross_strokes", 4), h.get("par", 4)) for h in card["completed_holes"])
+            diff_par = card["gross_to_par"]
+            diff_str = f"+{diff_par}" if diff_par > 0 else ("Par" if diff_par == 0 else str(diff_par))
+
+            if card["completed_holes"]:
+                card_chips = " | ".join([f"B{h['hole_number']}: {h['gross_strokes']}c ({h['stableford_points']}pt)" for h in card["completed_holes"]])
+                scorecard_section = (
+                    f"📊 <b>SCORECARD PROGRESSIVA ({card['holes_played']}/{whs_profile.holes_count} Buche):</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"• 🏆 <b>Punti Stableford:</b> <b>{card['total_stableford']} pt Netti</b> | {tot_gross_stb} pt Lordi\n"
+                    f"• 🏌️ <b>Colpi Totali:</b> {card['total_gross']} Lordi ({diff_str}) | {card['total_net']} Netti\n"
+                    f"• ⛳ <b>Putt Totali:</b> {card['total_putts']} (Media {card['putts_avg']} / buca)\n"
+                    f"• 📝 <b>Dettaglio:</b> [ {card_chips} ]\n\n"
+                )
+            else:
+                scorecard_section = (
+                    f"📊 <b>SCORECARD PROGRESSIVA:</b>\n"
+                    f"<i>Nessuna buca ancora completata. Quando finisci la buca scrivi ad es. '5 colpi e 2 putt' o '2 putt'.</i>\n\n"
+                )
+
             self.send_message(
                 chat_id,
                 f"📍 <b>STATO SESSIONE IN CAMPO:</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"• <b>Giocatore:</b> {user_rec.first_name} {user_rec.last_name} (Exact HCP {whs_profile.exact_hcp})\n"
                 f"• <b>Campo:</b> {active_course.name} ({whs_profile.tee_name.title()})\n"
                 f"• <b>Playing HCP (WHS):</b> {whs_profile.playing_hcp} colpi ({whs_profile.format_name.title()})\n"
-                f"• <b>Buca Attiva:</b> {h_num} (Par {h_par} • SI {h_si})\n"
-                f"• <b>Colpi Ricevuti Buca:</b> {h_strokes} (<b>Par Netto: {h_net_par}</b>)\n"
-                f"• <b>Colpo Corrente:</b> {s_idx}\n"
-                f"• <b>Modalità:</b> {mode_str}\n"
-                f"• <b>Ultima Posizione GPS:</b> {pos_str}\n\n"
-                f"<i>Invia la posizione GPS per calcolare la distanza!</i>"
+                f"• <b>Modalità:</b> {mode_str}\n\n"
+                f"⛳ <b>BUCA ATTIVA: #{h_num}</b> (Par {h_par} • SI {h_si})\n"
+                f"• <b>Colpi Ricevuti Buca:</b> {h_strokes} ➔ <b>Par Netto: {h_net_par}</b>\n"
+                f"• <b>Colpo Corrente:</b> Colpo {s_idx}\n"
+                f"🏌️ <b>Colpi Buca {h_num} Registrati:</b>\n{shots_str}\n\n"
+                f"{scorecard_section}"
+                f"📍 <b>GPS:</b> {pos_str}\n"
+                f"<i>Tocca <b>[📍 Calcola Distanza & Plays Like]</b> per misurare la distanza al green della Buca {h_num}!</i>"
             )
 
         elif cmd in ["/whs", "/handicap", "/hcp", "/calcolo"]:
@@ -1366,7 +1892,58 @@ class VoiceCaddyTelegramBot:
 
             c_query = " ".join(args).strip()
             self.config_mgr.set_active_course(chat_id, c_query)
-            self.send_message(chat_id, f"✅ Campo da gioco impostato su: <b>{c_query}</b>")
+        elif cmd in ["/tono", "/caddy", "/personalita"]:
+            user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
+            from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
+            caddy_eng = CaddyPersonalityEngine.get_instance()
+
+            if args:
+                raw_arg = " ".join(args).lower().strip()
+                matched_tone = None
+                for t in CaddyTone:
+                    if t.value in raw_arg or t.name.lower() in raw_arg:
+                        matched_tone = t
+                        break
+                if matched_tone:
+                    user_profile.caddy_tone = matched_tone.value
+                    user_profile.save_for_user(user_rec.user_id if user_rec else "default")
+                    phrase = caddy_eng.get_phrase(
+                        "START_ROUND",
+                        tone=matched_tone.value,
+                        session_id=str(chat_id),
+                        buca="1",
+                        nome=user_profile.player_name
+                    )
+                    return self.send_message(
+                        chat_id,
+                        f"🎭 <b>Stile Caddie Impostato:</b> {matched_tone.display_name}\n\n"
+                        f"🗣️ <i>«{phrase}»</i>\n\n"
+                        f"Il tuo caddie manterrà questo tono per tutte le reazioni in campo!",
+                        reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id))
+                    )
+
+            # Se nessun argomento, mostra la tastiera rapida con i 4 stili
+            tone_keyboard = {
+                "keyboard": [
+                    [{"text": "👔 Tono Professionale"}, {"text": "🤬 Tono Arrabbiato"}],
+                    [{"text": "🍻 Tono Spensierato"}, {"text": "🧘 Tono Psicologo"}],
+                    [{"text": "🔙 Torna in Campo"}]
+                ],
+                "resize_keyboard": True
+            }
+            curr_tone_str = getattr(user_profile, "caddy_tone", "professionale") or "professionale"
+            try:
+                curr_label = CaddyTone(curr_tone_str).display_name
+            except Exception:
+                curr_label = curr_tone_str.title()
+
+            return self.send_message(
+                chat_id,
+                f"🎭 <b>Personalità & Tono del Caddie</b>\n"
+                f"Stile attuale: <b>{curr_label}</b>\n\n"
+                f"Tocca uno stile per cambiare immediatamente l'atteggiamento del tuo caddie:",
+                reply_markup=tone_keyboard
+            )
 
         elif cmd in ["/demo", "/test"]:
             user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
@@ -1441,12 +2018,18 @@ class VoiceCaddyTelegramBot:
                             file_id = message["video"]["file_id"]
                             self.process_voice_message(chat_id, file_id)
 
-                        # 3. Testo o Comandi
                         elif text:
                             if text.startswith("/"):
                                 self.handle_command(chat_id, text)
                             else:
                                 self.process_text_message(chat_id, text)
+                else:
+                    err_desc = str(res.get("description", ""))
+                    if "conflict" in err_desc.lower() or res.get("error_code") == 409:
+                        logging.warning("Avviso Telegram Bot: un'altra istanza è già attiva (409 Conflict). In attesa...")
+                        time.sleep(8)
+                    else:
+                        time.sleep(2)
 
                 time.sleep(0.5)
             except KeyboardInterrupt:

@@ -15,10 +15,14 @@ class TestTelegramIntegration(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.cfg_mgr = TelegramConfigManager(data_dir=self.test_dir)
+        self.test_db = DatabaseManager(db_path=self.test_dir / "test_tg.db")
+        self.test_auth = AuthManager(data_file=self.test_dir / "test_users.json")
 
     def tearDown(self):
+        import gc
+        gc.collect()
         if self.test_dir.exists():
-            shutil.rmtree(self.test_dir)
+            shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_config_manager_token(self):
         test_tok = "123456789:TEST_ABC_TOKEN_XYZ"
@@ -45,7 +49,7 @@ class TestTelegramIntegration(unittest.TestCase):
         self.assertEqual(updated["active_course_name"], "Golf Club Ancona")
 
     def test_bot_context_and_summary(self):
-        bot = VoiceCaddyTelegramBot(bot_token="TEST_DUMMY_TOKEN")
+        bot = VoiceCaddyTelegramBot(bot_token="TEST_DUMMY_TOKEN", db=self.test_db, auth_mgr=self.test_auth)
         bot.config_mgr = self.cfg_mgr
 
         # Link chat
@@ -69,6 +73,46 @@ class TestTelegramIntegration(unittest.TestCase):
         self.assertIn("Conero Golf Club", summary_text)
         self.assertIn("Score Totale", summary_text)
         self.assertIn("Fairway Presi", summary_text)
+
+    def test_get_chat_id_and_unlink(self):
+        user_id = "strafatti_stefano_pirani"
+        self.assertIsNone(self.cfg_mgr.get_chat_id_for_user(user_id))
+
+        self.cfg_mgr.link_chat_user(
+            chat_id=777888,
+            user_id=user_id,
+            group_name="strafatti",
+            first_name="Stefano"
+        )
+        self.assertEqual(self.cfg_mgr.get_chat_id_for_user(user_id), "777888")
+
+        # Unlink
+        res = self.cfg_mgr.unlink_user(user_id)
+        self.assertTrue(res)
+        self.assertIsNone(self.cfg_mgr.get_chat_id_for_user(user_id))
+
+    def test_deep_link_start_command(self):
+        bot = VoiceCaddyTelegramBot(bot_token="TEST_DUMMY_TOKEN")
+        bot.config_mgr = self.cfg_mgr
+        sent_messages = []
+        bot.send_message = lambda chat_id, text, **kwargs: sent_messages.append((chat_id, text))
+
+        # Test deep link pairing
+        bot.handle_command(999111, "/start link_strafatti_stefano_pirani")
+        linked = self.cfg_mgr.get_linked_user(999111)
+        self.assertIsNotNone(linked)
+        self.assertEqual(linked["user_id"], "strafatti_stefano_pirani")
+        self.assertEqual(linked["first_name"], "Stefano")
+        self.assertTrue(len(sent_messages) > 0)
+        self.assertIn("COLLEGAMENTO SMART COMPLETATO", sent_messages[0][1])
+
+    def test_background_service_status(self):
+        from core.telegram_service import get_telegram_service
+        srv = get_telegram_service()
+        status = srv.get_status_info()
+        self.assertIn("is_alive", status)
+        self.assertIn("has_token", status)
+        self.assertIn("bot_username", status)
 
 
 if __name__ == "__main__":

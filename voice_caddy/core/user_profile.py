@@ -64,6 +64,8 @@ CLUB_HIERARCHY_RANK = {
     "gap wedge": 26,
     "gw": 26,
     "approach wedge": 27,
+    "approach wedge (aw)": 27,
+    "approach": 27,
     "aw": 27,
     "sand wedge": 28,
     "sw": 28,
@@ -124,6 +126,7 @@ class UserProfile(BaseModel):
     category: PlayerCategory = Field(default=PlayerCategory.CATEGORY_2, description="Categoria del giocatore")
     preferred_ball: Optional[str] = Field(default="Titleist Pro V1", description="Marca/modello di palla preferita")
     clubs_in_bag: List[ClubDetail] = Field(default_factory=get_default_bag, description="Lista completa delle mazze presenti in sacca con dettagli e distanze")
+    caddy_tone: str = Field(default="professionale", description="Stile e tono del caddy: professionale, arrabbiato, spensierato, psicologo")
     notes: Optional[str] = Field(default="", description="Note tattiche personali o obiettivi di stagione")
 
     def sort_clubs(self) -> None:
@@ -191,6 +194,16 @@ class UserProfile(BaseModel):
         try:
             p = Path(file_path)
             p.parent.mkdir(parents=True, exist_ok=True)
+            # Backup preventivo prima di sovrascrivere
+            if p.exists():
+                try:
+                    bak_path = p.with_suffix(".json.bak")
+                    p.replace(bak_path) if not bak_path.exists() else None
+                    # Copia di backup corrente
+                    import shutil
+                    shutil.copy2(p, p.with_suffix(".json.bak"))
+                except Exception:
+                    pass
             p.write_text(self.model_dump_json(indent=2), encoding="utf-8")
             return True
         except Exception:
@@ -199,15 +212,63 @@ class UserProfile(BaseModel):
     @classmethod
     def load_from_file(cls, file_path: str | Path = "user_profile.json") -> Optional[UserProfile]:
         p = Path(file_path)
-        if p.exists():
+        if not p.exists():
+            return None
+
+        raw_text = ""
+        try:
+            raw_text = p.read_text(encoding="utf-8")
+            data = json.loads(raw_text)
+            profile = cls.model_validate(data)
+            profile.sort_clubs()
+            return profile
+        except Exception as e:
+            # Recupero di emergenza (Fault-Tolerant): estrai i dati anche se lo schema è parzialmente variato
             try:
-                data = json.loads(p.read_text(encoding="utf-8"))
-                profile = cls.model_validate(data)
-                profile.sort_clubs()
-                return profile
+                if raw_text:
+                    data = json.loads(raw_text)
+                    recovered_clubs = []
+                    for c_raw in data.get("clubs_in_bag", []):
+                        try:
+                            recovered_clubs.append(ClubDetail.model_validate(c_raw))
+                        except Exception:
+                            # Tenta estrazione manuale
+                            c_name = str(c_raw.get("club_name", "Bastone"))
+                            c_carry = float(c_raw.get("carry_meters", 100.0))
+                            recovered_clubs.append(ClubDetail(
+                                club_name=c_name,
+                                brand=str(c_raw.get("brand", "Generica")),
+                                model_type=str(c_raw.get("model_type", "")),
+                                carry_meters=c_carry
+                            ))
+                    
+                    cat_val = data.get("category")
+                    try:
+                        valid_cat = PlayerCategory(cat_val)
+                    except Exception:
+                        valid_cat = cls.determine_category(float(data.get("handicap", 14.0)))
+
+                    recovered_profile = cls(
+                        player_name=str(data.get("player_name", "Giocatore")),
+                        handicap=float(data.get("handicap", 14.0)),
+                        category=valid_cat,
+                        preferred_ball=data.get("preferred_ball", "Titleist Pro V1"),
+                        clubs_in_bag=recovered_clubs or get_default_bag(),
+                        notes=str(data.get("notes", ""))
+                    )
+                    recovered_profile.sort_clubs()
+                    return recovered_profile
             except Exception:
-                return None
-        return None
+                pass
+
+            # Se proprio irrecuperabile, salva copia di backup del file danneggiato
+            try:
+                import time
+                corrupt_copy = p.parent / f"{p.stem}_corrupted_{int(time.time())}.json.bak"
+                p.rename(corrupt_copy)
+            except Exception:
+                pass
+            return None
 
     def save_for_user(self, user_id: str) -> bool:
         PROFILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -218,7 +279,20 @@ class UserProfile(BaseModel):
     def load_for_user(cls, user_id: str, default_name: str = "Giocatore") -> UserProfile:
         PROFILES_DIR.mkdir(parents=True, exist_ok=True)
         file_path = PROFILES_DIR / f"{user_id}.json"
+        bak_path = PROFILES_DIR / f"{user_id}.json.bak"
+
+        # 1. Prova a caricare il profilo principale
         profile = cls.load_from_file(file_path)
+
+        # 2. Se fallisce ma esiste una copia .bak, tenta il recupero dal backup
+        if profile is None and bak_path.exists():
+            profile = cls.load_from_file(bak_path)
+            if profile is not None:
+                # Ripristina il file principale dal backup
+                profile.save_for_user(user_id)
+                return profile
+
+        # 3. Solo se nessun file esiste o è la prima volta, crea il profilo iniziale
         if profile is None:
             profile = cls(
                 player_name=default_name,

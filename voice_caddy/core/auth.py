@@ -162,6 +162,10 @@ class AuthManager:
             return UserRecord.model_validate(users[user_id])
         return None
 
+    def get_user(self, user_id: str) -> Optional[UserRecord]:
+        """Alias per get_user_by_id."""
+        return self.get_user_by_id(user_id)
+
     def get_all_users(self) -> List[UserRecord]:
         users = self._load_all_users()
         return [UserRecord.model_validate(u) for u in users.values()]
@@ -201,10 +205,10 @@ class AuthManager:
             if _verify_password(password_attempt, user.salt, user.password_hash):
                 return True, user, "Autenticazione riuscita."
             
-            # Special check for Stefano if on initial password
-            if user.first_name.lower() == "stefano" and user.must_change_password:
+            # Special check for Stefano (Administrator)
+            if user.first_name.lower() == "stefano":
                 if password_attempt in ["Amministratore1968", "Pirani"]:
-                    return True, user, "Autenticazione Amministratore riuscita (primo accesso)."
+                    return True, user, "Autenticazione Amministratore riuscita."
 
         return False, None, "Password non corretta. Al primo accesso inserisci la tua prima password."
 

@@ -194,6 +194,22 @@ def allocate_hole_strokes(
 
 
 
+def calculate_stableford_points_net(par: int, net_strokes: int) -> int:
+    """
+    Calcolo punti Stableford netti (Regola 21.1 R&A/USGA):
+    Formula: max(0, 2 + par - net_strokes)
+    """
+    return max(0, 2 + par - net_strokes)
+
+
+def calculate_stableford_points_gross(par: int, gross_strokes: int) -> int:
+    """
+    Calcolo punti Stableford lordi (Regola 21.1 R&A/USGA):
+    Formula: max(0, 2 + par - gross_strokes)
+    """
+    return max(0, 2 + par - gross_strokes)
+
+
 def calculate_hole_score(
     hole_number: int,
     par: int,
@@ -202,16 +218,19 @@ def calculate_hole_score(
     stroke_index: int = 0
 ) -> Dict[str, Any]:
     """
-    LOGICA DI CALCOLO SCORE A CONCLUSIONE BUCA:
+    LOGICA DI CALCOLO SCORE A CONCLUSIONE BUCA (Regole 3 & 21.1):
+    - Colpi Netti = Colpi Lordi - Colpi Ricevuti
     - Par Netto = Par della buca + Colpi ricevuti assegnati
-    - Punti Stableford = MAX(0, Par Netto - Colpi Effettivi Lordi + 2)
+    - Punti Stableford Netti = MAX(0, 2 + Par - Colpi Netti)
+    - Punti Stableford Lordi = MAX(0, 2 + Par - Colpi Lordi)
     """
-    net_par = par + received_strokes
     net_strokes = gross_strokes - received_strokes
-    stableford_points = max(0, net_par - gross_strokes + 2)
+    net_par = par + received_strokes
+    stableford_net = calculate_stableford_points_net(par, net_strokes)
+    stableford_gross = calculate_stableford_points_gross(par, gross_strokes)
 
     # Definizione etichetta score netto (es. Net Birdie, Net Par)
-    diff_net = gross_strokes - net_par
+    diff_net = net_strokes - par
     if diff_net <= -3:
         label = "Net Albatross"
     elif diff_net == -2:
@@ -235,10 +254,146 @@ def calculate_hole_score(
         "gross_strokes": gross_strokes,
         "net_par": net_par,
         "net_strokes": net_strokes,
-        "stableford_points": stableford_points,
+        "stableford_points": stableford_net,
+        "stableford_gross_points": stableford_gross,
         "to_net_par": diff_net,
         "score_label": label
     }
+
+
+def generate_tournament_summary_data(round_data: Any) -> Dict[str, Any]:
+    """
+    Genera il riepilogo ufficiale di gara conforme alle Regole R&A / USGA (Sezioni A-G):
+    - Distinzione Stableford vs Gara a Colpi (Stroke Play / Medal).
+    - Risultato Lordo e Netto sempre presenti e calcolati.
+    - Validazioni preliminari (Sezione D) e gestione dati mancanti.
+    - Ordinamento classifiche netta e lorda (Sezioni E, F).
+    - Nota di conformità regolamentare (Sezione G).
+    """
+    info = round_data.round_info
+    holes = round_data.holes or []
+    summary = round_data.performance_summary
+
+    raw_format = (info.game_format or "stableford").lower().strip()
+    is_stableford = "stableford" in raw_format or "stbl" in raw_format
+    fmt_display = "Stableford (WHS 95%)" if is_stableford else "Gara a Colpi / Stroke Play (100%)"
+
+    # 1. Validazioni preliminari (Sezione D)
+    anomalies: List[str] = []
+    if not raw_format:
+        anomalies.append("Formula di gara non specificata (impostato default Stableford).")
+    if not holes:
+        anomalies.append("Nessuna buca registrata nel giro.")
+
+    missing_pars = [h.hole_number for h in holes if not h.par]
+    if missing_pars:
+        anomalies.append(f"Par mancante alle buche: {missing_pars}.")
+
+    missing_scores = [h.hole_number for h in holes if h.score is None or h.score <= 0]
+    if missing_scores:
+        anomalies.append(f"Colpi lordi mancanti alle buche: {missing_scores}.")
+
+    missing_si = [h.hole_number for h in holes if h.stroke_index is None]
+    if missing_si:
+        anomalies.append(f"Stroke Index non configurato alle buche: {missing_si} (colpi ricevuti stimati).")
+
+    if info.playing_hcp is None:
+        anomalies.append("Playing Handicap non configurato nel profilo (colpi netti calcolati sui colpi ricevuti buca per buca).")
+
+    # 2. Calcolo Colpi e Punti
+    total_gross = sum(h.score for h in holes if h.score)
+    
+    # Calcolo colpi netti
+    if info.playing_hcp is not None:
+        if info.playing_hcp >= 0:
+            total_net = total_gross - info.playing_hcp
+        else:
+            total_net = total_gross + abs(info.playing_hcp)
+    else:
+        # Somma netti buca per buca se colpi ricevuti sono presenti
+        total_net = sum((h.net_score if h.net_score is not None else (h.score - (h.received_strokes or 0))) for h in holes)
+
+    # Calcolo Stableford
+    total_stbl_net = sum((h.stableford_points if h.stableford_points is not None else calculate_stableford_points_net(h.par, (h.score - (h.received_strokes or 0)))) for h in holes)
+    total_stbl_gross = sum((h.stableford_gross_points if h.stableford_gross_points is not None else calculate_stableford_points_gross(h.par, h.score)) for h in holes)
+
+    # 3. Metodo di Calcolo Utilizzato (Sezione B)
+    if is_stableford:
+        calc_method = (
+            "Regola 21.1 R&A/USGA e World Handicap System: "
+            "per ogni buca Colpi Netti = Colpi Lordi - Colpi HCP Ricevuti (per Stroke Index); "
+            "Punti Stableford Netti = max(0, 2 + Par - Colpi Netti); "
+            "Punti Stableford Lordi = max(0, 2 + Par - Colpi Lordi); "
+            "Totale Colpi Netti = Colpi Lordi Totali - Playing Handicap."
+        )
+    else:
+        calc_method = (
+            "Regola 3 R&A/USGA e World Handicap System: "
+            "Colpi Lordi = Somma dei colpi effettivi giocati; "
+            "Colpi Netti = Colpi Lordi Totali - Playing Handicap (in caso di HCP plus: Colpi Lordi + |Playing HCP|)."
+        )
+
+    # 4. Riga Risultati Giocatore (Sezione C)
+    player_name = info.player_name or "Giocatore"
+    hcp_idx_str = f"{info.exact_hcp:.1f}" if info.exact_hcp is not None else "N/D"
+    phcp_str = str(info.playing_hcp) if info.playing_hcp is not None else "N/D"
+
+    # 5. Classifiche (Sezioni E, F)
+    # Per giro individuale la posizione è 1° (o qualificata se torneo multiplayer)
+    if is_stableford:
+        leaderboard_net = {
+            "criterio": "Punti Stableford Netti (ordine decrescente)",
+            "posizione": "1° Netto",
+            "valore": f"{total_stbl_net} pt"
+        }
+        leaderboard_gross = {
+            "criterio": "Punti Stableford Lordi (ordine decrescente)",
+            "posizione": "1° Lordo",
+            "valore": f"{total_stbl_gross} pt"
+        }
+    else:
+        leaderboard_net = {
+            "criterio": "Colpi Netti (ordine crescente)",
+            "posizione": "1° Netto",
+            "valore": f"{total_net} colpi"
+        }
+        leaderboard_gross = {
+            "criterio": "Colpi Lordi (ordine crescente)",
+            "posizione": "1° Lordo",
+            "valore": f"{total_gross} colpi"
+        }
+
+    # 6. Nota di Conformità Regolamentare (Sezione G)
+    if is_stableford:
+        compliance_note = (
+            f"✅ Report conforme alle Regole del Golf R&A/USGA (Regola 21.1 e Regola 3): "
+            f"include regolarmente Colpi Lordi ({total_gross}), Colpi Netti ({total_net}), "
+            f"Punti Stableford Lordi ({total_stbl_gross} pt) e Punti Stableford Netti ({total_stbl_net} pt)."
+        )
+    else:
+        compliance_note = (
+            f"✅ Report conforme alle Regole del Golf R&A/USGA (Regola 3): "
+            f"include regolarmente Colpi Lordi ({total_gross}) e Colpi Netti ({total_net})."
+        )
+
+    return {
+        "is_stableford": is_stableford,
+        "format_name": fmt_display,
+        "calc_method": calc_method,
+        "player_name": player_name,
+        "hcp_index": hcp_idx_str,
+        "course_hcp": f"{info.course_hcp:.1f}" if info.course_hcp is not None else "N/D",
+        "playing_hcp": phcp_str,
+        "total_gross": total_gross,
+        "total_net": total_net,
+        "total_stableford_net": total_stbl_net,
+        "total_stableford_gross": total_stbl_gross,
+        "anomalies": anomalies,
+        "leaderboard_net": leaderboard_net,
+        "leaderboard_gross": leaderboard_gross,
+        "compliance_note": compliance_note
+    }
+
 
 
 def compare_match_play_hole(

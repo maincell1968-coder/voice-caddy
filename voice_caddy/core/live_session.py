@@ -88,6 +88,9 @@ class LiveSessionManager:
                 ("has_specified_tee", "INTEGER", "0"),
                 ("completed_scores_json", "TEXT", "'[]'"),
                 ("last_location_timestamp", "REAL", "NULL"),
+                ("round_sequence_json", "TEXT", "'[]'"),
+                ("pending_round_state", "TEXT", "'IDLE'"),
+                ("pending_round_data_json", "TEXT", "'{}'"),
             ]
             for col_name, col_type, default_val in new_columns:
                 if col_name not in existing_cols:
@@ -233,7 +236,7 @@ class LiveSessionManager:
         self,
         chat_id: int | str,
         hole_number: int,
-        shot_index: int,
+        shot_index: Optional[int] = None,
         club: Optional[str] = None,
         lie: Optional[str] = None,
         latitude: Optional[float] = None,
@@ -248,6 +251,10 @@ class LiveSessionManager:
         c_id = str(chat_id)
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            if not shot_index:
+                cursor.execute("SELECT COALESCE(MAX(shot_index), 0) + 1 FROM live_shots WHERE chat_id = ? AND hole_number = ?", (c_id, hole_number))
+                row_idx = cursor.fetchone()
+                shot_index = row_idx[0] if row_idx else 1
             cursor.execute("""
                 INSERT INTO live_shots (
                     chat_id, hole_number, shot_index, club, lie,
@@ -261,6 +268,22 @@ class LiveSessionManager:
             ))
             conn.commit()
             return cursor.lastrowid
+
+    def get_hole_shots(self, chat_id: int | str, hole_number: int) -> List[Dict[str, Any]]:
+        """Recupera la sequenza cronologica dei colpi registrati per una specifica buca."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT shot_index, club, lie, latitude, longitude, altitude,
+                       distance_covered, raw_distance_to_green, plays_like_distance,
+                       elevation_diff, notes, created_at
+                FROM live_shots
+                WHERE chat_id = ? AND hole_number = ?
+                ORDER BY shot_index ASC
+            """, (c_id, hole_number))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
 
     def set_pin_override(self, chat_id: int | str, hole_number: int, lat: float, lon: float, alt: Optional[float] = None):
         c_id = str(chat_id)
@@ -455,10 +478,11 @@ class LiveSessionManager:
         net_par: int,
         stableford_points: int,
         net_strokes: int,
-        score_label: str = ""
+        score_label: str = "",
+        advance_hole: bool = True
     ) -> Dict[str, Any]:
         """
-        Registra la buca completata, aggiorna i totali progressivi e avanza automaticamente alla buca successiva.
+        Registra la buca completata, aggiorna i totali progressivi e, se advance_hole è True, avanza alla buca successiva.
         """
         c_id = str(chat_id)
         self.get_or_create_session(c_id, user_id="default_user")
@@ -495,15 +519,22 @@ class LiveSessionManager:
                 scores_list.append(hole_entry)
             scores_list.sort(key=lambda x: x.get("hole_number", 0))
 
-            next_h = 1 if hole_number >= 18 else hole_number + 1
-
-            cursor.execute("""
-                UPDATE live_sessions
-                SET completed_scores_json = ?, current_hole = ?, current_shot_index = 1,
-                    last_latitude = NULL, last_longitude = NULL, last_altitude = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE chat_id = ?
-            """, (json.dumps(scores_list), next_h, c_id))
+            if advance_hole:
+                next_h = 1 if hole_number >= 18 else hole_number + 1
+                cursor.execute("""
+                    UPDATE live_sessions
+                    SET completed_scores_json = ?, current_hole = ?, current_shot_index = 1,
+                        last_latitude = NULL, last_longitude = NULL, last_altitude = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE chat_id = ?
+                """, (json.dumps(scores_list), next_h, c_id))
+            else:
+                cursor.execute("""
+                    UPDATE live_sessions
+                    SET completed_scores_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE chat_id = ?
+                """, (json.dumps(scores_list), c_id))
             conn.commit()
 
         return self.get_round_scorecard(c_id)
@@ -562,4 +593,201 @@ class LiveSessionManager:
             """, (c_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    # ---------------------------------------------------------
+    # Round Sequence & Pre-Flight Management
+    # ---------------------------------------------------------
+    def _ensure_session_exists(self, chat_id: int | str):
+        """Garantisce che esista un record per la chat in live_sessions prima di eseguire aggiornamenti."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM live_sessions WHERE chat_id = ?", (c_id,))
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT OR IGNORE INTO live_sessions (
+                        chat_id, user_id, course_id, current_hole, current_shot_index,
+                        selected_tee, game_format, format_percentage
+                    ) VALUES (?, 'user_default', 'conero_golf_club', 1, 1, 'gialli', 'stableford', 0.95)
+                """, (c_id,))
+                conn.commit()
+
+    def set_round_sequence(self, chat_id: int | str, sequence: List[int]) -> bool:
+        """Salva la sequenza personalizzata delle buche giocate (es. Shotgun [7..18, 1..6])."""
+        self._ensure_session_exists(chat_id)
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET round_sequence_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (json.dumps(sequence), c_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_round_sequence(self, chat_id: int | str) -> List[int]:
+        """Restituisce la sequenza di buche impostata, o [1..18] come fallback."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT round_sequence_json FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            if row and row["round_sequence_json"]:
+                try:
+                    seq = json.loads(row["round_sequence_json"])
+                    if isinstance(seq, list) and len(seq) > 0:
+                        return seq
+                except Exception:
+                    pass
+        return list(range(1, 19))
+
+    def set_round_state(self, chat_id: int | str, state: str) -> bool:
+        """Imposta lo stato del round: IDLE, AWAITING_SETUP, AWAITING_VERIFICATION."""
+        self._ensure_session_exists(chat_id)
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET pending_round_state = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (state, c_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_round_state(self, chat_id: int | str) -> str:
+        """Restituisce lo stato corrente del round per la chat."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT pending_round_state FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            if row and row["pending_round_state"]:
+                return str(row["pending_round_state"])
+        return "IDLE"
+
+    # ---------------------------------------------------------
+    # Pending Round Audit & Anomaly Gate
+    # ---------------------------------------------------------
+    def set_pending_round(self, chat_id: int | str, round_data: Dict[str, Any], state: str = "AWAITING_VERIFICATION") -> bool:
+        """Memorizza i dati provvisori del round per la fase di verifica e audit prima del salvataggio."""
+        self._ensure_session_exists(chat_id)
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET pending_round_data_json = ?, pending_round_state = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (json.dumps(round_data), state, c_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_pending_round(self, chat_id: int | str) -> Optional[Dict[str, Any]]:
+        """Recupera la struttura dati provvisoria del round sotto verifica."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT pending_round_data_json FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            if row and row["pending_round_data_json"]:
+                try:
+                    data = json.loads(row["pending_round_data_json"])
+                    if isinstance(data, dict) and data:
+                        return data
+                except Exception:
+                    pass
+        return None
+
+    def update_pending_hole_shot(self, chat_id: int | str, hole_number: int, shot_data: Dict[str, Any]) -> bool:
+        """Aggiunge o corregge un colpo nella buca provvisoria durante l'audit."""
+        pending = self.get_pending_round(chat_id)
+        if not pending or "holes" not in pending:
+            return False
+
+        target_hole = None
+        for h in pending["holes"]:
+            if h.get("hole_number") == hole_number:
+                target_hole = h
+                break
+
+        if not target_hole:
+            return False
+
+        shots = target_hole.get("shots", [])
+        shot_idx = shot_data.get("shot_index")
+        if shot_idx and 1 <= shot_idx <= len(shots):
+            # Aggiorna colpo esistente
+            shots[shot_idx - 1].update(shot_data)
+        else:
+            # Aggiungi nuovo colpo
+            new_idx = len(shots) + 1
+            shot_data["shot_index"] = new_idx
+            shots.append(shot_data)
+
+        target_hole["shots"] = shots
+        target_hole["gross_strokes"] = len(shots) + target_hole.get("penalties", 0)
+        target_hole["score"] = target_hole["gross_strokes"]
+        return self.set_pending_round(chat_id, pending, state="AWAITING_VERIFICATION")
+
+    def add_pending_hole_penalty(self, chat_id: int | str, hole_number: int, penalty_type: str, strokes: int = 1) -> bool:
+        """Aggiunge una penalità alla buca provvisoria e ricalcola il lordo."""
+        pending = self.get_pending_round(chat_id)
+        if not pending or "holes" not in pending:
+            return False
+
+        target_hole = None
+        for h in pending["holes"]:
+            if h.get("hole_number") == hole_number:
+                target_hole = h
+                break
+
+        if not target_hole:
+            return False
+
+        current_pen = target_hole.get("penalties", 0)
+        target_hole["penalties"] = current_pen + strokes
+        shots_count = len(target_hole.get("shots", []))
+        target_hole["gross_strokes"] = shots_count + target_hole["penalties"]
+        target_hole["score"] = target_hole["gross_strokes"]
+
+        # Aggiungi alla lista penalità descrittiva
+        pen_list = target_hole.get("penalties_detail", [])
+        pen_list.append({"type": penalty_type, "strokes": strokes})
+        target_hole["penalties_detail"] = pen_list
+
+        return self.set_pending_round(chat_id, pending, state="AWAITING_VERIFICATION")
+
+    def update_pending_hole_putts(self, chat_id: int | str, hole_number: int, putts: int) -> bool:
+        """Aggiorna il conteggio putt della buca provvisoria."""
+        pending = self.get_pending_round(chat_id)
+        if not pending or "holes" not in pending:
+            return False
+
+        target_hole = None
+        for h in pending["holes"]:
+            if h.get("hole_number") == hole_number:
+                target_hole = h
+                break
+
+        if not target_hole:
+            return False
+
+        target_hole["putts"] = putts
+        return self.set_pending_round(chat_id, pending, state="AWAITING_VERIFICATION")
+
+    def clear_pending_round(self, chat_id: int | str) -> bool:
+        """Pulisce la sessione di verifica del round."""
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET pending_round_data_json = '{}', pending_round_state = 'IDLE', updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (c_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
 

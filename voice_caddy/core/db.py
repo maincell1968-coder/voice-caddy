@@ -28,6 +28,22 @@ class DatabaseManager:
         return conn
 
     def _init_db(self):
+        # Se il database esiste già, esegui controllo di integrità e backup preventivo
+        if self.db_path.exists() and str(self.db_path) != ":memory:":
+            try:
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("PRAGMA integrity_check")
+                    res = cursor.fetchone()
+                    if res and res[0] != "ok":
+                        import logging
+                        logging.getLogger(__name__).warning(f"Attenzione: PRAGMA integrity_check su DB ha ritornato: {res}")
+                
+                # Backup automatico preventivo
+                self.backup_database()
+            except Exception:
+                pass
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -59,6 +75,20 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE rounds ADD COLUMN group_name TEXT DEFAULT 'strafatti'")
 
             conn.commit()
+
+    def backup_database(self, dest_path: Optional[Path] = None) -> Path:
+        """Esegue un backup atomico online del database tramite le API native di SQLite."""
+        if str(self.db_path) == ":memory:":
+            return Path(":memory:")
+        target = Path(dest_path) if dest_path else self.db_path.with_suffix(".db.bak")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with self._get_connection() as src:
+            dest_conn = sqlite3.connect(target)
+            try:
+                src.backup(dest_conn)
+            finally:
+                dest_conn.close()
+        return target
 
     def save_round(self, round_data: GolfRoundData, user_id: str = "default_user", group_name: str = "strafatti") -> int:
         summary = round_data.performance_summary
@@ -119,6 +149,18 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT json_data FROM rounds WHERE id = ?", (round_id,))
+            row = cursor.fetchone()
+            if row:
+                return GolfRoundData.model_validate_json(row["json_data"])
+            return None
+
+    def get_latest_round(self, user_id: Optional[str] = None) -> Optional[GolfRoundData]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id:
+                cursor.execute("SELECT json_data FROM rounds WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,))
+            else:
+                cursor.execute("SELECT json_data FROM rounds ORDER BY id DESC LIMIT 1")
             row = cursor.fetchone()
             if row:
                 return GolfRoundData.model_validate_json(row["json_data"])

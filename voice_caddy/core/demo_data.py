@@ -361,12 +361,22 @@ def get_demo_golf_round() -> GolfRoundData:
         ]
     )
 
-    return GolfRoundData(
+    from core.metrics import GolfMetricsCalculator
+
+    demo_data = GolfRoundData(
         round_info=RoundInfo(
             course_name="Conero Golf Club",
             date="Giro Dimostrativo PGA",
-            holes_played=18
+            holes_played=18,
+            game_format="stableford",
+            player_name="Stefano Pirani",
+            exact_hcp=18.4,
+            course_hcp=20.0,
+            playing_hcp=19,
+            tee_name="Gialli",
+            category="Singolo Categoria 2"
         ),
         holes=holes,
         performance_summary=summary
     )
+    return GolfMetricsCalculator.recompute_and_reconcile(demo_data)

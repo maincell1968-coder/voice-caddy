@@ -1,7 +1,9 @@
 import os
 import tempfile
 import json
+import base64
 import urllib.request
+import urllib.parse
 from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
@@ -19,20 +21,34 @@ from core.pdf_export import PDFReportGenerator
 from core.course import CourseRegistry, CONERO_GOLF_CLUB, GolfCourse
 from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex, get_default_bag, sort_clubs_by_distance
 from core.visualizer import GolfHoleVisualizer
+from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
 from core.demo_data import get_demo_golf_round
 from core.auth import AuthManager, AIUserConfig, UserRecord, STRAFATTI_INITIAL_MEMBERS
+from datetime import datetime
 from core.ai_provider import test_ai_connection, AIProviderError
 from core.telegram_config import TelegramConfigManager
+from core.telegram_service import get_telegram_service
 from core.elevation_service import elevation_service, haversine_distance, calculate_plays_like
 from core.live_session import LiveSessionManager
+from core.backup_manager import backup_manager
 from golf_rules_module import render_rules_academy
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
 
+def get_asset_base64(filename: str) -> str:
+    path = PROJECT_ROOT / "assets" / filename
+    if path.exists():
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    return ""
+
+_icon_path = PROJECT_ROOT / "assets" / "voice_caddy_golfer_icon.png"
+_page_icon = str(_icon_path) if _icon_path.exists() else "⛳"
+
 st.set_page_config(
     page_title="Voice Caddy Pro | Club & Performance Portal",
-    page_icon="⛳",
+    page_icon=_page_icon,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -60,8 +76,10 @@ st.markdown("""
             margin-bottom: 8px;
         }
         .landing-subtitle {
-            font-size: 1.15rem;
-            color: #A0AEC0;
+            font-size: 0.92rem;
+            color: #94A3B8;
+            letter-spacing: 0.5px;
+            font-weight: 500;
             margin-bottom: 0;
         }
         .group-card-strafatti {
@@ -206,6 +224,147 @@ st.markdown("""
             margin-right: 6px;
             margin-top: 6px;
         }
+        /* Guide & Onboarding Banner */
+        .guide-box {
+            background: linear-gradient(145deg, #0d1522 0%, #131f33 100%);
+            border: 1px solid rgba(52, 152, 219, 0.35);
+            border-left: 5px solid #3498DB;
+            border-radius: 14px;
+            padding: 26px 28px;
+            margin: 0 auto 30px auto;
+            box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+        }
+        .guide-header-title {
+            font-size: 1.35rem;
+            font-weight: 800;
+            letter-spacing: -0.2px;
+            background: linear-gradient(90deg, #FFFFFF 0%, #68D391 50%, #F6E05E 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .guide-header-subtitle {
+            font-size: 0.95rem;
+            color: #CBD5E1;
+            line-height: 1.5;
+            margin-bottom: 22px;
+        }
+        .guide-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .guide-card-phase1 {
+            background: rgba(18, 30, 51, 0.75);
+            border: 1px solid rgba(52, 152, 219, 0.35);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .guide-card-phase2 {
+            background: rgba(19, 36, 27, 0.75);
+            border: 1px solid rgba(46, 204, 113, 0.35);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .guide-phase-title-1 {
+            color: #3498DB;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(52, 152, 219, 0.25);
+            padding-bottom: 8px;
+        }
+        .guide-phase-title-2 {
+            color: #2ECC71;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid rgba(46, 204, 113, 0.25);
+            padding-bottom: 8px;
+        }
+        .guide-step-item {
+            margin-bottom: 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .guide-step-num {
+            background: rgba(255, 255, 255, 0.12);
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 0.8rem;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .guide-step-content {
+            font-size: 0.90rem;
+            color: #CBD5E1;
+            line-height: 1.5;
+        }
+        .guide-step-content b {
+            color: #FFFFFF;
+        }
+        .guide-phase-footer {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+        .guide-benefits-strip {
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(241, 196, 15, 0.25);
+            border-radius: 10px;
+            padding: 16px 20px;
+        }
+        .guide-benefits-title {
+            color: #F1C40F;
+            font-size: 0.92rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .guide-benefits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 12px;
+        }
+        .guide-benefit-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            color: #E2E8F0;
+        }
+        .guide-benefit-item b {
+            color: #F1C40F;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -216,6 +375,22 @@ auth_manager = AuthManager()
 db = DatabaseManager()
 course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
 tg_manager = TelegramConfigManager()
+bot_service = get_telegram_service()
+
+# Avvio automatico in background del Bot Telegram se il token è presente
+if tg_manager.get_token() and not bot_service.is_alive():
+    try:
+        bot_service.start()
+    except Exception:
+        pass
+
+# SafeVault: Snapshot di sicurezza automatico all'avvio sessione
+if "startup_backup_done" not in st.session_state:
+    try:
+        backup_manager.create_startup_snapshot()
+        st.session_state.startup_backup_done = True
+    except Exception:
+        pass
 
 if "auth_user" not in st.session_state:
     st.session_state.auth_user = None
@@ -238,72 +413,94 @@ if "selected_course_id" not in st.session_state:
 
 def inject_autofill_cleaner(username_val: str = ""):
     """
-    Prevents browser password managers from erroneously associating API keys
-    or model parameters (e.g. groq/compound-mini, base) with login passwords,
-    and explicitly binds the selected username to the login password input.
+    Disabilita in modo categorico l'autofill e la memorizzazione automatica delle password
+    da parte dei browser (Chrome, Edge, Firefox, Safari) e password manager esterni.
+    Svuota attivamente qualsiasi valore auto-iniettato da Chrome/Edge finché l'utente non digita manualmente.
     """
-    escaped_user = (username_val or "").replace('"', '\\"')
-    components.html(f"""
+    components.html("""
         <script>
-            (function() {{
-                try {{
+            (function() {
+                try {
                     const parentDoc = window.parent.document;
-                    let userField = parentDoc.getElementById('vc_autofill_username');
-                    if (!userField) {{
-                        userField = parentDoc.createElement('input');
-                        userField.type = 'text';
-                        userField.id = 'vc_autofill_username';
-                        userField.name = 'username';
-                        userField.autocomplete = 'username';
-                        userField.style.position = 'absolute';
-                        userField.style.opacity = '0';
-                        userField.style.pointerEvents = 'none';
-                        userField.style.left = '-9999px';
-                        userField.tabIndex = -1;
-                        parentDoc.body.appendChild(userField);
-                    }}
-                    if ("{escaped_user}") {{
-                        userField.value = "{escaped_user}";
-                    }}
 
-                    function sanitizeInputs() {{
+                    // Rimuove eventuali campi nascosti legacy
+                    const oldUserField = parentDoc.getElementById('vc_autofill_username');
+                    if (oldUserField) {
+                        oldUserField.remove();
+                    }
+
+                    function sanitizePasswordInputs() {
+                        const forms = parentDoc.querySelectorAll('form');
+                        forms.forEach(f => {
+                            f.setAttribute('autocomplete', 'off');
+                        });
+
                         const pwInputs = parentDoc.querySelectorAll('input[type="password"]');
-                        pwInputs.forEach(input => {{
-                            const label = (input.getAttribute('aria-label') || '').toLowerCase();
-                            const placeholder = (input.getAttribute('placeholder') || '').toLowerCase();
-                            const isApiKey = label.includes('api') || label.includes('token') || label.includes('chiave') ||
-                                             placeholder.includes('token') || placeholder.includes('api');
-                            if (isApiKey) {{
-                                input.setAttribute('autocomplete', 'new-password');
-                                input.setAttribute('data-lpignore', 'true');
-                                input.setAttribute('data-1p-ignore', 'true');
-                                input.setAttribute('data-form-type', 'other');
-                            }} else {{
-                                input.setAttribute('autocomplete', 'current-password');
-                            }}
-                        }});
-                    }}
-                    sanitizeInputs();
-                    setTimeout(sanitizeInputs, 400);
-                    setTimeout(sanitizeInputs, 1200);
+                        pwInputs.forEach(input => {
+                            input.setAttribute('autocomplete', 'new-password');
+                            input.setAttribute('data-lpignore', 'true');
+                            input.setAttribute('data-1p-ignore', 'true');
+                            input.setAttribute('data-bwignore', 'true');
+                            input.setAttribute('data-form-type', 'other');
+                            input.setAttribute('autocapitalize', 'off');
+                            input.setAttribute('autocorrect', 'off');
+                            input.setAttribute('spellcheck', 'false');
 
-                    // Observe DOM changes in Streamlit containers
-                    if (!window._vc_observer_attached) {{
-                        window._vc_observer_attached = true;
-                        const observer = new MutationObserver(() => sanitizeInputs());
-                        observer.observe(parentDoc.body, {{ childList: true, subtree: true }});
-                    }}
-                }} catch (e) {{}}
-            }})();
+                            // Se l'utente non ha interagito manualmente, svuota qualsiasi valore autofillato
+                            if (!input.dataset.userTyped && parentDoc.activeElement !== input) {
+                                if (input.value && input.value.length > 0) {
+                                    input.value = '';
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
+                            }
+
+                            // Registra evento digitazione manuale dell'utente
+                            if (!input.dataset.listenerAttached) {
+                                input.dataset.listenerAttached = 'true';
+                                input.addEventListener('input', function() {
+                                    this.dataset.userTyped = 'true';
+                                });
+                                input.addEventListener('keydown', function() {
+                                    this.dataset.userTyped = 'true';
+                                });
+                                input.addEventListener('focus', function() {
+                                    // Se il campo conteneva già caratteri prima del focus ed è un autofill, azzera
+                                    if (!this.dataset.userTyped && this.value.length > 20) {
+                                        this.value = '';
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    sanitizePasswordInputs();
+                    setTimeout(sanitizePasswordInputs, 50);
+                    setTimeout(sanitizePasswordInputs, 200);
+                    setTimeout(sanitizePasswordInputs, 600);
+                    setTimeout(sanitizePasswordInputs, 1200);
+
+                    if (!window._vc_clean_observer) {
+                        window._vc_clean_observer = true;
+                        const observer = new MutationObserver(() => sanitizePasswordInputs());
+                        observer.observe(parentDoc.body, { childList: true, subtree: true });
+                    }
+                } catch (e) {}
+            })();
         </script>
     """, height=0, width=0)
 
 
 def render_footer():
-    st.markdown("""
+    golfer_b64 = get_asset_base64("voice_caddy_golfer_icon.png")
+    if golfer_b64:
+        icon_html = f'<img src="data:image/png;base64,{golfer_b64}" style="height: 18px; vertical-align: middle; margin-right: 6px; filter: drop-shadow(0 1px 4px rgba(212,175,55,0.5));">'
+    else:
+        icon_html = "⛳ "
+    st.markdown(f"""
         <div style="margin-top: 55px; padding: 25px 15px; border-top: 1px solid rgba(255, 255, 255, 0.08); text-align: center;">
             <div style="font-size: 0.95rem; font-weight: 700; color: #E2E8F0; letter-spacing: 0.5px; margin-bottom: 6px;">
-                ⛳ VOICE CADDY PRO &bull; PGA Performance Analytics & Live GPS Caddie
+                {icon_html}VOICE CADDY PRO &bull; PGA Performance Analytics & Live GPS Caddie
             </div>
             <div style="font-size: 0.85rem; color: #CBD5E1; margin-bottom: 6px;">
                 Concept, Architettura e Proprietà Intellettuale &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Tutti i diritti riservati
@@ -319,11 +516,122 @@ def render_footer():
 # SCREEN 1: ACCESS GATE & LOGIN / PASSWORD CHANGE FLOW
 # =========================================================
 if st.session_state.auth_user is None:
-    st.markdown("""
-        <div class="landing-hero">
-            <div class="landing-title">⛳ VOICE CADDY PRO</div>
-            <div class="landing-subtitle">PGA Tour Performance Analytics & Club Portal • Accesso Riservato</div>
+    logo_full_b64 = get_asset_base64("voice_caddy_logo_full.png")
+    if logo_full_b64:
+        hero_brand_html = f'<img src="data:image/png;base64,{logo_full_b64}" alt="Voice Caddy Pro" style="max-height: 135px; width: auto; max-width: 92%; margin-bottom: 14px; filter: drop-shadow(0 8px 24px rgba(212,175,55,0.38));">'
+    else:
+        hero_brand_html = '<div class="landing-title">⛳ VOICE CADDY PRO</div>'
+    st.markdown(f"""
+        <div class="landing-hero" style="text-align: center; padding: 32px 20px;">
+            {hero_brand_html}
+            <div class="landing-subtitle">Performance Analytics & Club Portal • Accesso Riservato</div>
         </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+<div class="guide-box">
+    <div class="guide-header-title">
+        ⛳ Il tuo caddie digitale, in 2 fasi
+    </div>
+    <div class="guide-header-subtitle">
+        Bastano pochi minuti di configurazione. Poi in campo ci pensa il bot Telegram: tu giochi, lui raccoglie dati, distanze e statistiche.
+    </div>
+    <div class="guide-columns">
+        <div class="guide-card-phase1">
+            <div>
+                <div class="guide-phase-title-1">
+                    🛠️ Fase 1 – Configura il tuo profilo (una volta sola)
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">1</div>
+                    <div class="guide-step-content">
+                        <b>Accedi:</b> Inserisci o seleziona il tuo <b>nome</b> e, come password iniziale, il tuo <b>cognome</b>.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">2</div>
+                    <div class="guide-step-content">
+                        <b>Personalizza la password:</b> Al primo accesso imposta la tua <b>nuova password personale e riservata</b> (minimo 4 caratteri): sarà quella che userai d'ora in avanti.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">3</div>
+                    <div class="guide-step-content">
+                        <b>Componi la tua sacca:</b> Inserisci le mazze che usi abitualmente. Più è precisa la sacca, più saranno accurate le statistiche e i consigli.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">4</div>
+                    <div class="guide-step-content">
+                        <b>Attiva il bot Telegram:</b> Apri Telegram, inquadra il <b>QR Code</b> nel tuo profilo (oppure tocca il link di avvio rapido) e il bot si collegherà automaticamente al tuo account.
+                    </div>
+                </div>
+            </div>
+            <div class="guide-phase-footer" style="color: #60A5FA;">
+                ✅ <b>Fatto.</b> Da questo momento il bot è il tuo assistente personale in campo.
+            </div>
+        </div>
+        <div class="guide-card-phase2">
+            <div>
+                <div class="guide-phase-title-2">
+                    ⛳ Fase 2 – In campo, buca dopo buca
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">1</div>
+                    <div class="guide-step-content">
+                        <b>Al tee della buca 1:</b> Dì al bot se stai giocando in <b>Training</b> o in <b>Gara</b>. Puoi scrivere un messaggio o inviare un vocale.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">2</div>
+                    <div class="guide-step-content">
+                        <b>Prima di ogni colpo:</b> Comunica la <b>mazza che stai usando</b> (es. <em>"Ferro 7"</em>). Poi gioca normalmente il tuo colpo.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">3</div>
+                    <div class="guide-step-content">
+                        <b>Dopo il colpo:</b> Raggiungi la palla e invia la tua <b>posizione</b> al bot (icona 📎 <em>Posizione</em> di Telegram). Ti risponderà subito con la distanza percorsa e le indicazioni per arrivare al green.
+                    </div>
+                </div>
+                <div class="guide-step-item">
+                    <div class="guide-step-num">4</div>
+                    <div class="guide-step-content">
+                        <b>Sul green:</b> Comunica il <b>numero di putt</b> (es. <em>"2 putt"</em>). La buca è registrata e chiusa!
+                    </div>
+                </div>
+            </div>
+            <div class="guide-phase-footer" style="color: #4ADE80;">
+                🔄 <b>Ripeti dalla 1 alla 18.</b> Nessun taccuino, nessun calcolo: al bot basta un messaggio o un vocale.
+            </div>
+        </div>
+    </div>
+    <div class="guide-benefits-strip">
+        <div class="guide-benefits-title">
+            ⭐ Perché ti conviene
+        </div>
+        <div class="guide-benefits-grid">
+            <div class="guide-benefit-item">
+                <span>📏</span> <span><b>Distanze reali:</b> calcolo metrico GPS dopo ogni colpo, senza telemetri o orologi dedicati</span>
+            </div>
+            <div class="guide-benefit-item">
+                <span>🏌️</span> <span><b>Statistiche per mazza:</b> scopri quanto tiri davvero con ogni ferro</span>
+            </div>
+            <div class="guide-benefit-item">
+                <span>📊</span> <span><b>Storico di partite:</b> archivio allenamenti e gare sempre a portata di mano sul portale</span>
+            </div>
+            <div class="guide-benefit-item">
+                <span>🎙️</span> <span><b>Zero attrito:</b> un vocale o un messaggio rapido, e sei già al colpo successivo</span>
+            </div>
+        </div>
+        <div style="text-align: right; margin-top: 10px; font-size: 0.92rem; font-weight: 700; color: #2ECC71;">
+            🏌️‍♂️ Buon golf!
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown(f"""
         <div class="legal-disclaimer-box">
             <div class="disclaimer-title">
                 ⚖️ Note Legali, Origine del Software & Esonero di Responsabilità
@@ -382,6 +690,7 @@ if st.session_state.auth_user is None:
         col_pw1, col_pw2, col_pw3 = st.columns([1, 2, 1])
         with col_pw2:
             with st.form("form_change_initial_pw"):
+                inject_autofill_cleaner()
                 new_pw = st.text_input("Nuova Password Personale", type="password", help="Almeno 4 caratteri")
                 new_pw_confirm = st.text_input("Conferma Nuova Password", type="password")
                 submit_pw = st.form_submit_button("💾 Salva Nuova Password ed Entra nel Dashboard", type="primary", use_container_width=True)
@@ -465,8 +774,10 @@ if st.session_state.auth_user is None:
                 </div>
             """, unsafe_allow_html=True)
 
+            if "strafatti_login_error" in st.session_state:
+                st.error(st.session_state.pop("strafatti_login_error"))
+
             with st.form("form_login_strafatti"):
-                # Autocomplete / Selector or custom text
                 member_names = [
                     "Stefano",
                     "Giorgio",
@@ -480,16 +791,19 @@ if st.session_state.auth_user is None:
                 strafatti_user_input = st.selectbox(
                     "Seleziona il tuo Profilo Utente:",
                     options=member_names,
-                    index=0
+                    index=0,
+                    key="strafatti_user_select"
                 )
                 inject_autofill_cleaner(strafatti_user_input)
 
+                pw_ver = st.session_state.get("strafatti_pw_version", 0)
                 strafatti_pw_input = st.text_input(
                     "Password (al primo accesso inserisci il tuo Cognome):",
                     type="password",
-                    placeholder="Inserisci la tua password..."
+                    placeholder="Inserisci la tua password...",
+                    key=f"strafatti_pw_{strafatti_user_input}_{pw_ver}"
                 )
-                st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate (es. 'groq/compound-mini' o 'base'), clicca su <b>Gestisci password...</b> nel menu del browser per eliminarle.</i></div>", unsafe_allow_html=True)
+                st.caption("🔒 *Autofill disattivato: il campo rimane sempre vuoto per evitare errori di compilazione.*")
                 submit_strafatti = st.form_submit_button("🚀 Entra nel Club Strafatti", type="primary", use_container_width=True)
 
                 if submit_strafatti:
@@ -510,7 +824,10 @@ if st.session_state.auth_user is None:
                             st.success(f"Bentornato {user.first_name}!")
                             st.rerun()
                     else:
-                        st.error(f"⛔ {msg}")
+                        st.session_state["strafatti_login_error"] = f"⛔ {msg}"
+                        # Incrementa versione: al rerun il campo password sarà immediatamente vuoto
+                        st.session_state["strafatti_pw_version"] = pw_ver + 1
+                        st.rerun()
 
         else:
             st.markdown("""
@@ -522,15 +839,21 @@ if st.session_state.auth_user is None:
                 </div>
             """, unsafe_allow_html=True)
 
+            if "amici_login_error" in st.session_state:
+                st.error(st.session_state.pop("amici_login_error"))
+
             with st.form("form_login_amici"):
-                amici_name_input = st.text_input("Il tuo Nome:", placeholder="es. Mario")
+                amici_name_input = st.text_input("Il tuo Nome:", placeholder="es. Mario", key="amici_name_input")
                 inject_autofill_cleaner(amici_name_input)
+
+                amici_pw_ver = st.session_state.get("amici_pw_version", 0)
                 amici_pw_input = st.text_input(
                     "Password (al primo accesso inserisci il tuo Cognome):",
                     type="password",
-                    placeholder="es. Rossi"
+                    placeholder="es. Rossi",
+                    key=f"amici_pw_{amici_pw_ver}"
                 )
-                st.markdown("<div style='font-size:0.78rem; color:#64748B; margin-top:-8px; margin-bottom:8px;'>💡 <i>Suggerimento: se il browser ti propone vecchie voci salvate, puoi eliminarle da <b>Gestisci password...</b></i></div>", unsafe_allow_html=True)
+                st.caption("🔒 *Autofill disattivato: il campo rimane sempre vuoto per evitare errori di compilazione.*")
                 submit_amici = st.form_submit_button("🚀 Accedi come Amico", type="primary", use_container_width=True)
 
                 if submit_amici:
@@ -554,7 +877,9 @@ if st.session_state.auth_user is None:
                                 st.success(f"Bentornato {user.first_name}!")
                                 st.rerun()
                         else:
-                            st.error(f"⛔ {msg}")
+                            st.session_state["amici_login_error"] = f"⛔ {msg}"
+                            st.session_state["amici_pw_version"] = amici_pw_ver + 1
+                            st.rerun()
 
     # Visualizza footer di copyright anche sulla schermata di accesso
     render_footer()
@@ -581,6 +906,21 @@ if "user_profile" not in st.session_state or st.session_state.user_profile.playe
         user_id=current_user.user_id,
         default_name=f"{current_user.first_name} {current_user.last_name}"
     )
+
+# Auto-ripristino trasparente dell'ultima partita registrata nel database se non ancora in memoria
+if st.session_state.round_data is None:
+    try:
+        if hasattr(db, "get_latest_round"):
+            latest_saved = db.get_latest_round(user_id=current_user.user_id)
+        elif hasattr(db, "get_all_rounds") and hasattr(db, "get_round_by_id"):
+            all_r = db.get_all_rounds(user_id=current_user.user_id)
+            latest_saved = db.get_round_by_id(all_r[0]["id"]) if all_r else None
+        else:
+            latest_saved = None
+        if latest_saved:
+            st.session_state.round_data = latest_saved
+    except Exception:
+        pass
 
 # Header Bar with User Badge, Info Popover & Logout
 header_left, header_info, header_right = st.columns([3, 1.3, 1])
@@ -630,7 +970,15 @@ st.markdown("---")
 # SIDEBAR SETUP (BYO-AI & Analysis Controls)
 # =========================================================
 with st.sidebar:
-    st.title("⛳ Voice Caddy Pro")
+    logo_full_b64 = get_asset_base64("voice_caddy_logo_full.png")
+    if logo_full_b64:
+        st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 8px; padding: 4px 0;">
+                <img src="data:image/png;base64,{logo_full_b64}" alt="Voice Caddy Pro" style="max-height: 48px; max-width: 95%; filter: drop-shadow(0 3px 10px rgba(212,175,55,0.3));">
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.title("⛳ Voice Caddy Pro")
     st.caption("AI Caddie & PGA Performance Analytics Engine")
 
     # ---------------------------------------------------------
@@ -887,7 +1235,7 @@ with st.sidebar:
     process_btn = st.button("🚀 Analizza Partita con la Tua IA", type="primary", use_container_width=True, disabled=not uploaded_files)
 
     # ---------------------------------------------------------
-    # TELEGRAM BOT LIVE IN CAMPO
+    # TELEGRAM BOT LIVE IN CAMPO (Smart Pairing & Zero-Friction)
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📱 Bot Telegram (Live in Campo)")
@@ -895,77 +1243,100 @@ with st.sidebar:
 
     curr_token = tg_manager.get_token()
     bot_username = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+    linked_chat_id = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
 
-    token_status_color = "#2ECC71" if curr_token else "#E74C3C"
-    token_status_text = "✅ Configurato & Pronto" if curr_token else "⚠️ Da Configurare"
-
-    # Box informativo principale con Nome Bot, link diretto e utenza
-    st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">🤖 Bot Telegram:</span>
-                <span style="font-size:0.75rem; font-weight:bold; color:{token_status_color}; background:rgba(46,204,113,0.1); padding:2px 8px; border-radius:4px;">{token_status_text}</span>
-            </div>
-            <div style="font-size:1.15rem; font-weight:bold; color:#38BDF8; margin-bottom: 8px;">
-                @{bot_username}
-            </div>
-            <div style="font-size:0.82rem; color:#94A3B8; line-height:1.5; margin-bottom: 12px; background:#0b0f19; padding:8px; border-radius:6px;">
-                👤 <b>Tua utenza:</b> <span style="color:#F1F5F9;">{current_user.first_name} {current_user.last_name}</span><br>
-                💬 <b>Comando di collegamento:</b><br>
-                <code style="color:#FBBF24; font-weight:bold; font-size:0.88rem;">/giocatore {current_user.first_name}</code>
-            </div>
-            <a href="https://t.me/{bot_username}" target="_blank" style="display:block; text-align:center; background:#0284C7; color:#FFFFFF; padding:9px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem; text-decoration:none; box-shadow: 0 2px 8px rgba(2,132,199,0.3);">
-                👉 Apri Chat con @{bot_username}
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Guida passo-passo chiara
-    with st.expander("ℹ️ Come funziona il salvataggio automatico sul sito", expanded=False):
+    # 2. Sezione Giocatore: Connesso vs Da Connettere
+    if linked_chat_id:
+        # GIOCATORE CONNESSO
         st.markdown(f"""
-            <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
-                <b>1. Avvia il Bot sul PC:</b><br>
-                Fai doppio clic sul file <code>avvia_telegram_bot.bat</code> sul PC. Rimarrà aperta la finestra nera di ascolto.<br><br>
-                <b>2. Collega la chat Telegram:</b><br>
-                Sul cellulare apri <b>@{bot_username}</b> e scrivi:<br>
-                <code>/giocatore {current_user.first_name}</code><br>
-                <i>(Basta farlo la prima volta per associare la chat al tuo profilo e alla tua sacca)</i>.<br><br>
-                <b>3. Invia note vocali o testo durante il gioco:</b><br>
-                Manda note vocali o messaggi descrivendo i colpi buca per buca.<br><br>
-                <b>4. Come si trasferiscono sul sito:</b><br>
-                <b>Il trasferimento è 100% automatico!</b> Il Bot e questo sito condividono lo stesso database SQLite locale. Non devi esportare nulla a mano: appena invii il vocale, il bot calcola lo score e salva il giro. Ti basta aprire la scheda <b>'📈 Storico Partite & Trend'</b> qui sopra per ritrovare la partita e aprirla con un clic!
+            <div style="background: linear-gradient(135deg, #0d2818 0%, #081a10 100%); border: 1px solid #10B981; border-radius: 10px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.15);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                    <span style="font-size:0.85rem; font-weight:bold; color:#F1F5F9;">📱 Smartphone:</span>
+                    <span style="font-size:0.75rem; font-weight:bold; color:#10B981; background:rgba(16,185,129,0.18); padding:2px 8px; border-radius:4px;">🟢 Collegato & Pronto</span>
+                </div>
+                <div style="font-size:1.10rem; font-weight:bold; color:#6EE7B7; margin-bottom: 6px;">
+                    👤 {current_user.first_name} {current_user.last_name}
+                </div>
+                <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5; margin-bottom: 8px; background:#041009; padding:8px; border-radius:6px;">
+                    💬 <b>Chat Telegram:</b> <code>#{linked_chat_id}</code><br>
+                    🏌️ <b>Sacca Personale:</b> 14 Bastoni sincronizzati<br>
+                    ⛳ <b>Percorso:</b> {active_course.name}
+                </div>
+                <div style="text-align:center; font-size:0.75rem; color:#94A3B8;">
+                    🤖 Bot: <b>@{bot_username}</b>
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
-    with st.expander("⚙️ Gestione Avanzata Token Telegram", expanded=not bool(curr_token)):
-        tb_input = st.text_input(
-            "Token Telegram (@BotFather):",
-            value=curr_token,
-            type="password",
-            key="sidebar_tg_token",
-            help="Incolla qui il token rilasciato da @BotFather su Telegram"
-        )
-        col_tb1, col_tb2 = st.columns(2)
-        with col_tb1:
-            if st.button("💾 Salva Token", key="save_tg_tok_btn", use_container_width=True):
-                tg_manager.set_token(tb_input)
-                st.success("Token salvato con successo!")
-                st.rerun()
-        with col_tb2:
-            if st.button("🔌 Verifica Bot", key="test_tg_tok_btn", use_container_width=True):
-                ok_t, msg_t, b_uname = tg_manager.test_token(tb_input)
-                if ok_t:
-                    st.session_state["tg_status_info"] = (True, f"✅ Bot attivo: @{b_uname}", b_uname)
+        col_act_p1, col_act_p2 = st.columns([3, 2])
+        with col_act_p1:
+            if st.button("🧪 Invia Test a Smartphone", key="test_tg_ping_btn", use_container_width=True, help="Invia un messaggio di prova istantaneo al tuo cellulare"):
+                ok_msg, resp_msg = tg_manager.send_direct_message(
+                    linked_chat_id,
+                    f"⛳ <b>Voice Caddy Pro</b>: Ciao {current_user.first_name}! Connessione attiva. Sacca e profilo sincronizzati con il PC. Buon gioco!"
+                )
+                if ok_msg:
+                    st.success("✅ Messaggio di prova inviato con successo al tuo cellulare!")
                 else:
-                    st.session_state["tg_status_info"] = (False, f"❌ {msg_t}", None)
+                    st.error(f"❌ Errore invio: {resp_msg}")
+        with col_act_p2:
+            if st.button("❌ Scollega", key="unlink_tg_btn", use_container_width=True, help="Scollega questo dispositivo"):
+                tg_manager.unlink_user(current_user.user_id)
+                st.info("Dispositivo scollegato.")
+                st.rerun()
 
-        if "tg_status_info" in st.session_state:
-            ok_si, msg_si, u_si = st.session_state["tg_status_info"]
-            if ok_si:
-                st.success(msg_si)
-                st.markdown(f"[👉 **Apri la chat del Bot su Telegram**](https://t.me/{u_si})")
-            else:
-                st.error(msg_si)
+    else:
+        # GIOCATORE: PAIRING SMART A 1-CLIC + QR CODE
+        deep_link = f"https://t.me/{bot_username}?start=link_{current_user.user_id}"
+        qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={urllib.parse.quote(deep_link)}"
+
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #182234 0%, #0d131f 100%); border: 1px solid #2C3E5D; border-radius: 10px; padding: 14px; margin-bottom: 8px;">
+                <div style="font-size:0.95rem; font-weight:bold; color:#38BDF8; margin-bottom: 4px;">
+                    👤 {current_user.first_name} {current_user.last_name}
+                </div>
+                <div style="font-size:0.82rem; color:#CBD5E1; margin-bottom: 4px;">
+                    Inquadra il QR Code con lo smartphone per sincronizzare la sacca:
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Riquadro QR Code nativo Streamlit
+        col_qr1, col_qr2, col_qr3 = st.columns([1, 4, 1])
+        with col_qr2:
+            st.image(qr_url, caption="📷 Inquadra con la fotocamera", width=170)
+
+        st.caption("Sul telefono si aprirà Telegram: tocca semplicemente **[ AVVIA ]** per sincronizzare la sacca.")
+
+        # Pulsante nativo per apertura chat diretta 1-clic su Desktop
+        st.link_button(
+            f"👉 Apri Chat con @{bot_username}",
+            deep_link,
+            type="primary",
+            use_container_width=True,
+            help="Apre Telegram con il comando di collegamento preimpostato"
+        )
+        if st.button("🔄 Verifica Connessione Smartphone", key="check_tg_link_btn", use_container_width=True, help="Rileva immediatamente il collegamento avvenuto dal cellulare"):
+            st.rerun()
+        st.markdown(f"""
+            <div style="text-align:center; font-size:0.75rem; color:#94A3B8; margin-top:6px; margin-bottom:12px;">
+                🤖 Bot: <b>@{bot_username}</b>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Guida passo-passo chiara
+    with st.expander("ℹ️ Come funziona l'uso in campo e il salvataggio automatico", expanded=False):
+        st.markdown(f"""
+            <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
+                <b>1. Collega lo smartphone in 2 secondi:</b><br>
+                Inquadra il QR Code con la fotocamera del tuo cellulare oppure clicca il pulsante blu su questo PC. Si aprirà Telegram con il bot <b>@{bot_username}</b>: premi semplicemente <b>[ AVVIA ]</b>. Il tuo profilo e la tua sacca da golf sono immediatamente sincronizzati!<br><br>
+                <b>2. Durante il gioco sul percorso:</b><br>
+                Sul telefono avrai il grande tasto <code>[ 📍 Calcola Distanza & Plays Like ]</code> per avere subito la distanza al green, il dislivello orografico e il bastone consigliato dalla tua sacca. Dopo il colpo puoi inviare una breve nota vocale (es. <i>"Ferro 7 dal fairway, finita a 3 metri dal green"</i>).<br><br>
+                <b>3. Salvataggio 100% Automatico sul PC:</b><br>
+                Non devi esportare o caricare file a mano: il bot Telegram e questo sito condividono lo stesso database locale. I colpi e le metriche finiscono direttamente nel tuo profilo sul PC!
+            </div>
+        """, unsafe_allow_html=True)
+
 
 
 # ---------------------------------------------------------
@@ -1110,6 +1481,7 @@ def render_strokes_lost_radar(strokes_lost):
 # =========================================================
 tab_titles = [
     "📊 Live Dashboard & Diagnosi PGA",
+    "💬 Chat con il Caddie",
     "📍 Pin Position & Plays Like GPS",
     "🏌️‍♂️ Profilo Personale & Sacca Mazze",
     "📈 Storico Partite & Trend",
@@ -1121,12 +1493,13 @@ if current_user.is_admin:
 
 all_tabs = st.tabs(tab_titles)
 nav_tab1 = all_tabs[0]
-nav_pin_gps = all_tabs[1]
-nav_tab2 = all_tabs[2]
-nav_tab3 = all_tabs[3]
-nav_tab4 = all_tabs[4]
-nav_rules = all_tabs[5]
-nav_admin = all_tabs[6] if current_user.is_admin else None
+nav_chat = all_tabs[1]
+nav_pin_gps = all_tabs[2]
+nav_tab2 = all_tabs[3]
+nav_tab3 = all_tabs[4]
+nav_tab4 = all_tabs[5]
+nav_rules = all_tabs[6]
+nav_admin = all_tabs[7] if current_user.is_admin else None
 
 
 # ---------------------------------------------------------
@@ -1159,13 +1532,22 @@ with nav_tab1:
                 use_container_width=True
             )
 
-        # Top KPI Metrics Cards
-        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-        kpi1.metric("Score Finale", f"{summary.total_score} ({rel_par_str})")
-        kpi2.metric("Fairway Presi (FIR)", f"{summary.fairway_accuracy_pct}%")
-        kpi3.metric("Green in Regulation", f"{summary.gir_pct}%")
-        kpi4.metric("Course Mgmt Score", f"{diag.course_management_score}/100")
-        kpi5.metric("Scrambling %", f"{summary.scrambling_pct}%")
+        # Top KPI Metrics Cards (Lordo, Netto, Stableford WHS)
+        is_stbl = "stableford" in (data.round_info.game_format or "stableford").lower()
+        kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+        if is_stbl:
+            kpi1.metric("Stableford Netto", f"{summary.total_stableford_points or 0} pt", f"{summary.total_stableford_gross_points or 0} pt Lordo")
+            kpi2.metric("Colpi Lordi / Netti", f"{summary.total_score} L / {summary.total_score_net or summary.total_score} N", f"Rel. Par {rel_par_str}")
+        else:
+            kpi1.metric("Colpi Lordi", f"{summary.total_score} ({rel_par_str})")
+            kpi2.metric("Colpi Netti", f"{summary.total_score_net or summary.total_score}")
+
+        phcp_display = f"{data.round_info.playing_hcp}" if data.round_info.playing_hcp is not None else "-"
+        ehcp_display = f"{data.round_info.exact_hcp}" if data.round_info.exact_hcp is not None else str(st.session_state.user_profile.handicap)
+        kpi3.metric("Playing HCP", f"{phcp_display} colpi", f"Exact: {ehcp_display}")
+        kpi4.metric("Fairway Presi (FIR)", f"{summary.fairway_accuracy_pct}%")
+        kpi5.metric("Green in Reg. (GIR)", f"{summary.gir_pct}%")
+        kpi6.metric("Course Mgmt", f"{diag.course_management_score}/100")
 
         st.markdown("---")
 
@@ -1211,7 +1593,10 @@ with nav_tab1:
                     map_col, table_col = st.columns([2, 3])
 
                     with map_col:
-                        fig_map = GolfHoleVisualizer.create_hole_trajectory_map(h)
+                        fig_map = GolfHoleVisualizer.create_hole_trajectory_map(
+                            h,
+                            course_id=active_course.course_id if active_course else None
+                        )
                         st.plotly_chart(fig_map, use_container_width=True)
 
                     with table_col:
@@ -1277,6 +1662,127 @@ with nav_tab1:
 
     else:
         st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
+
+
+# ---------------------------------------------------------
+# TAB: CHAT CON IL CADDIE (CLOUD AI & PERSONALITÀ)
+# ---------------------------------------------------------
+with nav_chat:
+    st.subheader("💬 Chat con il tuo Caddie Personale (Cloud AI)")
+    st.caption("Consulenza strategica e caddie virtuale in tempo reale: chiedi consigli sui bastoni da tirare, gestione del vento, strategie di percorso o supporto mentale.")
+
+    if "caddy_chat_history" not in st.session_state:
+        st.session_state.caddy_chat_history = []
+    if "active_chat_tone" not in st.session_state:
+        st.session_state.active_chat_tone = getattr(st.session_state.user_profile, "caddy_tone", "professionale") or "professionale"
+
+    # Tone Selector Bar (Pill buttons)
+    top_col1, top_col2 = st.columns([3.2, 0.8])
+    with top_col1:
+        st.markdown("<div style='font-size:0.85rem; font-weight:bold; color:#94A3B8; margin-bottom:4px;'>🎭 PERSONALITÀ ATTIVA DEL CADDIE:</div>", unsafe_allow_html=True)
+        tone_cols = st.columns(4)
+        for idx, t_enum in enumerate(CaddyTone):
+            is_active = (st.session_state.active_chat_tone == t_enum.value)
+            btn_type = "primary" if is_active else "secondary"
+            with tone_cols[idx]:
+                if st.button(t_enum.short_label, key=f"chat_tone_btn_{t_enum.value}", type=btn_type, use_container_width=True):
+                    st.session_state.active_chat_tone = t_enum.value
+                    # Welcome reaction in new tone
+                    phrase = CaddyPersonalityEngine.get_instance().get_phrase(
+                        "START_ROUND",
+                        tone=t_enum.value,
+                        buca="1",
+                        nome=st.session_state.user_profile.player_name
+                    )
+                    st.session_state.caddy_chat_history.append({
+                        "role": "assistant",
+                        "content": f"🎭 <i>Personalità impostata su {t_enum.display_name}</i>\n\n«{phrase}»",
+                        "tone": t_enum.value
+                    })
+                    st.rerun()
+
+    with top_col2:
+        st.write("")
+        st.write("")
+        if st.button("🧹 Pulisci", key="btn_clear_caddy_chat", use_container_width=True):
+            st.session_state.caddy_chat_history = []
+            st.rerun()
+
+    active_tone_enum = CaddyTone(st.session_state.active_chat_tone)
+    st.markdown(f"""
+        <div style="background:#1E293B; border-left:4px solid {active_tone_enum.badge_color}; border-radius:6px; padding:8px 12px; margin-bottom:14px; font-size:0.85rem; color:#CBD5E1;">
+            <b style="color:{active_tone_enum.badge_color};">{active_tone_enum.display_name}</b> — <i>{active_tone_enum.description}</i>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Quick Suggestion Chips
+    st.markdown("<div style='font-size:0.82rem; color:#94A3B8; margin-bottom:6px;'>⚡ <i>Domande rapide:</i></div>", unsafe_allow_html=True)
+    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+    quick_prompt = None
+    with q_col1:
+        if st.button("🏌️ Bastone da 145m?", key="qp_dist", use_container_width=True):
+            quick_prompt = "Ho 145 metri alla bandiera in leggera salita con un po' di vento contrario. Quale bastone mi consigli dalla mia sacca?"
+    with q_col2:
+        if st.button("⛳ Strategia Buca 1", key="qp_h1", use_container_width=True):
+            quick_prompt = f"Dammi la strategia di gioco migliore per affrontare la buca 1 di {active_course.name} considerando il mio handicap."
+    with q_col3:
+        if st.button("🌊 Palla in Acqua", key="qp_water", use_container_width=True):
+            quick_prompt = "Ho appena mandato la palla in acqua dal tee! Come affronto il colpo successivo per limitare i danni ed evitare il disastro?"
+    with q_col4:
+        if st.button("🧘 Focus Mentale", key="qp_zen", use_container_width=True):
+            quick_prompt = "Sento tensione prima di questo tee shot delicato. Dammi un consiglio mentale per ritrovare ritmo, fiducia e calma."
+
+    # Initial Welcome message if history is empty
+    if not st.session_state.caddy_chat_history:
+        welcome_phrase = CaddyPersonalityEngine.get_instance().get_phrase(
+            "START_ROUND",
+            tone=st.session_state.active_chat_tone,
+            buca="1",
+            nome=st.session_state.user_profile.player_name
+        )
+        st.session_state.caddy_chat_history.append({
+            "role": "assistant",
+            "content": welcome_phrase,
+            "tone": st.session_state.active_chat_tone
+        })
+
+    # Render chat messages
+    for msg in st.session_state.caddy_chat_history:
+        if msg["role"] == "user":
+            with st.chat_message("user", avatar="🏌️‍♂️"):
+                st.markdown(msg["content"])
+        else:
+            msg_tone = msg.get("tone", st.session_state.active_chat_tone)
+            tone_avatar = {
+                "professionale": "👔",
+                "arrabbiato": "🤬",
+                "spensierato": "🍻",
+                "psicologo": "🧘"
+            }.get(msg_tone, "⛳")
+            with st.chat_message("assistant", avatar=tone_avatar):
+                st.markdown(msg["content"])
+
+    # Chat Input Box
+    user_input = st.chat_input("Scrivi al caddie (es. 'che bastone tiro da 130m?', 'come gioco questa buca?')...")
+    prompt_to_process = quick_prompt or user_input
+
+    if prompt_to_process:
+        st.session_state.caddy_chat_history.append({"role": "user", "content": prompt_to_process})
+        with st.spinner(f"Il caddie ({active_tone_enum.short_label}) sta valutando..."):
+            reply = CaddyPersonalityEngine.get_instance().chat_with_caddy(
+                message=prompt_to_process,
+                tone=st.session_state.active_chat_tone,
+                history=[{"role": m["role"], "content": m["content"]} for m in st.session_state.caddy_chat_history[:-1]],
+                user_profile=st.session_state.user_profile,
+                ai_config=user_ai,
+                active_course=active_course
+            )
+        st.session_state.caddy_chat_history.append({
+            "role": "assistant",
+            "content": reply,
+            "tone": st.session_state.active_chat_tone
+        })
+        st.rerun()
 
 
 # ---------------------------------------------------------
@@ -1467,6 +1973,28 @@ with nav_tab2:
         st.info(f"**Categoria Assegnata:** {new_cat.value}")
 
         st.markdown("---")
+        st.markdown("### 🎭 Personalità & Tono del Caddie")
+        st.caption("Scegli come il tuo caddie si relazionerà con te durante il giro e nelle chat.")
+        tone_options = [t.value for t in CaddyTone]
+        curr_tone = getattr(prof, "caddy_tone", "professionale") or "professionale"
+        curr_idx = tone_options.index(curr_tone) if curr_tone in tone_options else 0
+        m_caddy_tone = st.selectbox(
+            "Stile Predefinito Caddie",
+            options=tone_options,
+            format_func=lambda k: CaddyTone(k).display_name,
+            index=curr_idx,
+            key="profile_caddy_tone_select"
+        )
+        sel_enum = CaddyTone(m_caddy_tone)
+        st.markdown(f"""
+            <div style="background:#1E293B; border-left:4px solid {sel_enum.badge_color}; border-radius:6px; padding:10px 14px; margin-top:6px; margin-bottom:12px; font-size:0.85rem; color:#CBD5E1;">
+                <b style="color:{sel_enum.badge_color};">{sel_enum.display_name}</b><br>
+                <i>{sel_enum.description}</i><br>
+                <span style="color:#94A3B8; font-size:0.80rem; margin-top:4px; display:inline-block;">{sel_enum.sample_quote}</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("---")
         st.markdown("### 🎙️ In alternativa: Importa Profilo da Nota Vocale")
         setup_audio_file = st.file_uploader("Carica Audio Presentazione Sacca", type=["m4a", "mp3", "wav", "opus", "aac"])
         if st.button("🪄 Estrai Profilo da Audio", type="primary", disabled=not setup_audio_file):
@@ -1515,7 +2043,7 @@ with nav_tab2:
             num_rows="dynamic",
             use_container_width=True,
             column_config={
-                "Mazza": st.column_config.SelectboxColumn("Mazza", options=["Driver", "Legno 3", "Legno 5", "Ibrido 3", "Ibrido 4", "Ferro 4", "Ferro 5", "Ferro 6", "Ferro 7", "Ferro 8", "Ferro 9", "Pitching Wedge", "Gap Wedge (50°/52°)", "Sand Wedge (56°)", "Lob Wedge (60°)", "Putter"], required=True),
+                "Mazza": st.column_config.SelectboxColumn("Mazza", options=["Driver", "Legno 3", "Legno 5", "Ibrido 3", "Ibrido 4", "Ferro 4", "Ferro 5", "Ferro 6", "Ferro 7", "Ferro 8", "Ferro 9", "Pitching Wedge", "Approach Wedge (AW)", "Gap Wedge (50°/52°)", "Sand Wedge (56°)", "Lob Wedge (60°)", "Putter"], required=True),
                 "Marca": st.column_config.SelectboxColumn("Marca", options=["TaylorMade", "Callaway", "Titleist", "Ping", "Cobra", "Mizuno", "Wilson", "Cleveland", "PXG", "Srixon", "Generica"]),
                 "Modello / Tipo": st.column_config.TextColumn("Modello / Tipo"),
                 "Shaft": st.column_config.SelectboxColumn("Shaft", options=["Regular", "Stiff", "Extra Stiff (X-Stiff)", "Senior / Lite", "Ladies"]),
@@ -1549,10 +2077,70 @@ with nav_tab2:
             st.session_state.user_profile.category = new_cat
             st.session_state.user_profile.preferred_ball = m_ball
             st.session_state.user_profile.clubs_in_bag = updated_clubs
+            st.session_state.user_profile.caddy_tone = m_caddy_tone
 
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
             st.rerun()
+
+        # ---------------------------------------------------------
+        # SAFEVAULT: Protezione Dati, Esportazione & Ripristino 1-Clic
+        # ---------------------------------------------------------
+        st.markdown("---")
+        st.subheader("🛡️ Cassaforte Dati & Backup Personale (Anti-Perdita)")
+        st.caption("Scarica una copia di sicurezza certificata dei tuoi dati (Sacca, HCP, Distanze e Gare) o ripristina uno snapshot precedente.")
+
+        col_bk1, col_bk2 = st.columns(2)
+        with col_bk1:
+            st.markdown("<b>💾 Esporta Copia di Sicurezza:</b>", unsafe_allow_html=True)
+            st.caption("Scarica un pacchetto compresso ZIP contenente tutti i tuoi dati da conservare al sicuro.")
+            backup_bytes = backup_manager.export_full_backup_bytes()
+            ts_str = datetime.now().strftime("%Y%m%d_%H%M")
+            st.download_button(
+                label=f"⬇️ Scarica Backup Completo ({current_user.first_name})",
+                data=backup_bytes,
+                file_name=f"VoiceCaddy_Backup_{current_user.user_id}_{ts_str}.zip",
+                mime="application/zip",
+                use_container_width=True,
+                type="secondary"
+            )
+
+        with col_bk2:
+            st.markdown("<b>📥 Ripristina da Backup (ZIP):</b>", unsafe_allow_html=True)
+            uploaded_bk = st.file_uploader("Carica file ZIP di backup:", type=["zip"], key="upload_user_backup_zip")
+            if uploaded_bk is not None:
+                if st.button("🚀 Conferma e Ripristina Dati", key="confirm_restore_user_btn", type="primary", use_container_width=True):
+                    ok_rst, msg_rst = backup_manager.restore_from_zip(uploaded_bk.getvalue())
+                    if ok_rst:
+                        st.success(msg_rst)
+                        st.rerun()
+                    else:
+                        st.error(msg_rst)
+
+        # Snapshot locali rotativi automatici
+        snapshots = backup_manager.list_snapshots()
+        if snapshots:
+            with st.expander(f"🕒 Cronologia Snapshot Automatici ({len(snapshots)} disponibili)", expanded=False):
+                st.caption("Voice Caddy crea automaticamente uno snapshot di sicurezza rotativo ad ogni sessione.")
+                col_sn1, col_sn2 = st.columns([3, 1])
+                with col_sn1:
+                    snap_options = {s["filename"]: f"{s['filename']} — {s['date_str']} ({s['size_kb']} KB)" for s in snapshots}
+                    selected_snap = st.selectbox(
+                        "Seleziona snapshot da ripristinare:",
+                        options=list(snap_options.keys()),
+                        format_func=lambda x: snap_options[x],
+                        key="selected_snapshot_to_restore"
+                    )
+                with col_sn2:
+                    st.write("")
+                    st.write("")
+                    if st.button("🔄 Ripristina Snapshot", key="btn_apply_snapshot", use_container_width=True):
+                        ok_snap, msg_snap = backup_manager.restore_from_snapshot(selected_snap)
+                        if ok_snap:
+                            st.success(f"Snapshot '{selected_snap}' ripristinato con successo!")
+                            st.rerun()
+                        else:
+                            st.error(msg_snap)
 
 
 # ---------------------------------------------------------
@@ -1724,7 +2312,8 @@ if current_user.is_admin and nav_admin:
             new_admin_tok = st.text_input("TELEGRAM_BOT_TOKEN globale:", value=admin_tok, type="password", key="admin_tg_tok_input")
             if st.button("💾 Salva Token Globale", key="admin_save_tg_btn"):
                 tg_manager.set_token(new_admin_tok)
-                st.success("Token salvato nel sistema!")
+                bot_service.restart(token=new_admin_tok)
+                st.success("Token salvato e Bot Server aggiornato!")
                 st.rerun()
 
             ok_adm, msg_adm, adm_uname = tg_manager.test_token(new_admin_tok)
@@ -1738,7 +2327,7 @@ if current_user.is_admin and nav_admin:
             st.markdown("<b>Chat Collegate:</b>", unsafe_allow_html=True)
             users_map = tg_manager.load_users_map()
             if not users_map:
-                st.info("Nessun membro ha ancora collegato la propria chat Telegram. Digiteranno `/giocatore [Nome]` in chat.")
+                st.info("Nessun membro ha ancora collegato la propria chat Telegram. I membri possono collegarsi istantaneamente tramite QR Code o cliccando sul pulsante nella barra laterale.")
             else:
                 for cid, data in users_map.items():
                     st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)
