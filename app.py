@@ -1894,24 +1894,26 @@ with nav_tab1:
                                 f_path = m.get("file_path")
                                 c_text = m.get("content_text")
                                 ts_short = m.get("timestamp", "")[11:16]
+                                is_audio_msg = m_type in ("voice", "audio", "video_note") or bool(f_path)
+                                is_dummy_name = bool(c_text and any(c_text.strip().lower().endswith(ext) for ext in ('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.aac', '.3gp', '.amr')))
+                                needs_transcription = is_audio_msg and (not c_text or is_dummy_name)
 
-                                if m_type in ("voice", "audio", "video_note") or (f_path and not c_text):
-                                    if not c_text and f_path:
-                                        full_p = Path(f_path) if os.path.isabs(f_path) else (PROJECT_ROOT / f_path)
-                                        if full_p.exists():
-                                            try:
-                                                t_text, _ = audio_engine.transcribe(
-                                                    full_p, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
-                                                )
-                                                if t_text:
-                                                    c_text = t_text
-                                                    m["content_text"] = t_text
-                                                    if hasattr(db, "update_telegram_message_text") and m.get("id"):
-                                                        db.update_telegram_message_text(m["id"], t_text)
-                                            except Exception as tx_err:
-                                                logger.warning(f"Errore trascrizione audio {f_path}: {tx_err}")
+                                if needs_transcription and f_path:
+                                    full_p = Path(f_path) if os.path.isabs(f_path) else (PROJECT_ROOT / f_path)
+                                    if full_p.exists():
+                                        try:
+                                            t_text, _ = audio_engine.transcribe(
+                                                full_p, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
+                                            )
+                                            if t_text:
+                                                c_text = t_text
+                                                m["content_text"] = t_text
+                                                if hasattr(db, "update_telegram_message_text") and m.get("id"):
+                                                    db.update_telegram_message_text(m["id"], t_text)
+                                        except Exception as tx_err:
+                                            logger.warning(f"Errore trascrizione audio {f_path}: {tx_err}")
 
-                                if c_text and c_text.strip():
+                                if c_text and not any(c_text.strip().lower().endswith(ext) for ext in ('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.aac', '.3gp', '.amr')):
                                     line = f"[{ts_short}] {c_text.strip()}" if ts_short else c_text.strip()
                                     timeline_lines.append(line)
 
