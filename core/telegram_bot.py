@@ -972,6 +972,34 @@ class VoiceCaddyTelegramBot:
             if not transcript or not transcript.strip():
                 return self.send_message(chat_id, "🎙️ <i>Audio non riconosciuto o vuoto. Riprova registrando la tua nota vocale.</i>")
 
+            # Archiviazione automatica su cloud DB
+            try:
+                from datetime import datetime
+                today_date = datetime.now().strftime("%Y-%m-%d")
+                archive_dir = PROJECT_ROOT / "data" / "audio_archive" / str(chat_id) / today_date
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                archived_file = archive_dir / f"{file_id}.ogg"
+                if os.path.exists(temp_audio_path) and not archived_file.exists():
+                    import shutil
+                    shutil.copy2(temp_audio_path, archived_file)
+
+                rel_path = str(archived_file.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id) if hasattr(self.session_mgr, "get_or_create_session") else {}
+                c_hole = session.get("current_hole")
+                self.db.archive_telegram_message(
+                    chat_id=chat_id,
+                    user_id=user_rec.user_id,
+                    round_date=today_date,
+                    message_type="voice",
+                    content_text=transcript,
+                    file_id=file_id,
+                    file_path=rel_path,
+                    hole_number=c_hole,
+                    group_name=user_rec.group
+                )
+            except Exception as e_arch:
+                logging.warning(f"Errore archiviazione voice in DB: {e_arch}")
+
             self.send_message(chat_id, f"🎙️ <i>Voce riconosciuta: «{transcript}»</i>")
             return self.process_text_message(chat_id, transcript)
 
@@ -1008,6 +1036,25 @@ class VoiceCaddyTelegramBot:
 
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         player_name = f"{user_rec.first_name} {user_rec.last_name}"
+
+        # Archiviazione automatica su cloud DB per messaggi di testo
+        try:
+            from datetime import datetime
+            today_date = datetime.now().strftime("%Y-%m-%d")
+            session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id) if hasattr(self.session_mgr, "get_or_create_session") else {}
+            c_hole = session.get("current_hole")
+            self.db.archive_telegram_message(
+                chat_id=chat_id,
+                user_id=user_rec.user_id,
+                round_date=today_date,
+                message_type="text",
+                content_text=clean,
+                hole_number=c_hole,
+                group_name=user_rec.group
+            )
+        except Exception as e_arch:
+            logging.warning(f"Errore archiviazione text in DB: {e_arch}")
+
         user_mode = self.get_user_mode(chat_id)
         from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
         personality_engine = CaddyPersonalityEngine.get_instance()

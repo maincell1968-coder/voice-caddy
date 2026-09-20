@@ -1792,6 +1792,51 @@ with nav_tab1:
             deep_link_hero = f"https://t.me/{bot_uname}"
             st.link_button("👉 Apri Chat con @VoiceCaddyGolf_bot su Telegram", deep_link_hero, use_container_width=True)
 
+            st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-weight: bold; color: #38BDF8; font-size: 0.88rem;'>☁️ Oppure Recupera Gara Archiviata in Cloud per Data:</div>", unsafe_allow_html=True)
+
+            archived_dates = db.get_telegram_archived_dates(chat_id=linked_cid, user_id=current_user.user_id)
+            date_options = [d["round_date"] for d in archived_dates]
+
+            from datetime import date, timedelta
+            default_d = date.today() - timedelta(days=1)
+
+            col_date, col_btn = st.columns([1.1, 1], gap="small")
+            with col_date:
+                if date_options:
+                    selected_date = st.selectbox(
+                        "Data del Giro:",
+                        options=date_options,
+                        format_func=lambda d: f"{d} ({next((x['total_count'] for x in archived_dates if x['round_date'] == d), 0)} note)",
+                        key="sb_archive_date"
+                    )
+                else:
+                    selected_date = str(st.date_input("Data del Giro:", value=default_d, key="di_archive_date"))
+
+            with col_btn:
+                st.write("")  # alignment spacing
+                if st.button("🚀 Elabora da Cloud", key="btn_elabora_data_cloud", type="secondary", use_container_width=True):
+                    with st.spinner(f"Recupero dati del {selected_date} dal Cloud..."):
+                        msgs = db.get_telegram_messages_for_date(selected_date, chat_id=linked_cid, user_id=current_user.user_id)
+                        if msgs:
+                            text_lines = []
+                            audio_files_to_transcribe = []
+                            for m in msgs:
+                                if m.get("content_text"):
+                                    ts_short = m.get("timestamp", "")[11:16]
+                                    text_lines.append(f"[{ts_short}] {m['content_text']}")
+                                elif m.get("file_path"):
+                                    full_p = PROJECT_ROOT / m["file_path"]
+                                    if full_p.exists():
+                                        audio_files_to_transcribe.append(full_p)
+
+                            combined_text = "\n".join(text_lines)
+                            execute_audio_round_pipeline(
+                                audio_files_to_transcribe,
+                                additional_text=combined_text
+                            )
+                        else:
+                            st.info(f"Nessun dato registrato in cloud per la data {selected_date}. Se hai salvato il file sul PC, usa l'Opzione 2 a fianco!")
+
             with st.expander("ℹ️ Come inviare gli audio di ieri tramite Telegram", expanded=False):
                 st.markdown(f"""
                     <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">

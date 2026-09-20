@@ -73,6 +73,25 @@ class DatabaseManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS telegram_media_archive (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT NOT NULL,
+                    user_id TEXT DEFAULT 'default_user',
+                    group_name TEXT DEFAULT 'strafatti',
+                    round_date TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    message_type TEXT NOT NULL,
+                    content_text TEXT,
+                    file_id TEXT,
+                    file_path TEXT,
+                    hole_number INTEGER,
+                    shot_index INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_tg_archive_date ON telegram_media_archive (round_date, user_id, chat_id)")
             
             # Check for existing table missing user_id / group_name columns
             cursor.execute("PRAGMA table_info(rounds)")
@@ -238,3 +257,96 @@ class DatabaseManager:
             if row:
                 return row["profile_json"]
             return None
+
+    # ---------------------------------------------------------
+    # Telegram Real-Time Cloud Media & Message Archive
+    # ---------------------------------------------------------
+    def archive_telegram_message(
+        self,
+        chat_id: int | str,
+        user_id: str = "default_user",
+        round_date: Optional[str] = None,
+        message_type: str = "text",
+        content_text: Optional[str] = None,
+        file_id: Optional[str] = None,
+        file_path: Optional[str] = None,
+        hole_number: Optional[int] = None,
+        shot_index: Optional[int] = None,
+        group_name: str = "strafatti",
+        timestamp: Optional[str] = None
+    ) -> int:
+        """Archivia un messaggio, nota vocale o colpo ricevuto da Telegram per il recupero per data."""
+        from datetime import datetime
+        now = datetime.now()
+        r_date = round_date or now.strftime("%Y-%m-%d")
+        ts = timestamp or now.isoformat()
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO telegram_media_archive (
+                    chat_id, user_id, group_name, round_date, timestamp,
+                    message_type, content_text, file_id, file_path,
+                    hole_number, shot_index
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(chat_id), user_id, group_name, r_date, ts,
+                message_type, content_text, file_id, file_path,
+                hole_number, shot_index
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_telegram_archived_dates(
+        self,
+        chat_id: Optional[int | str] = None,
+        user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Restituisce l'elenco delle date con messaggi Telegram archiviati e relativi conteggi."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT round_date,
+                       COUNT(*) as total_count,
+                       SUM(CASE WHEN message_type IN ('voice', 'audio', 'video_note', 'video') THEN 1 ELSE 0 END) as voice_count,
+                       SUM(CASE WHEN message_type = 'text' THEN 1 ELSE 0 END) as text_count
+                FROM telegram_media_archive
+            """
+            params = []
+            conditions = []
+            if chat_id:
+                conditions.append("chat_id = ?")
+                params.append(str(chat_id))
+            if user_id:
+                conditions.append("user_id = ?")
+                params.append(user_id)
+            if conditions:
+                query += " WHERE " + " OR ".join(conditions)
+            query += " GROUP BY round_date ORDER BY round_date DESC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_telegram_messages_for_date(
+        self,
+        round_date: str,
+        chat_id: Optional[int | str] = None,
+        user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Recupera tutti i messaggi/audio Telegram archiviati per una specifica data."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM telegram_media_archive WHERE round_date = ?"
+            params = [round_date]
+            if chat_id and user_id:
+                query += " AND (chat_id = ? OR user_id = ?)"
+                params.extend([str(chat_id), user_id])
+            elif chat_id:
+                query += " AND chat_id = ?"
+                params.append(str(chat_id))
+            elif user_id:
+                query += " AND user_id = ?"
+                params.append(user_id)
+            query += " ORDER BY id ASC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
