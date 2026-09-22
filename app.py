@@ -37,6 +37,7 @@ from core.backup_manager import backup_manager
 from golf_rules_module import render_rules_academy
 from core.club_distance_service import ClubDistanceService
 from core.admin_inbox import AdminInboxManager
+from core.mobile_pdf_report import generate_showcase_mobile_pdf, send_pdf_report_via_telegram
 from golf_strategy_ai import (
     load_hole_geometry_from_geojson,
     analyze_hole_strategy,
@@ -1219,14 +1220,20 @@ with st.sidebar:
         st.markdown(f"<div style='font-size:0.8rem; color:#94A3B8; margin-top:-6px; margin-bottom:10px;'>⛰️ <i>{terrain_desc}</i></div>", unsafe_allow_html=True)
 
     st.markdown("---")
-    st.subheader("🎮 Prova Rapida (Giro Demo)")
-    if st.button("Carica Giro Demo PGA (18 Buche)", use_container_width=True):
-        demo_round = get_demo_golf_round()
-        st.session_state.round_data = demo_round
-        st.session_state.transcript = "Trascrizione generata per il Giro Dimostrativo PGA a 18 buche al Conero Golf Club."
-        db.save_round(demo_round, user_id=current_user.user_id, group_name=current_user.group)
-        st.success("✅ Giro Demo caricato nel tuo profilo con successo!")
-        st.rerun()
+    st.subheader("🎮 Prova Rapida & Anteprima")
+    col_demo1, col_demo2 = st.columns(2)
+    with col_demo1:
+        if st.button("Carica Giro Demo PGA", use_container_width=True):
+            demo_round = get_demo_golf_round()
+            st.session_state.round_data = demo_round
+            st.session_state.transcript = "Trascrizione generata per il Giro Dimostrativo PGA a 18 buche al Conero Golf Club."
+            db.save_round(demo_round, user_id=current_user.user_id, group_name=current_user.group)
+            st.success("✅ Giro Demo caricato nel tuo profilo con successo!")
+            st.rerun()
+    with col_demo2:
+        if st.button("🌟 ANTEPRIMA 4 CAMPI", type="primary", use_container_width=True):
+            st.session_state.show_4courses_showcase = not st.session_state.get("show_4courses_showcase", False)
+            st.rerun()
 
     st.markdown("---")
     st.subheader("🎙️ Carica Note Vocali Partita")
@@ -1792,6 +1799,180 @@ nav_admin = all_tabs[7] if current_user.is_admin else None
 # TAB 1: LIVE DASHBOARD & PGA DIAGNOSIS
 # ---------------------------------------------------------
 with nav_tab1:
+    # ---------------------------------------------------------
+    # ANTEPRIMA & SHOWCASE: I 4 CAMPI, VISTE TATTICHE & REPORT PDF
+    # ---------------------------------------------------------
+    show_showcase_default = st.session_state.get("show_4courses_showcase", False)
+    with st.expander("🌟 ANTEPRIMA COMPLETA: I 4 Campi, Viste Tattiche & Report WhatsApp/Telegram", expanded=show_showcase_default):
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #0b1320 0%, #15253b 50%, #0c1626 100%);
+                        border: 2px solid #38BDF8; border-radius: 12px; padding: 18px 22px; margin-bottom: 20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                    <div>
+                        <span style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF;">
+                            🏌️‍♂️ PANORAMICA DEL PROGRAMMA SUI 4 CAMPI UFFICIALI
+                        </span>
+                        <div style="font-size: 0.88rem; color: #94A3B8; margin-top: 4px;">
+                            Voice Caddy Pro unifica l'esperienza di gioco su tutti i percorsi: raccoglie i colpi da Telegram,
+                            proietta le <b>3 Viste Tattiche Balistiche</b> (Mappa Satellitare, Dispersione Trackman e Green Radar),
+                            applica il <b>Metodo del Maestro PGA</b> ed esporta il <b>Report PDF pronto per WhatsApp e Telegram</b>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # 1. I 4 CAMPI ATTIVI
+        st.markdown("#### ⛳ I 4 Campi del Circuito Attualmente Attivi")
+        c_cols = st.columns(4)
+        c_data = [
+            ("Conero Golf Club", "Sirolo (AN)", "18 Buche / Par 71", "Bianchi, Gialli, Verdi, Rossi", "Collinare tecnico con pendenze orografiche e dislivelli."),
+            ("Torrenova Golf", "P. Potenza Picena (MC)", "9 Buche / Par 34", "Gialli, Rossi", "Pianeggiante veloce, ideale per scoring e precisione."),
+            ("Golf Club Perugia", "Santa Sabina (PG)", "18 Buche / Par 72", "Gialli, Rossi", "Storico collinare del 1959 con fairway alberati e green mossi."),
+            ("Riviera Golf Cattolica", "S. Giovanni Marignano (RN)", "18 Buche / Par 70", "Bianchi, Gialli, Rossi", "Championship resort Graham Cooke lungo il fiume Ventena.")
+        ]
+        for idx, (c_n, c_loc, c_par, c_tees, c_desc) in enumerate(c_data):
+            with c_cols[idx]:
+                st.markdown(f"""
+                    <div style="background:#131d2a; border:1px solid #334155; border-radius:8px; padding:12px; height:180px;">
+                        <span style="color:#38BDF8; font-weight:bold; font-size:0.95rem;">{c_n}</span><br>
+                        <span style="color:#94A3B8; font-size:0.8rem;">📍 {c_loc}</span><br>
+                        <span style="color:#2ECC71; font-weight:bold; font-size:0.85rem;">{c_par}</span><br>
+                        <span style="color:#CBD5E1; font-size:0.75rem;"><b>Tee:</b> {c_tees}</span><br>
+                        <p style="color:#94A3B8; font-size:0.75rem; margin-top:6px; line-height:1.3;"><i>{c_desc}</i></p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # 2. SIMULATORE TATTICO BUCA-TIPO
+        st.markdown("#### 🎯 Simulazione Dinamica Buca-Tipo & Viste Tattiche")
+        sim_course_choice = st.selectbox(
+            "Seleziona il campo per simulare la visualizzazione buca:",
+            options=["Conero Golf Club", "Torrenova Golf", "Golf Club Perugia", "Riviera Golf Cattolica"],
+            key="sim_course_select"
+        )
+
+        sim_col_l, sim_col_r = st.columns([1.2, 1])
+        with sim_col_l:
+            st.markdown(f"""
+                <div style="background:#0f172a; border-left:4px solid #10B981; border-radius:8px; padding:12px; margin-bottom:12px;">
+                    <span style="color:#34D399; font-weight:bold;">🎙️ Sequenza Vocale Telegram (Esempio Reale):</span><br>
+                    <span style="color:#E2E8F0; font-size:0.88rem; font-style:italic;">
+                        "Buca 1 a {sim_course_choice}: drive lungo in centro fairway a 220 metri, secondo colpo ferro 7 a 6 metri dalla bandiera, primo putt di avvicinamento a 40 centimetri e tap-in per il Par."
+                    </span>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Mostra le viste tattiche per la buca simulata
+            sim_agent = HoleStrategyAgent()
+            sim_h = st.session_state.round_data.holes[0] if st.session_state.round_data else None
+            # Crea geometria buca basata sul campo selezionato
+            c_obj = next((c for c in all_courses if c.name == sim_course_choice), active_course)
+            c_h1 = c_obj.get_hole(1) if hasattr(c_obj, "get_hole") else None
+            h_coords = getattr(c_h1, "coordinates", None) if c_h1 else None
+
+            if h_coords:
+                sim_geom = HoleGeometry(
+                    course_id=c_obj.course_id,
+                    hole_number=1,
+                    par=getattr(c_h1, "par", 4),
+                    length_m=float(getattr(c_h1, "distance_meters", 350)),
+                    stroke_index=int(getattr(c_h1, "handicap_index", 1) or 1),
+                    tee=GeoPoint(lat=h_coords.tee_lat, lon=h_coords.tee_lon, alt_m=h_coords.tee_altitude),
+                    green_center=GeoPoint(lat=h_coords.target_lat, lon=h_coords.target_lon, alt_m=h_coords.target_altitude)
+                )
+            else:
+                sim_geom = None
+
+            sim_view_mode = st.radio(
+                "Modalità Vista Tattica:",
+                options=["🗺️ Vista A (Mappa Satellitare)", "📊 Vista B (Dispersione Trackman)", "🎯 Vista C (Green Radar)"],
+                horizontal=True,
+                key="sim_view_mode_radio"
+            )
+
+            if sim_geom and sim_h:
+                perf_eval = sim_agent.evaluate_played_hole(sim_geom, sim_h.shots, user_handicap=st.session_state.user_profile.handicap, score=sim_h.score, putts=sim_h.putts)
+                if sim_view_mode == "🗺️ Vista A (Mappa Satellitare)":
+                    html_code = render_view_a_map_html(sim_geom, perf_eval=perf_eval, height="380px")
+                    components.html(html_code, height=400)
+                elif sim_view_mode == "📊 Vista B (Dispersione Trackman)":
+                    html_code = render_view_b_benchmark_html(perf_eval=perf_eval)
+                    st.markdown(html_code, unsafe_allow_html=True)
+                else:
+                    html_code = render_view_c_green_radar_html(sim_geom, app_eval=perf_eval.green_evaluation, height="380px")
+                    components.html(html_code, height=400)
+
+        with sim_col_r:
+            st.markdown(f"""
+                <div style="background:#0f172a; border-left:4px solid #38BDF8; border-radius:8px; padding:12px; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="color:#38BDF8; font-weight:bold; font-size:0.95rem;">👨‍🏫 Analisi del Maestro PGA (Regola Aurea)</span>
+                        <span style="background:#0369A1; color:#E0F2FE; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;">Voto Buca: 9.0/10</span>
+                    </div>
+                    <div style="font-size:0.85rem; color:#CBD5E1; margin-bottom:4px;">
+                        <b>1. Sintesi:</b> Buca condotta con regolarità ed eccellente tenuta tattica, senza sbavature dal tee al green.<br>
+                        <b>2. Colpo chiave:</b> L'approccio con Ferro 7: ha centrato la superficie lasciando un comodo putt per il par.<br>
+                        <b>3. Valutazione tecnica:</b> Contatto solido e traiettoria controllata in asse (+2m scostamento dal centro).<br>
+                        <b>4. Valutazione strategica:</b> Scelta del bastone e orientamento del bersaglio perfettamente coerenti con l'HCP.<br>
+                        <b>5. Consiglio del Maestro:</b> <i>"Ottima esecuzione. Mantieni questa routine e lavora sul primo putt per attaccare il birdie."</i>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Scorecard sintetica
+            st.markdown("<b>Scorecard Ufficiale (Regola 21.1):</b>", unsafe_allow_html=True)
+            sc_demo_df = pd.DataFrame([
+                {"Buca": 1, "Par": 4, "SI": 5, "HCP": "+1", "Lordo": 4, "Netto": 3, "Stb. Lordo": "2 pt", "Stb. Netto": "3 pt", "FIR": "Sì", "GIR": "Sì", "Putts": 2}
+            ])
+            st.dataframe(sc_demo_df, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # 3. ESPORTAZIONE E INVIO REPORT PDF (WHATSAPP & TELEGRAM)
+        st.markdown("#### 📄 Esportazione Report PDF Ufficiale (Condivisione WhatsApp & Telegram)")
+        st.caption("Il report PDF compatto sintetizza l'intero giro, la scorecard lordo/netto, l'analisi del maestro e i drill prescritti in un formato grafico ad alta risoluzione, perfetto da visualizzare su smartphone.")
+
+        pdf_bytes = generate_showcase_mobile_pdf(
+            round_data=st.session_state.round_data,
+            player_name=f"{current_user.first_name} {current_user.last_name}",
+            handicap=float(st.session_state.user_profile.handicap),
+            active_course_id=active_course.course_id
+        )
+
+        col_pdf1, col_pdf2 = st.columns(2)
+        with col_pdf1:
+            st.download_button(
+                label="📥 Scarica Report PDF (per WhatsApp & Stampa)",
+                data=pdf_bytes,
+                file_name=f"Voice_Caddy_Report_{current_user.last_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary"
+            )
+
+        with col_pdf2:
+            linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
+            if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
+                linked_cid = tg_manager.get_admin_chat_id()
+
+            if st.button("📲 Invia Report PDF su Telegram al mio Bot", use_container_width=True):
+                if not linked_cid:
+                    st.warning("⚠️ Non hai ancora collegato la tua chat Telegram. Premi 'Collega Telegram' nella barra laterale o avvia @VoiceCaddyGolf_bot.")
+                else:
+                    with st.spinner("Invio del documento PDF su Telegram in corso..."):
+                        ok_tg, msg_tg = send_pdf_report_via_telegram(
+                            pdf_bytes=pdf_bytes,
+                            chat_id=linked_cid,
+                            caption=f"🏌️‍♂️ <b>Report Ufficiale Voice Caddy Pro</b>\nGiocatore: {current_user.first_name} {current_user.last_name} (HCP {st.session_state.user_profile.handicap})\nCampo: {active_course.name}",
+                            filename=f"Report_{active_course.course_id}.pdf"
+                        )
+                        if ok_tg:
+                            st.success(f"✅ {msg_tg}")
+                        else:
+                            st.error(f"❌ {msg_tg}")
+
     # ---------------------------------------------------------
     # HERO ACTION HUB: SCARICA ED ELABORA GARA DI IERI (TELEGRAM / AUDIO)
     # ---------------------------------------------------------
