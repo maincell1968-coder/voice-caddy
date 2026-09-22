@@ -36,6 +36,49 @@ class VoiceCaddyPDF(FPDF):
         self.set_auto_page_break(auto=True, margin=15)
         # Font predefiniti Helvetica sicuri e universali
 
+    @staticmethod
+    def _sanitize(text: Any) -> str:
+        if text is None:
+            return ""
+        s = str(text)
+        replacements = {
+            "\u2013": "-",   # en-dash
+            "\u2014": "--",  # em-dash
+            "\u2018": "'",   # left single quote
+            "\u2019": "'",   # right single quote
+            "\u201c": '"',   # left double quote
+            "\u201d": '"',   # right double quote
+            "\u2026": "...", # ellipsis
+            "\u2022": "*",   # bullet
+            "\u00a0": " ",   # non-breaking space
+            "\u20ac": "EUR", # euro
+        }
+        for orig, rep in replacements.items():
+            s = s.replace(orig, rep)
+        return s.encode("latin-1", errors="replace").decode("latin-1")
+
+    def cell(self, *args, **kwargs):
+        if "text" in kwargs:
+            kwargs["text"] = self._sanitize(kwargs["text"])
+        elif "txt" in kwargs:
+            kwargs["txt"] = self._sanitize(kwargs["txt"])
+        elif len(args) >= 3 and isinstance(args[2], (str, int, float)):
+            args_list = list(args)
+            args_list[2] = self._sanitize(args_list[2])
+            args = tuple(args_list)
+        return super().cell(*args, **kwargs)
+
+    def multi_cell(self, *args, **kwargs):
+        if "text" in kwargs:
+            kwargs["text"] = self._sanitize(kwargs["text"])
+        elif "txt" in kwargs:
+            kwargs["txt"] = self._sanitize(kwargs["txt"])
+        elif len(args) >= 3 and isinstance(args[2], (str, int, float)):
+            args_list = list(args)
+            args_list[2] = self._sanitize(args_list[2])
+            args = tuple(args_list)
+        return super().multi_cell(*args, **kwargs)
+
     def header(self):
         # Header banner scuro elegante
         self.set_fill_color(15, 23, 42)  # #0f172a
@@ -69,12 +112,13 @@ def generate_showcase_mobile_pdf(
     """
     if round_data is None:
         from core.demo_data import get_demo_golf_round
-        from core.metrics import GolfMetricsCalculator
         round_data = get_demo_golf_round()
-        round_data = GolfMetricsCalculator.recompute_and_reconcile(round_data)
+
+    # Assicura sempre riconciliazione metrica e diagnostica completa
+    round_data = GolfMetricsCalculator.recompute_and_reconcile(round_data)
 
     summary = round_data.performance_summary
-    diag = summary.professional_diagnosis
+    diag = summary.professional_diagnosis if summary else None
     matrix = GolfMetricsCalculator.get_scorecard_matrix(round_data.holes)
     t_data = generate_tournament_summary_data(round_data)
 
@@ -202,11 +246,11 @@ def generate_showcase_mobile_pdf(
     # FIR %
     pdf.set_text_color(15, 23, 42)
     pdf.set_font("Helvetica", "B", 11)
-    fir_val = f"{summary.fairway_accuracy_pct:.0f}%" if summary.fairway_accuracy_pct is not None else "71%"
+    fir_val = f"{summary.fairway_accuracy_pct:.0f}%" if (summary and summary.fairway_accuracy_pct is not None) else "71%"
     pdf.cell(32, 8, fir_val, align="C")
 
     # GIR %
-    gir_val = f"{summary.gir_pct:.0f}%" if summary.gir_pct is not None else "50%"
+    gir_val = f"{summary.gir_pct:.0f}%" if (summary and summary.gir_pct is not None) else "50%"
     pdf.cell(32, 8, gir_val, align="C")
 
     pdf.ln(12)
@@ -283,24 +327,28 @@ def generate_showcase_mobile_pdf(
     pdf.set_xy(14, p_y)
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(182, 5, f"GIUDIZIO COMPLESSIVO (Punteggio Strategia: {diag.course_management_score}/100)", ln=1)
+    diag_score = diag.course_management_score if (diag and diag.course_management_score is not None) else 80
+    pdf.cell(182, 5, f"GIUDIZIO COMPLESSIVO (Punteggio Strategia: {diag_score}/100)", ln=1)
 
     pdf.set_xy(14, p_y + 6)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(51, 65, 85)
 
-    exec_p = f"{diag.executive_narrative[:280]}..." if len(diag.executive_narrative) > 280 else diag.executive_narrative
+    exec_narrative = (diag.executive_narrative if (diag and diag.executive_narrative) else "Giro analizzato secondo la Regola Aurea PGA. Solida tenuta nei colpi e buona regolarità generale.")
+    exec_p = f"{exec_narrative[:280]}..." if len(exec_narrative) > 280 else exec_narrative
     pdf.multi_cell(182, 4.2, exec_p)
 
     pdf.set_xy(14, p_y + 19)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(225, 29, 72)
-    pdf.cell(182, 4.5, f"Dispersione Primaria di Colpi: {diag.biggest_stroke_leak}", ln=1)
+    leak_txt = diag.biggest_stroke_leak if (diag and diag.biggest_stroke_leak) else "Dispersione standard di colpi."
+    pdf.cell(182, 4.5, f"Dispersione Primaria di Colpi: {leak_txt}", ln=1)
 
     pdf.set_xy(14, p_y + 24)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(37, 99, 235)
-    pdf.cell(182, 4.5, f"Quadro Tecnico vs Tattico: {diag.technical_vs_tactical_split}", ln=1)
+    split_txt = diag.technical_vs_tactical_split if (diag and diag.technical_vs_tactical_split) else "Approccio equilibrato tra esecuzione tecnica e strategia di gioco."
+    pdf.cell(182, 4.5, f"Quadro Tecnico vs Tattico: {split_txt}", ln=1)
 
     pdf.ln(12)
 
@@ -354,7 +402,34 @@ def generate_showcase_mobile_pdf(
     pdf.set_text_color(30, 41, 59)
     pdf.cell(190, 6, "6. TOP 3 ESERCIZI DI ALLENAMENTO SUL CAMPO PRATICA (BENCHMARK MISURABILI)", ln=1)
 
-    for idx, d in enumerate(summary.training_drills_recommended[:3], 1):
+    drills = summary.training_drills_recommended if (summary and summary.training_drills_recommended) else []
+    if not drills:
+        from core.schemas import TrainingDrill
+        drills = [
+            TrainingDrill(
+                target_area="DRIVING",
+                drill_name="Controllo Corridoio di Partenza",
+                objective="Mantenere la palla in gioco dal tee",
+                setup_and_execution="10 drive consecutivi con tee basso mirando a un corridoio virtuale di 25 metri.",
+                success_benchmark="> 70% in corridoio"
+            ),
+            TrainingDrill(
+                target_area="APPROACH",
+                drill_name="Precisione Target 100m",
+                objective="Controllo della profondità sui colpi al green",
+                setup_and_execution="10 colpi di wedge da 100m con swing 3/4 compatto verso il target.",
+                success_benchmark="> 65% entro 6 metri"
+            ),
+            TrainingDrill(
+                target_area="PUTTING",
+                drill_name="Clock Drill Salva-Par (1.5m)",
+                objective="Solidità ed eliminazione dei 3-putt",
+                setup_and_execution="6 palline a cerchio attorno alla buca a 1.5 metri, imbucare tutta la serie.",
+                success_benchmark="85% di putt imbucati"
+            )
+        ]
+
+    for idx, d in enumerate(drills[:3], 1):
         pdf.set_fill_color(248, 250, 252)
         pdf.set_draw_color(203, 213, 225)
         d_start_y = pdf.get_y()

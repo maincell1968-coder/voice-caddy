@@ -569,6 +569,168 @@ def inject_autofill_cleaner(username_val: str = ""):
     """, height=0, width=0)
 
 
+def _render_contact_form(current_user, inbox_mgr, key_suffix="home"):
+    with st.form(f"contact_admin_form_{key_suffix}", clear_on_submit=True):
+        c_col1, c_col2 = st.columns(2)
+        with c_col1:
+            contact_sender_name = st.text_input(
+                "Tuo Nome & Cognome *",
+                value=f"{current_user.first_name} {current_user.last_name}",
+                help="Nome del mittente visibile all'amministratore",
+                key=f"cs_name_{key_suffix}"
+            )
+            contact_category = st.selectbox(
+                "Categoria della richiesta",
+                options=[
+                    "Assistenza / Supporto Tecnico",
+                    "Segnalazione Anomalia / Bug",
+                    "Regole di Golf & Handicap",
+                    "Proposta Nuova Funzionalità",
+                    "Altro"
+                ],
+                key=f"cs_cat_{key_suffix}"
+            )
+        with c_col2:
+            contact_reply_to = st.text_input(
+                "Recapito per risposta (Email o Telefono)",
+                placeholder="es. mario.rossi@email.it oppure 333 1234567",
+                help="Inserisci la tua email o numero telefonico per consentire all'amministratore di ricontattarti",
+                key=f"cs_reply_{key_suffix}"
+            )
+            contact_subject = st.text_input(
+                "Oggetto del messaggio *",
+                placeholder="es. Chiarimento su calcolo Stableford buca 7",
+                key=f"cs_subj_{key_suffix}"
+            )
+
+        contact_body = st.text_area(
+            "Testo del messaggio *",
+            placeholder="Descrivi dettagliatamente la tua richiesta, segnalazione o domanda per Stefano...",
+            height=130,
+            key=f"cs_body_{key_suffix}"
+        )
+
+        submit_contact = st.form_submit_button("🚀 Invia Messaggio a Stefano", type="primary", use_container_width=True)
+        if submit_contact:
+            if not contact_subject.strip() or not contact_body.strip():
+                st.error("⚠️ Inserisci sia l'oggetto che il testo del messaggio prima di inviare.")
+            else:
+                ok_send, send_msg = inbox_mgr.send_message(
+                    sender_user_id=current_user.user_id,
+                    sender_name=contact_sender_name.strip() or f"{current_user.first_name} {current_user.last_name}",
+                    sender_contact=contact_reply_to.strip(),
+                    subject=contact_subject.strip(),
+                    body=contact_body.strip(),
+                    category=contact_category
+                )
+                if ok_send:
+                    st.success(f"✅ {send_msg}")
+                    st.balloons()
+                else:
+                    st.error(f"❌ {send_msg}")
+
+
+def _render_inbox_messages(current_user, inbox_mgr, key_suffix="home"):
+    all_inbox_msgs = inbox_mgr.get_messages()
+    unread_inbox_count = inbox_mgr.get_unread_count()
+
+    col_h1, col_h2, col_h3 = st.columns([2, 1, 1])
+    col_h1.markdown(f"**Totale Messaggi:** {len(all_inbox_msgs)} | **Da Leggere:** :red[{unread_inbox_count}]")
+    with col_h2:
+        filter_unread = st.checkbox("Mostra solo non letti", value=False, key=f"filter_unread_{key_suffix}")
+    with col_h3:
+        if unread_inbox_count > 0:
+            if st.button("✔️ Segna tutti letti", key=f"btn_mark_all_read_{key_suffix}", use_container_width=True):
+                inbox_mgr.mark_all_as_read()
+                st.success("Tutti i messaggi sono stati contrassegnati come letti.")
+                st.rerun()
+
+    displayed_msgs = inbox_mgr.get_messages(unread_only=filter_unread)
+
+    if not displayed_msgs:
+        st.info("📭 Nessun messaggio presente nella casella." if not filter_unread else "✅ Non ci sono nuovi messaggi da leggere.")
+    else:
+        for msg in displayed_msgs:
+            msg_id = msg.get("id")
+            is_unread = not msg.get("is_read", False)
+            status_icon = "🔴 NUOVO" if is_unread else "⚪ Letto"
+            badge_bg = "rgba(231, 76, 60, 0.12)" if is_unread else "rgba(148, 163, 184, 0.08)"
+            border_color = "#E74C3C" if is_unread else "#334155"
+
+            with st.expander(f"{'🔔 ' if is_unread else ''}{msg.get('timestamp', '')} — {msg.get('sender_name', '')} | {msg.get('subject', '')} [{msg.get('category', '')}]", expanded=is_unread):
+                st.markdown(f"""
+                    <div style="background:{badge_bg}; border-left:4px solid {border_color}; border-radius:6px; padding:12px 16px; margin-bottom:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:bold; font-size:1.05rem; color:#FFFFFF;">📌 {msg.get('subject')}</span>
+                            <span style="font-size:0.8rem; font-weight:bold; color:{'#E74C3C' if is_unread else '#94A3B8'};">{status_icon}</span>
+                        </div>
+                        <div style="font-size:0.85rem; color:#94A3B8; margin-bottom:8px;">
+                            👤 <b>Mittente:</b> {msg.get('sender_name')} (ID: <code>{msg.get('sender_user_id')}</code>)<br>
+                            🏷️ <b>Categoria:</b> {msg.get('category')}<br>
+                            📞 <b>Recapito:</b> {msg.get('sender_contact') or '<i>Nessun recapito fornito</i>'}<br>
+                            🕒 <b>Data & Ora:</b> {msg.get('timestamp')}
+                        </div>
+                        <div style="background:#0b111e; border:1px solid #1e293b; border-radius:6px; padding:12px; font-size:0.92rem; color:#E2E8F0; white-space:pre-wrap; line-height:1.5;">{msg.get('body')}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                btn_c1, btn_c2, _ = st.columns([1.5, 1.5, 3])
+                with btn_c1:
+                    if is_unread:
+                        if st.button("👁️ Segna come letto", key=f"read_{key_suffix}_{msg_id}"):
+                            inbox_mgr.mark_as_read(msg_id)
+                            st.rerun()
+                with btn_c2:
+                    if st.button("🗑️ Elimina messaggio", key=f"del_{key_suffix}_{msg_id}"):
+                        inbox_mgr.delete_message(msg_id)
+                        st.success("Messaggio eliminato.")
+                        st.rerun()
+
+
+def render_contact_and_inbox(current_user, inbox_mgr, key_suffix="home"):
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #0d1a2d 0%, #152744 50%, #0d1a2d 100%);
+                    border: 1px solid rgba(52, 152, 219, 0.4); border-radius: 12px; padding: 16px 20px;
+                    margin-bottom: 14px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);">
+            <div style="display:flex; align-items:center; gap: 12px;">
+                <span style="font-size: 1.8rem;">📬</span>
+                <div>
+                    <span style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.2px;">
+                        CONTATTA L'AMMINISTRATORE & CASELLA DI POSTA
+                    </span>
+                    <div style="font-size: 0.85rem; color: #94A3B8; margin-top: 2px;">
+                        Hai bisogno di assistenza tecnica, chiarimenti su handicap e regole o vuoi inviare un suggerimento a <b>Stefano Pirani</b>?<br>
+                        Invia il tuo messaggio qui sotto: verrà recapitato direttamente nella sua casella e notificato in tempo reale su Telegram!
+                    </div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    if current_user.is_admin:
+        tab_inbox, tab_write = st.tabs(["📬 Casella di Posta (Ricevuti)", "✍️ Invia Messaggio"])
+        with tab_inbox:
+            _render_inbox_messages(current_user, inbox_mgr, key_suffix=key_suffix)
+        with tab_write:
+            _render_contact_form(current_user, inbox_mgr, key_suffix=f"{key_suffix}_admin")
+    else:
+        tab_write, tab_history = st.tabs(["✍️ Invia Messaggio all'Amministratore", "📬 I Miei Messaggi Inviati"])
+        with tab_write:
+            _render_contact_form(current_user, inbox_mgr, key_suffix=f"{key_suffix}_user")
+        with tab_history:
+            user_msgs = [m for m in inbox_mgr.get_messages() if m.get("sender_user_id") == current_user.user_id]
+            if not user_msgs:
+                st.info("Non hai ancora inviato alcun messaggio all'amministratore.")
+            else:
+                for m in user_msgs:
+                    st_read = "🟢 Letto da Stefano" if m.get("is_read", False) else "🟡 In attesa di lettura"
+                    with st.expander(f"📌 {m.get('timestamp', '')} — {m.get('subject', '')} ({st_read})"):
+                        st.markdown(f"**Categoria:** {m.get('category', '')}")
+                        if m.get('sender_contact'):
+                            st.markdown(f"**Recapito fornito:** {m.get('sender_contact')}")
+                        st.markdown(f"**Messaggio:**\n\n{m.get('body', '')}")
+
+
 def render_footer():
     golfer_b64 = get_asset_base64("voice_caddy_golfer_icon.png")
     if golfer_b64:
@@ -584,7 +746,7 @@ def render_footer():
                 Concept, Architettura e Proprietà Intellettuale &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Tutti i diritti riservati
             </div>
             <div style="font-size: 0.78rem; color: #64748B;">
-                Ideato e sviluppato per finalità sportive e ricreative &bull; Conero Golf Club &bull; Torrenova Golf
+                Ideato e sviluppato per finalità sportive e ricreative
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -2005,44 +2167,58 @@ with nav_tab1:
         st.markdown("#### 📄 Esportazione Report PDF Ufficiale (Condivisione WhatsApp & Telegram)")
         st.caption("Il report PDF compatto sintetizza l'intero giro, la scorecard lordo/netto, l'analisi del maestro e i drill prescritti in un formato grafico ad alta risoluzione, perfetto da visualizzare su smartphone.")
 
-        pdf_bytes = generate_showcase_mobile_pdf(
-            round_data=st.session_state.round_data,
-            player_name=f"{current_user.first_name} {current_user.last_name}",
-            handicap=float(st.session_state.user_profile.handicap),
-            active_course_id=active_course.course_id
-        )
-
-        col_pdf1, col_pdf2 = st.columns(2)
-        with col_pdf1:
-            st.download_button(
-                label="📥 Scarica Report PDF (per WhatsApp & Stampa)",
-                data=pdf_bytes,
-                file_name=f"Voice_Caddy_Report_{current_user.last_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary"
+        pdf_bytes = None
+        try:
+            pdf_bytes = generate_showcase_mobile_pdf(
+                round_data=st.session_state.round_data,
+                player_name=f"{current_user.first_name} {current_user.last_name}",
+                handicap=float(st.session_state.user_profile.handicap),
+                active_course_id=active_course.course_id
             )
+        except Exception as e:
+            print(f"[PDF ERROR] Errore generazione showcase PDF: {e}")
+            st.warning(f"⚠️ Impossibile generare l'anteprima PDF: {e}")
 
-        with col_pdf2:
-            linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
-            if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
-                linked_cid = tg_manager.get_admin_chat_id()
+        if pdf_bytes:
+            col_pdf1, col_pdf2 = st.columns(2)
+            with col_pdf1:
+                st.download_button(
+                    label="📥 Scarica Report PDF (per WhatsApp & Stampa)",
+                    data=pdf_bytes,
+                    file_name=f"Voice_Caddy_Report_{current_user.last_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
 
-            if st.button("📲 Invia Report PDF su Telegram al mio Bot", use_container_width=True):
-                if not linked_cid:
-                    st.warning("⚠️ Non hai ancora collegato la tua chat Telegram. Premi 'Collega Telegram' nella barra laterale o avvia @VoiceCaddyGolf_bot.")
-                else:
-                    with st.spinner("Invio del documento PDF su Telegram in corso..."):
-                        ok_tg, msg_tg = send_pdf_report_via_telegram(
-                            pdf_bytes=pdf_bytes,
-                            chat_id=linked_cid,
-                            caption=f"🏌️‍♂️ <b>Report Ufficiale Voice Caddy Pro</b>\nGiocatore: {current_user.first_name} {current_user.last_name} (HCP {st.session_state.user_profile.handicap})\nCampo: {active_course.name}",
-                            filename=f"Report_{active_course.course_id}.pdf"
-                        )
-                        if ok_tg:
-                            st.success(f"✅ {msg_tg}")
-                        else:
-                            st.error(f"❌ {msg_tg}")
+            with col_pdf2:
+                linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
+                if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
+                    linked_cid = tg_manager.get_admin_chat_id()
+
+                if st.button("📲 Invia Report PDF su Telegram al mio Bot", use_container_width=True):
+                    if not linked_cid:
+                        st.warning("⚠️ Non hai ancora collegato la tua chat Telegram. Premi 'Collega Telegram' nella barra laterale o avvia @VoiceCaddyGolf_bot.")
+                    else:
+                        with st.spinner("Invio del documento PDF su Telegram in corso..."):
+                            ok_tg, msg_tg = send_pdf_report_via_telegram(
+                                pdf_bytes=pdf_bytes,
+                                chat_id=linked_cid,
+                                caption=f"🏌️‍♂️ <b>Report Ufficiale Voice Caddy Pro</b>\nGiocatore: {current_user.first_name} {current_user.last_name} (HCP {st.session_state.user_profile.handicap})\nCampo: {active_course.name}",
+                                filename=f"Report_{active_course.course_id}.pdf"
+                            )
+                            if ok_tg:
+                                st.success(f"✅ {msg_tg}")
+                            else:
+                                st.error(f"❌ {msg_tg}")
+
+    # ---------------------------------------------------------
+    # CONTATTA L'AMMINISTRATORE & CASELLA DI POSTA (INBOX)
+    # ---------------------------------------------------------
+    unread_admin_cnt = inbox_mgr.get_unread_count() if current_user.is_admin else 0
+    inbox_badge = f" 🔴 ({unread_admin_cnt} nuovi messaggi)" if unread_admin_cnt > 0 else ""
+    with st.expander(f"📬 CONTATTA L'AMMINISTRATORE & CASELLA DI POSTA (INBOX){inbox_badge}", expanded=(unread_admin_cnt > 0)):
+        render_contact_and_inbox(current_user, inbox_mgr, key_suffix="home")
 
     # ---------------------------------------------------------
     # HERO ACTION HUB: SCARICA ED ELABORA GARA DI IERI (TELEGRAM / AUDIO)
@@ -2576,82 +2752,7 @@ with nav_tab1:
     else:
         st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
 
-    # ---------------------------------------------------------
-    # AREA: CONTATTA L'AMMINISTRATORE DI SISTEMA (STEFANO PIRANI)
-    # ---------------------------------------------------------
-    st.markdown("---")
-    st.markdown("""
-        <div style="background: linear-gradient(135deg, #0d1a2d 0%, #152744 50%, #0d1a2d 100%);
-                    border: 1px solid rgba(52, 152, 219, 0.4); border-radius: 14px; padding: 22px 26px;
-                    margin-top: 25px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);">
-            <div style="display:flex; align-items:center; gap: 14px; margin-bottom: 8px;">
-                <span style="font-size: 2.2rem;">📬</span>
-                <div>
-                    <span style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
-                        CONTATTA L'AMMINISTRATORE DI SISTEMA
-                    </span>
-                    <div style="font-size: 0.88rem; color: #94A3B8; margin-top: 3px;">
-                        Hai bisogno di assistenza tecnica, chiarimenti su handicap e regole o vuoi inviare un suggerimento a <b>Stefano Pirani</b>?<br>
-                        Invia il tuo messaggio qui sotto: verrà recapitato direttamente nella sua casella amministratore e notificato in tempo reale su Telegram!
-                    </div>
-                </div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
 
-    with st.form("contact_admin_form", clear_on_submit=True):
-        c_col1, c_col2 = st.columns(2)
-        with c_col1:
-            contact_sender_name = st.text_input(
-                "Tuo Nome & Cognome *",
-                value=f"{current_user.first_name} {current_user.last_name}",
-                help="Nome del mittente visibile all'amministratore"
-            )
-            contact_category = st.selectbox(
-                "Categoria della richiesta",
-                options=[
-                    "Assistenza / Supporto Tecnico",
-                    "Segnalazione Anomalia / Bug",
-                    "Regole di Golf & Handicap",
-                    "Proposta Nuova Funzionalità",
-                    "Altro"
-                ]
-            )
-        with c_col2:
-            contact_reply_to = st.text_input(
-                "Recapito per risposta (Email o Telefono)",
-                placeholder="es. mario.rossi@email.it oppure 333 1234567",
-                help="Inserisci la tua email o numero telefonico per consentire all'amministratore di ricontattarti"
-            )
-            contact_subject = st.text_input(
-                "Oggetto del messaggio *",
-                placeholder="es. Chiarimento su calcolo Stableford buca 7"
-            )
-
-        contact_body = st.text_area(
-            "Testo del messaggio *",
-            placeholder="Descrivi dettagliatamente la tua richiesta, segnalazione o domanda per Stefano...",
-            height=130
-        )
-
-        submit_contact = st.form_submit_button("🚀 Invia Messaggio a Stefano", type="primary", use_container_width=True)
-        if submit_contact:
-            if not contact_subject.strip() or not contact_body.strip():
-                st.error("⚠️ Inserisci sia l'oggetto che il testo del messaggio prima di inviare.")
-            else:
-                ok_send, send_msg = inbox_mgr.send_message(
-                    sender_user_id=current_user.user_id,
-                    sender_name=contact_sender_name.strip() or f"{current_user.first_name} {current_user.last_name}",
-                    sender_contact=contact_reply_to.strip(),
-                    subject=contact_subject.strip(),
-                    body=contact_body.strip(),
-                    category=contact_category
-                )
-                if ok_send:
-                    st.success(f"✅ {send_msg}")
-                    st.balloons()
-                else:
-                    st.error(f"❌ {send_msg}")
 
 
 # ---------------------------------------------------------
@@ -3452,61 +3553,7 @@ if current_user.is_admin and nav_admin:
         st.markdown("---")
         st.markdown("### 📬 Casella Messaggi Utenti & Assistenza (Inbox)")
         st.caption("Messaggi inviati dagli utenti tramite il modulo 'Contatta l'Amministratore' presente nella Home Page.")
-
-        all_inbox_msgs = inbox_mgr.get_messages()
-        unread_inbox_count = inbox_mgr.get_unread_count()
-
-        col_inbox_h1, col_inbox_h2, col_inbox_h3 = st.columns([2, 1, 1])
-        col_inbox_h1.markdown(f"**Totale Messaggi:** {len(all_inbox_msgs)} | **Da Leggere:** :red[{unread_inbox_count}]")
-        with col_inbox_h2:
-            filter_unread = st.checkbox("Mostra solo non letti", value=False, key="filter_unread_inbox")
-        with col_inbox_h3:
-            if unread_inbox_count > 0:
-                if st.button("✔️ Segna tutti letti", key="btn_mark_all_read", use_container_width=True):
-                    inbox_mgr.mark_all_as_read()
-                    st.success("Tutti i messaggi sono stati contrassegnati come letti.")
-                    st.rerun()
-
-        displayed_msgs = inbox_mgr.get_messages(unread_only=filter_unread)
-
-        if not displayed_msgs:
-            st.info("📭 Nessun messaggio presente nella casella." if not filter_unread else "✅ Non ci sono nuovi messaggi da leggere.")
-        else:
-            for msg in displayed_msgs:
-                msg_id = msg.get("id")
-                is_unread = not msg.get("is_read", False)
-                status_icon = "🔴 NUOVO" if is_unread else "⚪ Letto"
-                badge_bg = "rgba(231, 76, 60, 0.12)" if is_unread else "rgba(148, 163, 184, 0.08)"
-                border_color = "#E74C3C" if is_unread else "#334155"
-
-                with st.expander(f"{'🔔 ' if is_unread else ''}{msg.get('timestamp', '')} — {msg.get('sender_name', '')} | {msg.get('subject', '')} [{msg.get('category', '')}]", expanded=is_unread):
-                    st.markdown(f"""
-                        <div style="background:{badge_bg}; border-left:4px solid {border_color}; border-radius:6px; padding:12px 16px; margin-bottom:12px;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                <span style="font-weight:bold; font-size:1.05rem; color:#FFFFFF;">📌 {msg.get('subject')}</span>
-                                <span style="font-size:0.8rem; font-weight:bold; color:{'#E74C3C' if is_unread else '#94A3B8'};">{status_icon}</span>
-                            </div>
-                            <div style="font-size:0.85rem; color:#94A3B8; margin-bottom:8px;">
-                                👤 <b>Mittente:</b> {msg.get('sender_name')} (ID: <code>{msg.get('sender_user_id')}</code>)<br>
-                                🏷️ <b>Categoria:</b> {msg.get('category')}<br>
-                                📞 <b>Recapito:</b> {msg.get('sender_contact') or '<i>Nessun recapito fornito</i>'}<br>
-                                🕒 <b>Data & Ora:</b> {msg.get('timestamp')}
-                            </div>
-                            <div style="background:#0b111e; border:1px solid #1e293b; border-radius:6px; padding:12px; font-size:0.92rem; color:#E2E8F0; white-space:pre-wrap; line-height:1.5;">{msg.get('body')}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                    btn_c1, btn_c2, _ = st.columns([1.5, 1.5, 3])
-                    with btn_c1:
-                        if is_unread:
-                            if st.button(f"👁️ Segna come letto", key=f"read_{msg_id}"):
-                                inbox_mgr.mark_as_read(msg_id)
-                                st.rerun()
-                    with btn_c2:
-                        if st.button(f"🗑️ Elimina messaggio", key=f"del_{msg_id}"):
-                            inbox_mgr.delete_message(msg_id)
-                            st.success("Messaggio eliminato.")
-                            st.rerun()
+        _render_inbox_messages(current_user, inbox_mgr, key_suffix="admin")
 
 
 # =========================================================
