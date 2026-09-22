@@ -94,11 +94,70 @@ st.markdown("""
             margin-bottom: 8px;
         }
         .landing-subtitle {
-            font-size: 0.92rem;
-            color: #94A3B8;
-            letter-spacing: 0.5px;
-            font-weight: 500;
+            font-size: 0.98rem;
+            color: #CBD5E1;
+            letter-spacing: 1px;
+            font-weight: 600;
             margin-bottom: 0;
+        }
+        /* Voice Caddy Philosophy & Thought Banner */
+        .thought-banner {
+            background: linear-gradient(135deg, rgba(14, 23, 38, 0.95) 0%, rgba(20, 32, 48, 0.92) 50%, rgba(13, 29, 26, 0.95) 100%);
+            border: 1px solid rgba(212, 175, 55, 0.35);
+            border-left: 5px solid #D4AF37;
+            border-radius: 14px;
+            padding: 20px 24px;
+            margin: 0 auto 26px auto;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), 0 0 20px rgba(212, 175, 55, 0.08);
+            position: relative;
+            overflow: hidden;
+        }
+        .thought-banner::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 180px;
+            height: 100%;
+            background: radial-gradient(circle at top right, rgba(46, 204, 113, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .thought-quote-line {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #F1C40F;
+            letter-spacing: -0.2px;
+            line-height: 1.45;
+            margin-bottom: 8px;
+        }
+        .thought-body-line {
+            font-size: 0.95rem;
+            color: #CBD5E1;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+        .thought-cta-box {
+            background: rgba(46, 204, 113, 0.1);
+            border: 1px solid rgba(46, 204, 113, 0.3);
+            border-radius: 8px;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 0.92rem;
+            line-height: 1.5;
+        }
+        .thought-cta-badge {
+            color: #2ECC71;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+        .thought-cta-text {
+            color: #E2E8F0;
         }
         .group-card-strafatti {
             background: linear-gradient(160deg, #13241b 0%, #0e1713 100%);
@@ -541,9 +600,21 @@ if st.session_state.auth_user is None:
     else:
         hero_brand_html = '<div class="landing-title">⛳ VOICE CADDY PRO</div>'
     st.markdown(f"""
-        <div class="landing-hero" style="text-align: center; padding: 32px 20px;">
+        <div class="landing-hero" style="text-align: center; padding: 32px 20px 26px 20px;">
             {hero_brand_html}
-            <div class="landing-subtitle">Performance Analytics & Club Portal • Accesso Riservato</div>
+            <div class="landing-subtitle">Performance Analysis Portal</div>
+        </div>
+        <div class="thought-banner">
+            <div class="thought-quote-line">
+                « Lo score è la fine di una giornata di golf. Voice Caddy ti racconta perché. »
+            </div>
+            <div class="thought-body-line">
+                Non siamo professionisti che sbagliano un paio di colpi a giro: il nostro gioco è la somma di tanti piccoli errori che vanno compresi.
+            </div>
+            <div class="thought-cta-box">
+                <span class="thought-cta-badge">💬 Chatta con Voice Caddy :</span>
+                <span class="thought-cta-text">l'IA analizza ogni buca per darti la vera consapevolezza di come sei arrivato a quel risultato e come diventare un giocatore migliore</span>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
