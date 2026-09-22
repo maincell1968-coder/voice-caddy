@@ -19,6 +19,31 @@ class TestMobilePDFReport(unittest.TestCase):
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
         self.assertGreater(len(pdf_bytes), 3000)
 
+    def test_generate_showcase_pdf_with_round_data(self):
+        round_data = get_demo_golf_round()
+        pdf_bytes = generate_showcase_mobile_pdf(
+            round_data=round_data,
+            player_name="Stefano Pirani",
+            handicap=18.0,
+            active_course_id="conero_golf_club"
+        )
+        self.assertIsInstance(pdf_bytes, bytes)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+        self.assertGreater(len(pdf_bytes), 3000)
+
+    def test_generate_showcase_pdf_without_summary(self):
+        round_data = get_demo_golf_round()
+        round_data.performance_summary = None
+        pdf_bytes = generate_showcase_mobile_pdf(
+            round_data=round_data,
+            player_name="Stefano Pirani",
+            handicap=18.0,
+            active_course_id="conero_golf_club"
+        )
+        self.assertIsInstance(pdf_bytes, bytes)
+        self.assertTrue(pdf_bytes.startswith(b"%PDF"))
+        self.assertGreater(len(pdf_bytes), 3000)
+
     def test_generate_showcase_pdf_all_courses(self):
         courses = ["conero_golf_club", "torrenova_golf_club", "golf_club_perugia", "riviera_golf_resort"]
         for cid in courses:

@@ -2005,44 +2005,50 @@ with nav_tab1:
         st.markdown("#### 📄 Esportazione Report PDF Ufficiale (Condivisione WhatsApp & Telegram)")
         st.caption("Il report PDF compatto sintetizza l'intero giro, la scorecard lordo/netto, l'analisi del maestro e i drill prescritti in un formato grafico ad alta risoluzione, perfetto da visualizzare su smartphone.")
 
-        pdf_bytes = generate_showcase_mobile_pdf(
-            round_data=st.session_state.round_data,
-            player_name=f"{current_user.first_name} {current_user.last_name}",
-            handicap=float(st.session_state.user_profile.handicap),
-            active_course_id=active_course.course_id
-        )
-
-        col_pdf1, col_pdf2 = st.columns(2)
-        with col_pdf1:
-            st.download_button(
-                label="📥 Scarica Report PDF (per WhatsApp & Stampa)",
-                data=pdf_bytes,
-                file_name=f"Voice_Caddy_Report_{current_user.last_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary"
+        pdf_bytes = None
+        try:
+            pdf_bytes = generate_showcase_mobile_pdf(
+                round_data=st.session_state.round_data,
+                player_name=f"{current_user.first_name} {current_user.last_name}",
+                handicap=float(st.session_state.user_profile.handicap),
+                active_course_id=active_course.course_id
             )
+        except Exception as e:
+            print(f"[PDF ERROR] Errore generazione showcase PDF: {e}")
+            st.warning(f"⚠️ Impossibile generare l'anteprima PDF: {e}")
 
-        with col_pdf2:
-            linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
-            if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
-                linked_cid = tg_manager.get_admin_chat_id()
+        if pdf_bytes:
+            col_pdf1, col_pdf2 = st.columns(2)
+            with col_pdf1:
+                st.download_button(
+                    label="📥 Scarica Report PDF (per WhatsApp & Stampa)",
+                    data=pdf_bytes,
+                    file_name=f"Voice_Caddy_Report_{current_user.last_name}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
 
-            if st.button("📲 Invia Report PDF su Telegram al mio Bot", use_container_width=True):
-                if not linked_cid:
-                    st.warning("⚠️ Non hai ancora collegato la tua chat Telegram. Premi 'Collega Telegram' nella barra laterale o avvia @VoiceCaddyGolf_bot.")
-                else:
-                    with st.spinner("Invio del documento PDF su Telegram in corso..."):
-                        ok_tg, msg_tg = send_pdf_report_via_telegram(
-                            pdf_bytes=pdf_bytes,
-                            chat_id=linked_cid,
-                            caption=f"🏌️‍♂️ <b>Report Ufficiale Voice Caddy Pro</b>\nGiocatore: {current_user.first_name} {current_user.last_name} (HCP {st.session_state.user_profile.handicap})\nCampo: {active_course.name}",
-                            filename=f"Report_{active_course.course_id}.pdf"
-                        )
-                        if ok_tg:
-                            st.success(f"✅ {msg_tg}")
-                        else:
-                            st.error(f"❌ {msg_tg}")
+            with col_pdf2:
+                linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
+                if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
+                    linked_cid = tg_manager.get_admin_chat_id()
+
+                if st.button("📲 Invia Report PDF su Telegram al mio Bot", use_container_width=True):
+                    if not linked_cid:
+                        st.warning("⚠️ Non hai ancora collegato la tua chat Telegram. Premi 'Collega Telegram' nella barra laterale o avvia @VoiceCaddyGolf_bot.")
+                    else:
+                        with st.spinner("Invio del documento PDF su Telegram in corso..."):
+                            ok_tg, msg_tg = send_pdf_report_via_telegram(
+                                pdf_bytes=pdf_bytes,
+                                chat_id=linked_cid,
+                                caption=f"🏌️‍♂️ <b>Report Ufficiale Voice Caddy Pro</b>\nGiocatore: {current_user.first_name} {current_user.last_name} (HCP {st.session_state.user_profile.handicap})\nCampo: {active_course.name}",
+                                filename=f"Report_{active_course.course_id}.pdf"
+                            )
+                            if ok_tg:
+                                st.success(f"✅ {msg_tg}")
+                            else:
+                                st.error(f"❌ {msg_tg}")
 
     # ---------------------------------------------------------
     # HERO ACTION HUB: SCARICA ED ELABORA GARA DI IERI (TELEGRAM / AUDIO)
