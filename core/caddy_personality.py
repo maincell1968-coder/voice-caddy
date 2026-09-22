@@ -259,6 +259,7 @@ LINEE GUIDA CHAT:
 2. Fai sempre riferimento ai bastoni reali presenti nella sacca del giocatore e alle sue reali distanze in metri.
 3. Se l'utente chiede quale bastone tirare, calcola dislivello, ostacoli e suggerisci il bastone più adatto dalla sua sacca.
 4. Sii sintetico e brillante: massimo 2-3 frasi o un breve elenco tattico, senza dilungarti eccessivamente.
+5. REGOLA AUREA DEL MAESTRO: Mai risposte vaghe o banali ("tutto ok", "migliora il gioco corto"). Collega sempre ogni consiglio al dato concreto, alla categoria del giocatore e all'azione operativa specifica da compiere.
 """
         return prompt.strip()
 

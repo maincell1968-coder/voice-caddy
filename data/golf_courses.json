@@ -878,6 +878,1093 @@
           }
         }
       ]
+    },
+    {
+      "course_id": "riviera_golf_resort",
+      "name": "Riviera Golf Resort",
+      "city": "San Giovanni in Marignano (RN)",
+      "total_par": 70,
+      "holes_count": 18,
+      "terrain_description": "Percorso championship firmato da Luigi Rota Caremoli e Graham Cooke, immerso nella Valle del Conca con alternanza di buche tecniche e ampi fairway in stile americano.",
+      "tees": {
+        "bianchi": {
+          "tee_name": "Bianchi",
+          "color_code": "white",
+          "gender": "Uomini",
+          "course_rating": 72.4,
+          "slope_rating": 128,
+          "par": 70,
+          "holes_count": 18,
+          "length_meters": 6061,
+          "hole_stroke_indexes": null
+        },
+        "gialli": {
+          "tee_name": "Gialli",
+          "color_code": "yellow",
+          "gender": "Uomini",
+          "course_rating": 70.1,
+          "slope_rating": 122,
+          "par": 70,
+          "holes_count": 18,
+          "length_meters": 5596,
+          "hole_stroke_indexes": null
+        },
+        "rossi": {
+          "tee_name": "Rossi",
+          "color_code": "red",
+          "gender": "Donne",
+          "course_rating": 70.3,
+          "slope_rating": 126,
+          "par": 70,
+          "holes_count": 18,
+          "length_meters": 4887,
+          "hole_stroke_indexes": null
+        }
+      },
+      "holes": [
+        {
+          "hole_number": 1,
+          "buca": 1,
+          "par": 4,
+          "handicap_index": 2,
+          "distance_meters": 394,
+          "slope_elevation_profile": "Dogleg a destra in discesa con green a 3 livelli",
+          "tee": {
+            "lat": 43.942425,
+            "lon": 12.715462,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.943986,
+              "lon": 12.719715
+            },
+            "center": {
+              "lat": 43.944035,
+              "lon": 12.719849,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.944084,
+              "lon": 12.719982
+            }
+          }
+        },
+        {
+          "hole_number": 2,
+          "buca": 2,
+          "par": 4,
+          "handicap_index": 10,
+          "distance_meters": 315,
+          "slope_elevation_profile": "In pianura con fairway largo",
+          "tee": {
+            "lat": 43.942261,
+            "lon": 12.716455,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.941741,
+              "lon": 12.720172
+            },
+            "center": {
+              "lat": 43.94172,
+              "lon": 12.720319,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.9417,
+              "lon": 12.720466
+            }
+          }
+        },
+        {
+          "hole_number": 3,
+          "buca": 3,
+          "par": 3,
+          "handicap_index": 16,
+          "distance_meters": 155,
+          "slope_elevation_profile": "Par 3 con bunker frontale sinistro",
+          "tee": {
+            "lat": 43.944941,
+            "lon": 12.717055,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.943969,
+              "lon": 12.718227
+            },
+            "center": {
+              "lat": 43.943888,
+              "lon": 12.718326,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.943806,
+              "lon": 12.718424
+            }
+          }
+        },
+        {
+          "hole_number": 4,
+          "buca": 4,
+          "par": 4,
+          "handicap_index": 12,
+          "distance_meters": 330,
+          "slope_elevation_profile": "In leggera salita",
+          "tee": {
+            "lat": 43.943693,
+            "lon": 12.716408,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.940835,
+              "lon": 12.716616
+            },
+            "center": {
+              "lat": 43.940727,
+              "lon": 12.716624,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.940619,
+              "lon": 12.716632
+            }
+          }
+        },
+        {
+          "hole_number": 5,
+          "buca": 5,
+          "par": 4,
+          "handicap_index": 18,
+          "distance_meters": 290,
+          "slope_elevation_profile": "In pianura con ostacolo d'acqua a destra",
+          "tee": {
+            "lat": 43.942941,
+            "lon": 12.719348,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.940892,
+              "lon": 12.717355
+            },
+            "center": {
+              "lat": 43.940803,
+              "lon": 12.717269,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.940715,
+              "lon": 12.717183
+            }
+          }
+        },
+        {
+          "hole_number": 6,
+          "buca": 6,
+          "par": 3,
+          "handicap_index": 8,
+          "distance_meters": 175,
+          "slope_elevation_profile": "In discesa verso green protetto da bunker",
+          "tee": {
+            "lat": 43.943432,
+            "lon": 12.716655,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.943003,
+              "lon": 12.714707
+            },
+            "center": {
+              "lat": 43.942971,
+              "lon": 12.714564,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.94294,
+              "lon": 12.714421
+            }
+          }
+        },
+        {
+          "hole_number": 7,
+          "buca": 7,
+          "par": 5,
+          "handicap_index": 4,
+          "distance_meters": 490,
+          "slope_elevation_profile": "Par 5 lungo il Conca con fairway ondulato",
+          "tee": {
+            "lat": 43.945336,
+            "lon": 12.719762,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.946877,
+              "lon": 12.714185
+            },
+            "center": {
+              "lat": 43.946916,
+              "lon": 12.714045,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.946954,
+              "lon": 12.713905
+            }
+          }
+        },
+        {
+          "hole_number": 8,
+          "buca": 8,
+          "par": 5,
+          "handicap_index": 6,
+          "distance_meters": 480,
+          "slope_elevation_profile": "Par 5 con doppio landing zone strategico",
+          "tee": {
+            "lat": 43.944415,
+            "lon": 12.715026,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.948025,
+              "lon": 12.712014
+            },
+            "center": {
+              "lat": 43.948117,
+              "lon": 12.711936,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.94821,
+              "lon": 12.711859
+            }
+          }
+        },
+        {
+          "hole_number": 9,
+          "buca": 9,
+          "par": 4,
+          "handicap_index": 14,
+          "distance_meters": 340,
+          "slope_elevation_profile": "In salita verso la Club House",
+          "tee": {
+            "lat": 43.943022,
+            "lon": 12.717913,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.945951,
+              "lon": 12.718413
+            },
+            "center": {
+              "lat": 43.946059,
+              "lon": 12.718431,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.946166,
+              "lon": 12.718449
+            }
+          }
+        },
+        {
+          "hole_number": 10,
+          "buca": 10,
+          "par": 4,
+          "handicap_index": 5,
+          "distance_meters": 360,
+          "slope_elevation_profile": "Dogleg a sinistra con lago in gioco",
+          "tee": {
+            "lat": 43.943474,
+            "lon": 12.717564,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.945688,
+              "lon": 12.72064
+            },
+            "center": {
+              "lat": 43.945765,
+              "lon": 12.720746,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.945841,
+              "lon": 12.720852
+            }
+          }
+        },
+        {
+          "hole_number": 11,
+          "buca": 11,
+          "par": 4,
+          "handicap_index": 9,
+          "distance_meters": 345,
+          "slope_elevation_profile": "In pianura con bunker laterali",
+          "tee": {
+            "lat": 43.945147,
+            "lon": 12.716996,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.945512,
+              "lon": 12.721126
+            },
+            "center": {
+              "lat": 43.945525,
+              "lon": 12.721275,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.945539,
+              "lon": 12.721424
+            }
+          }
+        },
+        {
+          "hole_number": 12,
+          "buca": 12,
+          "par": 4,
+          "handicap_index": 13,
+          "distance_meters": 320,
+          "slope_elevation_profile": "Fairway stretto con piante",
+          "tee": {
+            "lat": 43.944922,
+            "lon": 12.71895,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.943495,
+              "lon": 12.722249
+            },
+            "center": {
+              "lat": 43.943439,
+              "lon": 12.722377,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.943383,
+              "lon": 12.722506
+            }
+          }
+        },
+        {
+          "hole_number": 13,
+          "buca": 13,
+          "par": 3,
+          "handicap_index": 15,
+          "distance_meters": 145,
+          "slope_elevation_profile": "Par 3 corto con green a penisola",
+          "tee": {
+            "lat": 43.944323,
+            "lon": 12.717013,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.943206,
+              "lon": 12.717609
+            },
+            "center": {
+              "lat": 43.943105,
+              "lon": 12.717662,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.943004,
+              "lon": 12.717716
+            }
+          }
+        },
+        {
+          "hole_number": 14,
+          "buca": 14,
+          "par": 4,
+          "handicap_index": 3,
+          "distance_meters": 385,
+          "slope_elevation_profile": "Buca tecnica con ostacolo d'acqua frontale",
+          "tee": {
+            "lat": 43.945313,
+            "lon": 12.716461,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.942103,
+              "lon": 12.715098
+            },
+            "center": {
+              "lat": 43.942,
+              "lon": 12.715054,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.941897,
+              "lon": 12.71501
+            }
+          }
+        },
+        {
+          "hole_number": 15,
+          "buca": 15,
+          "par": 3,
+          "handicap_index": 17,
+          "distance_meters": 135,
+          "slope_elevation_profile": "In salita con green sopraelevato",
+          "tee": {
+            "lat": 43.942185,
+            "lon": 12.719374,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.94155,
+              "lon": 12.718115
+            },
+            "center": {
+              "lat": 43.941488,
+              "lon": 12.717992,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.941426,
+              "lon": 12.717869
+            }
+          }
+        },
+        {
+          "hole_number": 16,
+          "buca": 16,
+          "par": 4,
+          "handicap_index": 7,
+          "distance_meters": 355,
+          "slope_elevation_profile": "Dogleg a destra panoramico",
+          "tee": {
+            "lat": 43.942363,
+            "lon": 12.718873,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.942525,
+              "lon": 12.714592
+            },
+            "center": {
+              "lat": 43.942531,
+              "lon": 12.714443,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.942536,
+              "lon": 12.714293
+            }
+          }
+        },
+        {
+          "hole_number": 17,
+          "buca": 17,
+          "par": 4,
+          "handicap_index": 11,
+          "distance_meters": 335,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.94453,
+            "lon": 12.717743,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.946437,
+              "lon": 12.714697
+            },
+            "center": {
+              "lat": 43.946507,
+              "lon": 12.714584,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.946578,
+              "lon": 12.71447
+            }
+          }
+        },
+        {
+          "hole_number": 18,
+          "buca": 18,
+          "par": 4,
+          "handicap_index": 1,
+          "distance_meters": 410,
+          "slope_elevation_profile": "Buca finale da campionato con lago a sinistra",
+          "tee": {
+            "lat": 43.942664,
+            "lon": 12.717064,
+            "altitude": 25.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.946179,
+              "lon": 12.716115
+            },
+            "center": {
+              "lat": 43.946285,
+              "lon": 12.716087,
+              "altitude": 25.0
+            },
+            "back": {
+              "lat": 43.946391,
+              "lon": 12.716058
+            }
+          }
+        }
+      ]
+    },
+    {
+      "course_id": "golf_club_perugia",
+      "name": "Golf Club Perugia",
+      "city": "Santa Sabina, Perugia (PG)",
+      "total_par": 72,
+      "holes_count": 18,
+      "terrain_description": "Percorso collinare storico del 1959 con suggestiva Clubhouse ricavata da un'antica fornace di calce del 1921. Fairway tecnici alberati e green ondulati.",
+      "tees": {
+        "gialli": {
+          "tee_name": "Gialli",
+          "color_code": "yellow",
+          "gender": "Uomini",
+          "course_rating": 71.0,
+          "slope_rating": 125,
+          "par": 72,
+          "holes_count": 18,
+          "length_meters": 5750,
+          "hole_stroke_indexes": null
+        },
+        "rossi": {
+          "tee_name": "Rossi",
+          "color_code": "red",
+          "gender": "Donne",
+          "course_rating": 71.5,
+          "slope_rating": 122,
+          "par": 72,
+          "holes_count": 18,
+          "length_meters": 5100,
+          "hole_stroke_indexes": null
+        }
+      },
+      "holes": [
+        {
+          "hole_number": 1,
+          "buca": 1,
+          "par": 5,
+          "handicap_index": 8,
+          "distance_meters": 465,
+          "slope_elevation_profile": "Par 5 in salita verso la collina",
+          "tee": {
+            "lat": 43.080401,
+            "lon": 12.338495,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.081994,
+              "lon": 12.343632
+            },
+            "center": {
+              "lat": 43.082036,
+              "lon": 12.343768,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.082078,
+              "lon": 12.343904
+            }
+          }
+        },
+        {
+          "hole_number": 2,
+          "buca": 2,
+          "par": 4,
+          "handicap_index": 14,
+          "distance_meters": 320,
+          "slope_elevation_profile": "In discesa con fairway alberato",
+          "tee": {
+            "lat": 43.080113,
+            "lon": 12.33947,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.079211,
+              "lon": 12.343058
+            },
+            "center": {
+              "lat": 43.079175,
+              "lon": 12.343198,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.07914,
+              "lon": 12.343338
+            }
+          }
+        },
+        {
+          "hole_number": 3,
+          "buca": 3,
+          "par": 4,
+          "handicap_index": 4,
+          "distance_meters": 375,
+          "slope_elevation_profile": "In leggera salita con green difeso da pini",
+          "tee": {
+            "lat": 43.082647,
+            "lon": 12.339794,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.07979,
+              "lon": 12.341962
+            },
+            "center": {
+              "lat": 43.079696,
+              "lon": 12.342034,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.079602,
+              "lon": 12.342105
+            }
+          }
+        },
+        {
+          "hole_number": 4,
+          "buca": 4,
+          "par": 4,
+          "handicap_index": 18,
+          "distance_meters": 295,
+          "slope_elevation_profile": "In pianura",
+          "tee": {
+            "lat": 43.081487,
+            "lon": 12.338615,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.079006,
+              "lon": 12.33783
+            },
+            "center": {
+              "lat": 43.0789,
+              "lon": 12.337797,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.078795,
+              "lon": 12.337764
+            }
+          }
+        },
+        {
+          "hole_number": 5,
+          "buca": 5,
+          "par": 5,
+          "handicap_index": 12,
+          "distance_meters": 470,
+          "slope_elevation_profile": "Par 5 ondulato con dogleg",
+          "tee": {
+            "lat": 43.081261,
+            "lon": 12.34108,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.078898,
+              "lon": 12.336458
+            },
+            "center": {
+              "lat": 43.078836,
+              "lon": 12.336337,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.078774,
+              "lon": 12.336216
+            }
+          }
+        },
+        {
+          "hole_number": 6,
+          "buca": 6,
+          "par": 5,
+          "handicap_index": 10,
+          "distance_meters": 485,
+          "slope_elevation_profile": "Par 5 lungo con secondo colpo stretto",
+          "tee": {
+            "lat": 43.082598,
+            "lon": 12.33871,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.083117,
+              "lon": 12.332926
+            },
+            "center": {
+              "lat": 43.08313,
+              "lon": 12.332779,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.083143,
+              "lon": 12.332633
+            }
+          }
+        },
+        {
+          "hole_number": 7,
+          "buca": 7,
+          "par": 3,
+          "handicap_index": 16,
+          "distance_meters": 140,
+          "slope_elevation_profile": "Par 3 delicato con bunker frontale",
+          "tee": {
+            "lat": 43.081537,
+            "lon": 12.338201,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.082406,
+              "lon": 12.337166
+            },
+            "center": {
+              "lat": 43.082488,
+              "lon": 12.337069,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.082569,
+              "lon": 12.336972
+            }
+          }
+        },
+        {
+          "hole_number": 8,
+          "buca": 8,
+          "par": 4,
+          "handicap_index": 6,
+          "distance_meters": 360,
+          "slope_elevation_profile": "In leggera discesa",
+          "tee": {
+            "lat": 43.080346,
+            "lon": 12.340523,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.083477,
+              "lon": 12.340597
+            },
+            "center": {
+              "lat": 43.083585,
+              "lon": 12.3406,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.083693,
+              "lon": 12.340603
+            }
+          }
+        },
+        {
+          "hole_number": 9,
+          "buca": 9,
+          "par": 4,
+          "handicap_index": 2,
+          "distance_meters": 395,
+          "slope_elevation_profile": "In salita verso l'antica fornace del 1921",
+          "tee": {
+            "lat": 43.081022,
+            "lon": 12.340056,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.083542,
+              "lon": 12.343274
+            },
+            "center": {
+              "lat": 43.083621,
+              "lon": 12.343375,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.0837,
+              "lon": 12.343475
+            }
+          }
+        },
+        {
+          "hole_number": 10,
+          "buca": 10,
+          "par": 4,
+          "handicap_index": 7,
+          "distance_meters": 350,
+          "slope_elevation_profile": "In discesa panoramica",
+          "tee": {
+            "lat": 43.082699,
+            "lon": 12.339474,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.082965,
+              "lon": 12.343622
+            },
+            "center": {
+              "lat": 43.082974,
+              "lon": 12.343769,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.082983,
+              "lon": 12.343916
+            }
+          }
+        },
+        {
+          "hole_number": 11,
+          "buca": 11,
+          "par": 4,
+          "handicap_index": 17,
+          "distance_meters": 310,
+          "slope_elevation_profile": "In pianura con fairway stretto",
+          "tee": {
+            "lat": 43.082365,
+            "lon": 12.341025,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.080751,
+              "lon": 12.343957
+            },
+            "center": {
+              "lat": 43.080686,
+              "lon": 12.344075,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.080621,
+              "lon": 12.344194
+            }
+          }
+        },
+        {
+          "hole_number": 12,
+          "buca": 12,
+          "par": 3,
+          "handicap_index": 15,
+          "distance_meters": 155,
+          "slope_elevation_profile": "Par 3 sopraelevato",
+          "tee": {
+            "lat": 43.081957,
+            "lon": 12.338286,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.080694,
+              "lon": 12.338622
+            },
+            "center": {
+              "lat": 43.080588,
+              "lon": 12.33865,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.080482,
+              "lon": 12.338678
+            }
+          }
+        },
+        {
+          "hole_number": 13,
+          "buca": 13,
+          "par": 4,
+          "handicap_index": 11,
+          "distance_meters": 330,
+          "slope_elevation_profile": "In salita costante",
+          "tee": {
+            "lat": 43.080218,
+            "lon": 12.341923,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.077766,
+              "lon": 12.339906
+            },
+            "center": {
+              "lat": 43.077673,
+              "lon": 12.33983,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.077581,
+              "lon": 12.339753
+            }
+          }
+        },
+        {
+          "hole_number": 14,
+          "buca": 14,
+          "par": 4,
+          "handicap_index": 3,
+          "distance_meters": 380,
+          "slope_elevation_profile": "Dogleg tecnico con fuori limite a destra",
+          "tee": {
+            "lat": 43.082141,
+            "lon": 12.340165,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.081173,
+              "lon": 12.33583
+            },
+            "center": {
+              "lat": 43.081141,
+              "lon": 12.335688,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.08111,
+              "lon": 12.335547
+            }
+          }
+        },
+        {
+          "hole_number": 15,
+          "buca": 15,
+          "par": 3,
+          "handicap_index": 9,
+          "distance_meters": 165,
+          "slope_elevation_profile": "Par 3 lungo e difeso",
+          "tee": {
+            "lat": 43.083599,
+            "lon": 12.341696,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.084181,
+              "lon": 12.339988
+            },
+            "center": {
+              "lat": 43.084227,
+              "lon": 12.339854,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.084272,
+              "lon": 12.33972
+            }
+          }
+        },
+        {
+          "hole_number": 16,
+          "buca": 16,
+          "par": 4,
+          "handicap_index": 13,
+          "distance_meters": 335,
+          "slope_elevation_profile": "In discesa",
+          "tee": {
+            "lat": 43.082181,
+            "lon": 12.339067,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.084856,
+              "lon": 12.337512
+            },
+            "center": {
+              "lat": 43.084956,
+              "lon": 12.337454,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.085055,
+              "lon": 12.337396
+            }
+          }
+        },
+        {
+          "hole_number": 17,
+          "buca": 17,
+          "par": 4,
+          "handicap_index": 5,
+          "distance_meters": 365,
+          "slope_elevation_profile": "In leggera salita con green a due livelli",
+          "tee": {
+            "lat": 43.081929,
+            "lon": 12.341614,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.084933,
+              "lon": 12.34303
+            },
+            "center": {
+              "lat": 43.085035,
+              "lon": 12.343078,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.085137,
+              "lon": 12.343126
+            }
+          }
+        },
+        {
+          "hole_number": 18,
+          "buca": 18,
+          "par": 4,
+          "handicap_index": 1,
+          "distance_meters": 400,
+          "slope_elevation_profile": "Buca finale in salita davanti alla Clubhouse storica",
+          "tee": {
+            "lat": 43.080664,
+            "lon": 12.340893,
+            "altitude": 240.0
+          },
+          "green": {
+            "front": {
+              "lat": 43.082356,
+              "lon": 12.345073
+            },
+            "center": {
+              "lat": 43.082408,
+              "lon": 12.345203,
+              "altitude": 240.0
+            },
+            "back": {
+              "lat": 43.082461,
+              "lon": 12.345332
+            }
+          }
+        }
+      ]
     }
   ]
 }

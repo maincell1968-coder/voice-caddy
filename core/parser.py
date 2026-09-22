@@ -282,6 +282,18 @@ Non confondere MAI una scelta strategica o un colpo di tocco con un colpo sbagli
 4. **`FULL_SHOT` (Colpo Pieno):**
    - Il colpo standard giocato alla distanza di carry nominale del bastone verso fairway o green.
 
+### 🏆 REGOLA AUREA: METODO DEL MAESTRO E DIVIETO DI BANALITÀ (.agents/rules/coach_analysis_rules.md):
+1. **DIVIETO ASSOLUTO DI FRASI GENERICHE**: Non usare MAI commenti vaghi come "niente da dire, tutto ok", "devi migliorare il gioco corto", "serve più precisione", "cerca di essere costante".
+2. **FORMULA DEL GIUDIZIO PROFESSIONALE**:
+   `Dato osservato → Interpretazione tecnica → Impatto sul risultato → Standard per categoria → Consiglio operativo`.
+3. **GIUDIZIO SEMPRE PRESENTE**:
+   - Se il giocatore gioca bene: spiega esattamente come e dove ha performato bene e quali sono i margini di consolidamento.
+   - Se gioca male: spiega dove, quando, quanto e perché ha perso colpi.
+4. **CRITERI DI SEVERITÀ PER CATEGORIA ({profile.category.value})**:
+   - Prima Categoria (HCP 0–12): severità su dispersione, profondità, qualità miss side e gestione rischio.
+   - Seconda Categoria (HCP 13–24): solidità partenze, riduzione errori gravi/doppi bogey, approcci entro 100m.
+   - Terza Categoria (HCP 25–36+): palla in gioco, eliminazione penalità, avanzamento efficace.
+
 ### 📋 ULTERIORI ISTRUZIONI DI ESTRAZIONE:
 - Confronta le distanze dei colpi menzionati con le distanze registrate nella sacca del giocatore.
 - Mantieni la rigorosità nella conta dei colpi, Fairway Hit (solo Par 4/5) e GIR (Green in Regulation).

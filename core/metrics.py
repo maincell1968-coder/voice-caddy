@@ -7,6 +7,9 @@ from core.schemas import (
 )
 
 
+from core.golf_coach_engine import GolfCoachEngine
+
+
 class GolfMetricsCalculator:
     """
     Deterministic mathematical engine for Voice Caddy.
@@ -96,15 +99,34 @@ class GolfMetricsCalculator:
         # 8. Course Management Stats (layup, recovery, bump & run)
         cm_stats = cls.calculate_course_management_stats(holes)
 
+        # 9. Esecuzione Motore del Maestro (Regola Aurea & coach_analysis_rules.md)
+        round_data.holes = holes
+        coach_data = None
+        try:
+            coach_data = GolfCoachEngine.analyze_round(round_data)
+            for idx, h in enumerate(holes):
+                if idx < len(coach_data.holes_evaluations):
+                    h.coach_evaluation = coach_data.holes_evaluations[idx].model_dump()
+        except Exception:
+            coach_data = None
+
         # Re-build validated PerformanceSummary (with professional_diagnosis preserved)
         curr_ps = getattr(round_data, "performance_summary", None)
         
-        diag = (curr_ps.professional_diagnosis if curr_ps and curr_ps.professional_diagnosis else ProfessionalDiagnosis(
-            executive_narrative=f"Giro completato su {round_data.round_info.course_name} con {total_score} colpi lordi ({total_score_net} netti) e {total_stbl_net} punti Stableford netti.",
-            biggest_stroke_leak="In attesa di ulteriori dati da campo.",
-            technical_vs_tactical_split="Analisi generata dai colpi registrati.",
-            course_management_score=80
-        ))
+        if coach_data and (not curr_ps or not curr_ps.professional_diagnosis or "In attesa" in curr_ps.professional_diagnosis.biggest_stroke_leak):
+            diag = ProfessionalDiagnosis(
+                executive_narrative=coach_data.overall_judgement,
+                biggest_stroke_leak=coach_data.recurring_patterns[0] if coach_data.recurring_patterns else "Dispersione ordinaria",
+                technical_vs_tactical_split=f"Analisi condotta secondo la Regola Aurea per {coach_data.player_category.label}.",
+                course_management_score=int(coach_data.scores.strategy * 10)
+            )
+        else:
+            diag = (curr_ps.professional_diagnosis if curr_ps and curr_ps.professional_diagnosis else ProfessionalDiagnosis(
+                executive_narrative=f"Giro completato su {round_data.round_info.course_name} con {total_score} colpi lordi ({total_score_net} netti) e {total_stbl_net} punti Stableford netti.",
+                biggest_stroke_leak="In attesa di ulteriori dati da campo.",
+                technical_vs_tactical_split="Analisi generata dai colpi registrati.",
+                course_management_score=80
+            ))
         
         strokes_breakdown = (curr_ps.strokes_lost_breakdown if curr_ps and curr_ps.strokes_lost_breakdown else StrokesLostBreakdown(
             tee_shots=1.0,
@@ -115,6 +137,16 @@ class GolfMetricsCalculator:
         ))
         
         drills = curr_ps.training_drills_recommended if curr_ps and curr_ps.training_drills_recommended else []
+        if coach_data and (not drills or len(drills) == 0):
+            drills = [
+                TrainingDrill(
+                    target_area=p.area,
+                    drill_name=p.area,
+                    objective=p.goal,
+                    setup_and_execution=p.drill,
+                    success_benchmark=p.benchmark
+                ) for p in coach_data.training_priorities
+            ]
         
         default_miss = "Nessuna tendenza negativa riscontrata"
         primary_miss = miss_summary or (curr_ps.primary_miss_tendency if curr_ps and curr_ps.primary_miss_tendency else default_miss)
@@ -134,7 +166,8 @@ class GolfMetricsCalculator:
             professional_diagnosis=diag,
             strokes_lost_breakdown=strokes_breakdown,
             training_drills_recommended=drills,
-            course_management_stats=cm_stats
+            course_management_stats=cm_stats,
+            coach_report=coach_data.model_dump() if coach_data else None
         )
 
         round_data.holes = holes

@@ -8,6 +8,7 @@ from typing import Optional, Tuple, Dict, Any
 from core.telegram_config import TelegramConfigManager
 from core.telegram_bot import VoiceCaddyTelegramBot
 
+import sys
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +20,6 @@ class TelegramBotBackgroundService:
     e senza costringere l'utente a gestire manualmente finestre terminale separate.
     """
 
-    _instance: Optional[TelegramBotBackgroundService] = None
     _lock = threading.Lock()
 
     def __init__(self):
@@ -34,13 +34,23 @@ class TelegramBotBackgroundService:
     @classmethod
     def get_instance(cls) -> TelegramBotBackgroundService:
         with cls._lock:
-            if cls._instance is None:
-                cls._instance = cls()
-            return cls._instance
+            cached = getattr(sys, "_voice_caddy_bot_service", None)
+            if cached is not None and isinstance(cached, cls):
+                return cached
+            instance = cls()
+            setattr(sys, "_voice_caddy_bot_service", instance)
+            return instance
 
     def is_alive(self) -> bool:
         """Verifica se il thread del bot è attualmente in esecuzione."""
-        return bool(self._thread and self._thread.is_alive() and self._is_active)
+        if self._thread and self._thread.is_alive() and self._is_active:
+            return True
+        # Verifica se esiste un thread worker attivo nel runtime (anche da reload precedenti)
+        has_running_worker = any(
+            t.name == "VoiceCaddy-TelegramBotThread" and t.is_alive()
+            for t in threading.enumerate()
+        )
+        return has_running_worker and self._is_active
 
     def get_status_info(self) -> Dict[str, Any]:
         """Restituisce informazioni dettagliate sullo stato del server bot."""

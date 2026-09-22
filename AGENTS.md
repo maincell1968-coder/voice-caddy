@@ -17,3 +17,15 @@ Nel riepilogo di gara, scorecard e report finale (PDF, HTML, Streamlit, Telegram
 3. **Distribuzione handicap**: applicazione rigorosa dello Stroke Index della buca prima del calcolo dei punti Stableford (Regola 21.1 e Regola 3 R&A/USGA).
 4. **Report finale**: inclusione di tutte le sezioni obbligatorie A-G (formula, metodo di calcolo, tabella risultati, anomalie/validazioni, classifica netta, classifica lorda, nota di conformità).
 
+## 🏆 REGOLA AUREA: ANALISI TECNICA DI GARA DELL'IA (METODO DEL MAESTRO)
+Ogni volta che l'IA analizza la prestazione di golf dell'utente (sia nel report riepilogativo della gara che nell'analisi specifica buca per buca), DEVE applicare rigorosamente le regole e le soglie definite in `.agents/rules/coach_analysis_rules.md`:
+1. **Giudizio Tecnico Sempre Presente**: se il giocatore gioca bene, spiegare come, dove e perché e come consolidare; se gioca male, spiegare esattamente dove, quando, quanto e perché ha perso colpi.
+2. **Divieto Assoluto di Banalità**: è tassativamente vietato esprimere commenti generici, sbrigativi o vaghi (es. "niente da dire, tutto ok", "devi migliorare il gioco corto", "serve più precisione").
+3. **Formula Obbligatoria del Giudizio**:
+   `Dato osservato → Interpretazione tecnica → Impatto sul risultato → Standard per categoria → Consiglio operativo`.
+4. **Differenziazione per Categoria**:
+   - *Prima Categoria (HCP 0–12)*: severità su dispersione, controllo profondità, miss side, gestione rischio.
+   - *Seconda Categoria (HCP 13–24)*: solidità partenze, riduzione doppi bogey, approcci <100m.
+   - *Terza Categoria (HCP 25–36+)*: palla in gioco, eliminazione penalità, avanzamento efficace.
+5. **Template Obbligatori e Doppia Uscita**: rispetto della struttura a 6 sezioni buca per buca, del riepilogo a 14 punti con Top 3 priorità di allenamento misurabili, e generazione di doppia uscita (*Player Report* leggibile + *Technical Report* strutturato JSON).
+
