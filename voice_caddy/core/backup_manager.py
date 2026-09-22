@@ -59,6 +59,11 @@ class BackupManager:
         if tg_conf.exists():
             files.append(tg_conf)
 
+        # 5. Messaggi Amministratore (Inbox)
+        admin_msgs = self.project_root / "data" / "admin_messages.json"
+        if admin_msgs.exists():
+            files.append(admin_msgs)
+
         return files
 
     def create_startup_snapshot(self) -> Optional[Path]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from core.whs_rules import TeeRating
 from core.green_distance_service import GreenCoordinates, GeoPoint, derive_front_back_green_points
 
@@ -67,6 +67,29 @@ class HoleInfo(BaseModel):
     handicap_index: Optional[int] = Field(None, ge=1, le=18, description="Indice di difficoltà della buca")
     slope_elevation_profile: str = Field(default="In pianura", description="Profilo orografico e pendenze dal tee al green")
     coordinates: Optional[HoleCoordinates] = Field(default=None, description="Coordinate geografiche e altimetriche di Tee e Green/Pin")
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_tee_and_green(cls, data: Any) -> Any:
+        if isinstance(data, dict) and not data.get("coordinates") and data.get("tee") and data.get("green"):
+            t = data["tee"]
+            g = data["green"]
+            g_center = g.get("center", {}) if isinstance(g, dict) else {}
+            g_front = g.get("front", {}) if isinstance(g, dict) else {}
+            g_back = g.get("back", {}) if isinstance(g, dict) else {}
+            data["coordinates"] = HoleCoordinates(
+                tee_lat=t.get("lat"),
+                tee_lon=t.get("lon"),
+                tee_altitude=t.get("altitude"),
+                green_lat=g_center.get("lat") or g.get("lat"),
+                green_lon=g_center.get("lon") or g.get("lon"),
+                green_altitude=g_center.get("altitude") or g.get("altitude"),
+                front_lat=g_front.get("lat"),
+                front_lon=g_front.get("lon"),
+                back_lat=g_back.get("lat"),
+                back_lon=g_back.get("lon")
+            )
+        return data
 
 
 class GolfCourse(BaseModel):
@@ -506,6 +529,18 @@ class CourseRegistry:
         self._load_saved_courses()
 
     def _load_saved_courses(self):
+        # 1. Caricamento da data/golf_courses.json (database centrale percorsi)
+        data_json = Path(__file__).resolve().parent.parent / "data" / "golf_courses.json"
+        if data_json.exists():
+            try:
+                content = json.loads(data_json.read_text(encoding="utf-8"))
+                for c_data in content.get("courses", []):
+                    c = GolfCourse.model_validate(c_data)
+                    self.courses[c.course_id] = c
+            except Exception:
+                pass
+
+        # 2. Caricamento da storage_dir (corsi personalizzati utente)
         for json_file in self.storage_dir.glob("*.json"):
             try:
                 content = json_file.read_text(encoding="utf-8")

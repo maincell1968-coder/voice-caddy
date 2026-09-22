@@ -36,6 +36,19 @@ from core.live_session import LiveSessionManager
 from core.backup_manager import backup_manager
 from golf_rules_module import render_rules_academy
 from core.club_distance_service import ClubDistanceService
+from core.admin_inbox import AdminInboxManager
+from golf_strategy_ai import (
+    load_hole_geometry_from_geojson,
+    analyze_hole_strategy,
+    render_hole_map_html,
+    estimate_category_from_handicap,
+    HoleGeometry,
+    GeoPoint,
+    HoleStrategyAgent,
+    render_view_a_map_html,
+    render_view_b_benchmark_html,
+    render_view_c_green_radar_html
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
@@ -380,6 +393,7 @@ db = DatabaseManager()
 course_registry = CourseRegistry(storage_dir=PROJECT_ROOT / "courses")
 tg_manager = TelegramConfigManager()
 bot_service = get_telegram_service()
+inbox_mgr = AdminInboxManager()
 
 # Avvio automatico in background del Bot Telegram se il token è presente
 if tg_manager.get_token() and not bot_service.is_alive():
@@ -1759,7 +1773,9 @@ tab_titles = [
     "🎓 Rules Academy"
 ]
 if current_user.is_admin:
-    tab_titles.append("👑 Amministrazione & Utenti")
+    unread_admin_cnt = inbox_mgr.get_unread_count()
+    admin_badge = f" ({unread_admin_cnt} nuovi)" if unread_admin_cnt > 0 else ""
+    tab_titles.append(f"👑 Amministrazione & Utenti{admin_badge}")
 
 all_tabs = st.tabs(tab_titles)
 nav_tab1 = all_tabs[0]
@@ -2067,6 +2083,42 @@ with nav_tab1:
 
         st.markdown("---")
 
+        # Valutazione del Maestro (Regola Aurea & coach_analysis_rules.md)
+        c_rep = getattr(summary, "coach_report", None)
+        if c_rep:
+            sc = c_rep.get("technical_scores", {})
+            cat_str = c_rep.get("player_category", "seconda").title()
+            st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #131b2a 0%, #17263c 100%); border: 1px solid #3B82F6; border-radius: 10px; padding: 14px 18px; margin-top: 10px; margin-bottom: 15px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+                        <span style="font-size:1.1rem; font-weight:bold; color:#60A5FA;">🏌️ Metodo del Maestro: Valutazione Tecnica ({cat_str} Categoria)</span>
+                        <span style="background:#1E3A8A; color:#93C5FD; padding:4px 12px; border-radius:15px; font-weight:bold; font-size:0.95rem;">Voto Globale: {sc.get('overall', '-')}/10</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; text-align:center;">
+                        <div style="background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:8px;">
+                            <span style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase;">Tee Game</span><br>
+                            <span style="font-size:1.15rem; font-weight:bold; color:#38BDF8;">{sc.get('tee_game', '-')}/10</span>
+                        </div>
+                        <div style="background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:8px;">
+                            <span style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase;">Approcci</span><br>
+                            <span style="font-size:1.15rem; font-weight:bold; color:#34D399;">{sc.get('approach_game', '-')}/10</span>
+                        </div>
+                        <div style="background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:8px;">
+                            <span style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase;">Gioco Corto</span><br>
+                            <span style="font-size:1.15rem; font-weight:bold; color:#FBBF24;">{sc.get('short_game', '-')}/10</span>
+                        </div>
+                        <div style="background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:8px;">
+                            <span style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase;">Putting</span><br>
+                            <span style="font-size:1.15rem; font-weight:bold; color:#A78BFA;">{sc.get('putting', '-')}/10</span>
+                        </div>
+                        <div style="background:#0F172A; border:1px solid #1E293B; border-radius:8px; padding:8px;">
+                            <span style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase;">Strategia</span><br>
+                            <span style="font-size:1.15rem; font-weight:bold; color:#2DD4BF;">{sc.get('strategy', '-')}/10</span>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
         # PGA Coach Executive Diagnosis Box
         st.markdown(f"""
             <div class="diag-card">
@@ -2126,13 +2178,71 @@ with nav_tab1:
                     map_col, table_col = st.columns([2, 3])
 
                     with map_col:
-                        fig_map = GolfHoleVisualizer.create_hole_trajectory_map(
-                            h,
-                            course_id=active_course.course_id if active_course else None
+                        map_mode = st.radio(
+                            "Visualizzazione Buca:",
+                            [
+                                "🗺️ Vista A (Mappa ①②③ & Asse)",
+                                "📊 Vista B (Benchmark & Dispersione)",
+                                "🎯 Vista C (Green Radar & Pin)",
+                                "📐 Grafico Traiettoria"
+                            ],
+                            horizontal=True,
+                            key=f"map_mode_{h.hole_number}"
                         )
-                        st.plotly_chart(fig_map, use_container_width=True)
+                        geojson_p = PROJECT_ROOT / "golf_strategy_ai" / "data" / f"conero_hole{h.hole_number}.geojson"
+                        hole_geom = None
+                        if geojson_p.exists():
+                            try:
+                                hole_geom = load_hole_geometry_from_geojson(geojson_p)
+                            except Exception:
+                                hole_geom = None
+
+                        if not hole_geom and c_hole and hasattr(c_hole, 'coordinates') and c_hole.coordinates:
+                            try:
+                                hc = c_hole.coordinates
+                                hole_geom = HoleGeometry(
+                                    hole_number=h.hole_number,
+                                    par=h.par,
+                                    length_m=float(getattr(c_hole, 'distance_meters', 350.0)),
+                                    stroke_index=int(getattr(c_hole, 'handicap_index', 1) or 1),
+                                    tee=GeoPoint(lat=hc.tee_lat, lon=hc.tee_lon, alt_m=hc.tee_altitude),
+                                    green_center=GeoPoint(lat=hc.target_lat, lon=hc.target_lon, alt_m=hc.target_altitude)
+                                )
+                            except Exception:
+                                hole_geom = None
+
+                        agent = HoleStrategyAgent()
+                        user_hcp = getattr(st.session_state.user_profile, "handicap", 18.0)
+
+                        if hole_geom and map_mode == "🗺️ Vista A (Mappa ①②③ & Asse)":
+                            perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
+                            html_code = render_view_a_map_html(hole_geom, perf_eval=perf_eval, height="420px")
+                            components.html(html_code, height=440)
+                        elif hole_geom and map_mode == "📊 Vista B (Benchmark & Dispersione)":
+                            perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
+                            html_code = render_view_b_benchmark_html(perf_eval=perf_eval)
+                            st.markdown(html_code, unsafe_allow_html=True)
+                        elif hole_geom and map_mode == "🎯 Vista C (Green Radar & Pin)":
+                            perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
+                            html_code = render_view_c_green_radar_html(hole_geom, app_eval=perf_eval.green_evaluation, height="420px")
+                            components.html(html_code, height=440)
+                        else:
+                            fig_map = GolfHoleVisualizer.create_hole_trajectory_map(
+                                h,
+                                course_id=active_course.course_id if active_course else None
+                            )
+                            st.plotly_chart(fig_map, use_container_width=True)
 
                     with table_col:
+                        if hole_geom:
+                            perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
+                            if perf_eval.tactical_verdict:
+                                st.markdown(f"""
+                                    <div style="background:#131d2a; border-left:4px solid #3498DB; border-radius:6px; padding:8px 12px; margin-bottom:8px; font-size:0.88rem;">
+                                        <b>🧠 Valutazione Agente Strategico:</b> {perf_eval.tactical_verdict}<br>
+                                        <span style="color:#A0AEC0; font-size:0.82rem;"><i>{perf_eval.caddy_advice_retrospective}</i></span>
+                                    </div>
+                                """, unsafe_allow_html=True)
                         if c_hole and hasattr(c_hole, 'slope_elevation_profile'):
                             slope_badge_bg = "#1e293b" if c_hole.slope_elevation_profile == "In pianura" else "#1e3a5f"
                             st.markdown(f"""
@@ -2140,6 +2250,24 @@ with nav_tab1:
                                     ⛰️ <b>Profilo Altimetrico:</b> {c_hole.slope_elevation_profile}
                                 </div>
                             """, unsafe_allow_html=True)
+                        c_eval = getattr(h, "coach_evaluation", None)
+                        if c_eval:
+                            st.markdown(f"""
+                                <div style="background:#0f172a; border-left:4px solid #10B981; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:0.88rem; color:#E2E8F0;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                        <span style="color:#34D399; font-weight:bold; font-size:0.95rem;">👨‍🏫 Analisi del Maestro (Regola Aurea)</span>
+                                        <span style="background:#064E3B; color:#A7F3D0; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold;">Voto Buca: {c_eval.get('rating', '-')}/10</span>
+                                    </div>
+                                    <div style="margin-bottom:4px;"><b>1. Sintesi:</b> {c_eval.get('summary', '')}</div>
+                                    <div style="margin-bottom:4px;"><b>2. Colpo chiave:</b> {c_eval.get('key_shot', '')}</div>
+                                    <div style="margin-bottom:4px;"><b>3. Valutazione tecnica:</b> {c_eval.get('technical_assessment', '')}</div>
+                                    <div style="margin-bottom:4px;"><b>4. Valutazione strategica:</b> {c_eval.get('strategic_assessment', '')}</div>
+                                    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #334155; color:#93C5FD;">
+                                        <b>5. Cosa avrebbe detto il maestro:</b> <i>{c_eval.get('coach_advice', '')}</i>
+                                    </div>
+                                </div>
+                            """, unsafe_allow_html=True)
+
                         t_an = h.target_landing_analysis
                         if t_an:
                             verdict_color = "#2ECC71" if any(w in t_an.tactical_verdict for w in ["Bravo", "Ottimo", "Vincente", "Perfetto"]) else "#E67E22"
@@ -2195,6 +2323,83 @@ with nav_tab1:
 
     else:
         st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
+
+    # ---------------------------------------------------------
+    # AREA: CONTATTA L'AMMINISTRATORE DI SISTEMA (STEFANO PIRANI)
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.markdown("""
+        <div style="background: linear-gradient(135deg, #0d1a2d 0%, #152744 50%, #0d1a2d 100%);
+                    border: 1px solid rgba(52, 152, 219, 0.4); border-radius: 14px; padding: 22px 26px;
+                    margin-top: 25px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);">
+            <div style="display:flex; align-items:center; gap: 14px; margin-bottom: 8px;">
+                <span style="font-size: 2.2rem;">📬</span>
+                <div>
+                    <span style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
+                        CONTATTA L'AMMINISTRATORE DI SISTEMA
+                    </span>
+                    <div style="font-size: 0.88rem; color: #94A3B8; margin-top: 3px;">
+                        Hai bisogno di assistenza tecnica, chiarimenti su handicap e regole o vuoi inviare un suggerimento a <b>Stefano Pirani</b>?<br>
+                        Invia il tuo messaggio qui sotto: verrà recapitato direttamente nella sua casella amministratore e notificato in tempo reale su Telegram!
+                    </div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("contact_admin_form", clear_on_submit=True):
+        c_col1, c_col2 = st.columns(2)
+        with c_col1:
+            contact_sender_name = st.text_input(
+                "Tuo Nome & Cognome *",
+                value=f"{current_user.first_name} {current_user.last_name}",
+                help="Nome del mittente visibile all'amministratore"
+            )
+            contact_category = st.selectbox(
+                "Categoria della richiesta",
+                options=[
+                    "Assistenza / Supporto Tecnico",
+                    "Segnalazione Anomalia / Bug",
+                    "Regole di Golf & Handicap",
+                    "Proposta Nuova Funzionalità",
+                    "Altro"
+                ]
+            )
+        with c_col2:
+            contact_reply_to = st.text_input(
+                "Recapito per risposta (Email o Telefono)",
+                placeholder="es. mario.rossi@email.it oppure 333 1234567",
+                help="Inserisci la tua email o numero telefonico per consentire all'amministratore di ricontattarti"
+            )
+            contact_subject = st.text_input(
+                "Oggetto del messaggio *",
+                placeholder="es. Chiarimento su calcolo Stableford buca 7"
+            )
+
+        contact_body = st.text_area(
+            "Testo del messaggio *",
+            placeholder="Descrivi dettagliatamente la tua richiesta, segnalazione o domanda per Stefano...",
+            height=130
+        )
+
+        submit_contact = st.form_submit_button("🚀 Invia Messaggio a Stefano", type="primary", use_container_width=True)
+        if submit_contact:
+            if not contact_subject.strip() or not contact_body.strip():
+                st.error("⚠️ Inserisci sia l'oggetto che il testo del messaggio prima di inviare.")
+            else:
+                ok_send, send_msg = inbox_mgr.send_message(
+                    sender_user_id=current_user.user_id,
+                    sender_name=contact_sender_name.strip() or f"{current_user.first_name} {current_user.last_name}",
+                    sender_contact=contact_reply_to.strip(),
+                    subject=contact_subject.strip(),
+                    body=contact_body.strip(),
+                    category=contact_category
+                )
+                if ok_send:
+                    st.success(f"✅ {send_msg}")
+                    st.balloons()
+                else:
+                    st.error(f"❌ {send_msg}")
 
 
 # ---------------------------------------------------------
@@ -2382,6 +2587,36 @@ with nav_pin_gps:
                         </div>
                     """, unsafe_allow_html=True)
 
+                # Mappa Tattica Satellitare Esri HD per la buca selezionata
+                geojson_p = PROJECT_ROOT / "golf_strategy_ai" / "data" / f"conero_hole{selected_h_num}.geojson"
+                hole_geom = None
+                if geojson_p.exists():
+                    try:
+                        hole_geom = load_hole_geometry_from_geojson(geojson_p)
+                    except Exception:
+                        hole_geom = None
+
+                if not hole_geom and h_coords:
+                    try:
+                        hole_geom = HoleGeometry(
+                            hole_number=selected_h_num,
+                            par=h_info.par,
+                            length_m=float(h_info.distance_meters),
+                            stroke_index=int(h_info.handicap_index or 1),
+                            tee=GeoPoint(lat=h_coords.tee_lat, lon=h_coords.tee_lon, alt_m=h_coords.tee_altitude),
+                            green_center=GeoPoint(lat=h_coords.target_lat, lon=h_coords.target_lon, alt_m=h_coords.target_altitude)
+                        )
+                    except Exception:
+                        hole_geom = None
+
+                if hole_geom:
+                    st.markdown("#### 🛰️ Mappa Tattica Satellitare (Tour Esri HD)")
+                    user_hcp = getattr(st.session_state.user_profile, "handicap", 18.0)
+                    cat = estimate_category_from_handicap(user_hcp)
+                    strategy = analyze_hole_strategy(hole_geom, cat, course_id=active_course.course_id if active_course else "course")
+                    html_code = render_hole_map_html(hole_geom, strategy=strategy, height="360px")
+                    components.html(html_code, height=380)
+
     with col_pin_r:
         st.markdown("### 🧮 Calcolatore Balistico Plays Like Distance")
         st.caption("Simula la posizione della palla dal tee o dal fairway e calcola l'effetto reale della pendenza.")
@@ -2492,6 +2727,11 @@ with nav_tab2:
     st.subheader(f"🏌️‍♂️ Scheda Profilo di {current_user.first_name} & Attrezzatura Sacca")
     st.caption("I dati del tuo profilo e la composizione della tua sacca sono memorizzati in modo permanente e isolato per il tuo account.")
 
+    if current_user.is_admin:
+        unread_admin_msgs = inbox_mgr.get_unread_count()
+        if unread_admin_msgs > 0:
+            st.info(f"📬 **Hai {unread_admin_msgs} nuovi messaggi dagli utenti!** Vai alla scheda **👑 Amministrazione & Utenti** per leggerli e gestire la casella.")
+
     prof = st.session_state.user_profile
 
     col_prof_l, col_prof_r = st.columns([2, 3])
@@ -2573,6 +2813,7 @@ with nav_tab2:
         df_bag = pd.DataFrame(clubs_data)
         edited_df = st.data_editor(
             df_bag,
+            key=f"bag_editor_{current_user.user_id}",
             num_rows="dynamic",
             use_container_width=True,
             column_config={
@@ -2615,6 +2856,32 @@ with nav_tab2:
             st.session_state.user_profile.save_for_user(current_user.user_id)
             st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
             st.rerun()
+
+        col_sb1, col_sb2 = st.columns([1, 1])
+        with col_sb1:
+            st.download_button(
+                "⬇️ Scarica la mia Sacca (File JSON)",
+                data=prof.model_dump_json(indent=2),
+                file_name=f"sacca_{current_user.user_id}.json",
+                mime="application/json",
+                use_container_width=True,
+                help="Scarica una copia istantanea della tua sacca sul tuo dispositivo per conservarla sempre al sicuro da qualsiasi aggiornamento cloud."
+            )
+        with col_sb2:
+            with st.popover("📥 Ricarica da File JSON", use_container_width=True):
+                st.caption("Se la tua sacca si è resettata dopo un aggiornamento cloud, ricarica qui il tuo file JSON per ripristinarla in 1 secondo:")
+                uploaded_bag_json = st.file_uploader("Seleziona file JSON sacca:", type=["json"], key="restore_bag_json_pop")
+                if uploaded_bag_json is not None:
+                    if st.button("🚀 Ripristina Subito", type="primary", use_container_width=True, key="btn_apply_uploaded_bag"):
+                        try:
+                            raw_data = json.loads(uploaded_bag_json.read().decode("utf-8"))
+                            restored_prof = UserProfile.model_validate(raw_data)
+                            restored_prof.save_for_user(current_user.user_id)
+                            st.session_state.user_profile = restored_prof
+                            st.success("✅ Sacca ripristinata con successo!")
+                            st.rerun()
+                        except Exception as e_rst:
+                            st.error(f"Errore lettura file JSON: {e_rst}")
 
         # ---------------------------------------------------------
         # 🎯 Sincronizza Sacca: Allenamento vs Gara sull'Erba
@@ -2929,6 +3196,65 @@ if current_user.is_admin and nav_admin:
             else:
                 for cid, data in users_map.items():
                     st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### 📬 Casella Messaggi Utenti & Assistenza (Inbox)")
+        st.caption("Messaggi inviati dagli utenti tramite il modulo 'Contatta l'Amministratore' presente nella Home Page.")
+
+        all_inbox_msgs = inbox_mgr.get_messages()
+        unread_inbox_count = inbox_mgr.get_unread_count()
+
+        col_inbox_h1, col_inbox_h2, col_inbox_h3 = st.columns([2, 1, 1])
+        col_inbox_h1.markdown(f"**Totale Messaggi:** {len(all_inbox_msgs)} | **Da Leggere:** :red[{unread_inbox_count}]")
+        with col_inbox_h2:
+            filter_unread = st.checkbox("Mostra solo non letti", value=False, key="filter_unread_inbox")
+        with col_inbox_h3:
+            if unread_inbox_count > 0:
+                if st.button("✔️ Segna tutti letti", key="btn_mark_all_read", use_container_width=True):
+                    inbox_mgr.mark_all_as_read()
+                    st.success("Tutti i messaggi sono stati contrassegnati come letti.")
+                    st.rerun()
+
+        displayed_msgs = inbox_mgr.get_messages(unread_only=filter_unread)
+
+        if not displayed_msgs:
+            st.info("📭 Nessun messaggio presente nella casella." if not filter_unread else "✅ Non ci sono nuovi messaggi da leggere.")
+        else:
+            for msg in displayed_msgs:
+                msg_id = msg.get("id")
+                is_unread = not msg.get("is_read", False)
+                status_icon = "🔴 NUOVO" if is_unread else "⚪ Letto"
+                badge_bg = "rgba(231, 76, 60, 0.12)" if is_unread else "rgba(148, 163, 184, 0.08)"
+                border_color = "#E74C3C" if is_unread else "#334155"
+
+                with st.expander(f"{'🔔 ' if is_unread else ''}{msg.get('timestamp', '')} — {msg.get('sender_name', '')} | {msg.get('subject', '')} [{msg.get('category', '')}]", expanded=is_unread):
+                    st.markdown(f"""
+                        <div style="background:{badge_bg}; border-left:4px solid {border_color}; border-radius:6px; padding:12px 16px; margin-bottom:12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                <span style="font-weight:bold; font-size:1.05rem; color:#FFFFFF;">📌 {msg.get('subject')}</span>
+                                <span style="font-size:0.8rem; font-weight:bold; color:{'#E74C3C' if is_unread else '#94A3B8'};">{status_icon}</span>
+                            </div>
+                            <div style="font-size:0.85rem; color:#94A3B8; margin-bottom:8px;">
+                                👤 <b>Mittente:</b> {msg.get('sender_name')} (ID: <code>{msg.get('sender_user_id')}</code>)<br>
+                                🏷️ <b>Categoria:</b> {msg.get('category')}<br>
+                                📞 <b>Recapito:</b> {msg.get('sender_contact') or '<i>Nessun recapito fornito</i>'}<br>
+                                🕒 <b>Data & Ora:</b> {msg.get('timestamp')}
+                            </div>
+                            <div style="background:#0b111e; border:1px solid #1e293b; border-radius:6px; padding:12px; font-size:0.92rem; color:#E2E8F0; white-space:pre-wrap; line-height:1.5;">{msg.get('body')}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    btn_c1, btn_c2, _ = st.columns([1.5, 1.5, 3])
+                    with btn_c1:
+                        if is_unread:
+                            if st.button(f"👁️ Segna come letto", key=f"read_{msg_id}"):
+                                inbox_mgr.mark_as_read(msg_id)
+                                st.rerun()
+                    with btn_c2:
+                        if st.button(f"🗑️ Elimina messaggio", key=f"del_{msg_id}"):
+                            inbox_mgr.delete_message(msg_id)
+                            st.success("Messaggio eliminato.")
+                            st.rerun()
 
 
 # =========================================================

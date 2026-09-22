@@ -160,6 +160,49 @@ class PDFReportGenerator:
             kpi_strokes_val = f"{t_data['total_net']} Colpi"
             kpi_strokes_lbl = f"Colpi Netti (HCP {t_data['playing_hcp']})"
 
+        coach_rep = getattr(summary, "coach_report", None)
+        coach_section_html = ""
+        if coach_rep:
+            sc = coach_rep.get("technical_scores", {})
+            cat_label = coach_rep.get("player_category", "seconda").title() + " Categoria"
+            patterns_li = "".join([f"<li>{p}</li>" for p in coach_rep.get("recurring_patterns", [])])
+            coach_section_html = f"""
+            <div class="section-title">🏌️ Valutazione del Maestro (Regola Aurea & Metodo PGA)</div>
+            <div class="summary-box" style="border-left: 4px solid #3b82f6;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <div><b>Inquadramento:</b> <span class="badge-format" style="background:#8e44ad;">{cat_label}</span></div>
+                    <div style="font-size:16px; font-weight:bold; color:#2c3e50;">Voto Globale: <span style="color:#27ae60;">{sc.get('overall', '-')}/10</span></div>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:8px; margin-bottom:12px; text-align:center; font-size:11px;">
+                    <div style="background:#fff; border:1px solid #e1e8ed; padding:6px; border-radius:4px;"><b>Tee:</b> {sc.get('tee_game', '-')}/10</div>
+                    <div style="background:#fff; border:1px solid #e1e8ed; padding:6px; border-radius:4px;"><b>Approcci:</b> {sc.get('approach_game', '-')}/10</div>
+                    <div style="background:#fff; border:1px solid #e1e8ed; padding:6px; border-radius:4px;"><b>Gioco Corto:</b> {sc.get('short_game', '-')}/10</div>
+                    <div style="background:#fff; border:1px solid #e1e8ed; padding:6px; border-radius:4px;"><b>Putting:</b> {sc.get('putting', '-')}/10</div>
+                    <div style="background:#fff; border:1px solid #e1e8ed; padding:6px; border-radius:4px;"><b>Strategia:</b> {sc.get('strategy', '-')}/10</div>
+                </div>
+                <div><b>Pattern ed Errori Ricorrenti:</b><ul style="margin:4px 0 0 0; padding-left:18px; font-size:12px; color:#555;">{patterns_li}</ul></div>
+            </div>
+            """
+
+        coach_holes_html = ""
+        for h in round_data.holes:
+            ce = getattr(h, "coach_evaluation", None)
+            if ce:
+                coach_holes_html += f"""
+                <div style="background:#fcfcfc; border:1px solid #e1e8ed; border-left:4px solid #27ae60; padding:10px 14px; margin-bottom:10px; border-radius:4px; font-size:12px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <b>Buca {ce.get('hole_number', h.hole_number)} (Par {ce.get('par', h.par)}) — Score {ce.get('score', h.score)} ({ce.get('net_score', h.net_score)} Netto)</b>
+                        <span style="font-weight:bold; color:#27ae60;">Voto: {ce.get('rating', '-')}/10</span>
+                    </div>
+                    <div style="margin-bottom:4px;"><b>1. Sintesi:</b> {ce.get('summary', '')}</div>
+                    <div style="margin-bottom:4px;"><b>2. Colpo chiave:</b> {ce.get('key_shot', '')}</div>
+                    <div style="margin-bottom:4px;"><b>3. Valutazione tecnica:</b> {ce.get('technical_assessment', '')}</div>
+                    <div style="margin-bottom:4px;"><b>4. Valutazione strategica:</b> {ce.get('strategic_assessment', '')}</div>
+                    <div style="margin-bottom:4px; color:#2980b9;"><b>5. Cosa avrebbe detto il maestro:</b> <i>{ce.get('coach_advice', '')}</i></div>
+                </div>
+                """
+
+        # Diagnosi Caddie
         html_content = f"""<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -276,6 +319,9 @@ class PDFReportGenerator:
         </div>
     </div>
 
+    <!-- Sezione Valutazione Maestro -->
+    {coach_section_html}
+
     <!-- Diagnosi Caddie -->
     <div class="section-title">🧠 Diagnosi Professionale del Caddie</div>
     <div class="diag-box">
@@ -308,12 +354,16 @@ class PDFReportGenerator:
         </tbody>
     </table>
 
+    <!-- Schede Buca per Buca del Maestro -->
+    <div class="section-title">⛳ Analisi Tecnica Buca per Buca (Metodo del Maestro)</div>
+    {coach_holes_html}
+
     <!-- Piano di Allenamento -->
-    <div class="section-title">🎯 Piano di Allenamento Personalizzato</div>
+    <div class="section-title">🎯 Piano di Allenamento Personalizzato (Top 3 Priorità)</div>
     {drills_html}
 
     <div style="margin-top:35px; padding-top:15px; border-top:1px solid #e2e8f0; text-align:center; font-size:11px; color:#718096;">
-        <b>Voice Caddy Pro</b> &bull; Concept, Architettura &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Generato da Voice Caddy AI Performance Engine
+        <b>Voice Caddy Pro</b> &bull; Concept, Architettura &copy; 2025-2026 <b>Stefano Pirani</b> &bull; Conforme a <i>coach_analysis_rules.md</i>
     </div>
 </body>
 </html>

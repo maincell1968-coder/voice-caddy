@@ -66,6 +66,7 @@ class VoiceCaddyTelegramBot:
         self.user_modes: Dict[str, str] = {}
         self.pending_weather: Dict[str, bool] = {}
         self.is_running = False
+        self._instance_socket = None
 
     def _api_request(self, method: str, data: Optional[dict] = None) -> dict:
         url = f"{self.api_url}/{method}"
@@ -2833,13 +2834,58 @@ class VoiceCaddyTelegramBot:
             # Non è un comando riconosciuto -> gestisci come testo dei colpi
             self.process_text_message(chat_id, text)
 
+    def _acquire_instance_lock(self) -> bool:
+        """
+        Acquisisce un lock di processo tramite socket locale su 127.0.0.1:48199.
+        Impedisce che più istanze o terminali eseguano il polling contemporaneamente
+        restituendo messaggi duplicati su Telegram.
+        """
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+            s.bind(("127.0.0.1", 48199))
+            s.listen(1)
+            self._instance_socket = s
+            return True
+        except Exception as e:
+            logging.warning(f"⚠️ Impossibile acquisire il lock del bot Telegram (porta 48199 occupata): {e}")
+            return False
+
+    def _release_instance_lock(self):
+        """Rilascia il socket lock all'arresto del polling."""
+        if self._instance_socket:
+            try:
+                self._instance_socket.close()
+            except Exception:
+                pass
+            self._instance_socket = None
+
     # ---------------------------------------------------------
     # Main Polling Loop
     # ---------------------------------------------------------
     def run_polling(self):
         """Esegue il long-polling continuo per ricevere aggiornamenti da Telegram."""
+        import sys
+        # 1. In-process guard: se un thread in questo processo è già in polling, evita duplicati
+        if getattr(sys, "_voice_caddy_bot_polling_active", False):
+            logging.warning("⚠️ Polling già attivo in un altro thread dello stesso processo. Avvio duplicato ignorato.")
+            return
+
+        # 2. Process-level guard: lock via socket locale
+        if not self._acquire_instance_lock():
+            logging.warning("⚠️ Un'altra istanza o processo del bot Telegram è già attivo su questo PC. Avvio duplicato ignorato per prevenire risposte multiple.")
+            return
+
+        setattr(sys, "_voice_caddy_bot_polling_active", True)
         self.is_running = True
         offset = 0
+
+        # Cache deduplicazione update condivisa
+        if not hasattr(sys, "_voice_caddy_processed_updates"):
+            setattr(sys, "_voice_caddy_processed_updates", set())
+        processed_updates: set = getattr(sys, "_voice_caddy_processed_updates")
+
         logging.info("⛳ Bot Telegram Voice Caddy Pro avviato in ascolto...")
 
         # Verify bot identity on startup
@@ -2855,72 +2901,99 @@ class VoiceCaddyTelegramBot:
         else:
             logging.warning(f"Avviso verifica token Telegram: {msg}")
 
-        while self.is_running:
-            try:
-                res = self._api_request("getUpdates", {"offset": offset, "timeout": 15})
-                if res.get("ok"):
-                    for update in res.get("result", []):
-                        offset = update["update_id"] + 1
+        # 3. Allinea l'offset iniziale saltando i vecchi messaggi non confermati per evitare replay flood
+        try:
+            flush_res = self._api_request("getUpdates", {"offset": -1, "timeout": 0})
+            if flush_res.get("ok") and flush_res.get("result"):
+                last_u = flush_res["result"][-1]
+                offset = last_u["update_id"] + 1
+                logging.info(f"Offset Telegram sincronizzato: {offset}")
+        except Exception as e_flush:
+            logging.debug(f"Info sync offset iniziale: {e_flush}")
 
-                        # 0. Callback Query (Click su pulsanti inline)
-                        if "callback_query" in update:
-                            self.handle_callback_query(update["callback_query"])
-                            continue
+        try:
+            while self.is_running:
+                try:
+                    res = self._api_request("getUpdates", {"offset": offset, "timeout": 15})
+                    if res.get("ok"):
+                        for update in res.get("result", []):
+                            u_id = update["update_id"]
+                            offset = u_id + 1
 
-                        # Supporta sia nuovi messaggi che aggiornamenti Live Location (edited_message)
-                        message = update.get("message") or update.get("edited_message")
-                        if not message:
-                            continue
+                            # Deduplicazione immediata: se già elaborato, scarta
+                            if u_id in processed_updates:
+                                continue
+                            processed_updates.add(u_id)
+                            if len(processed_updates) > 3000:
+                                processed_updates.clear()
+                                processed_updates.add(u_id)
 
-                        chat_id = message.get("chat", {}).get("id")
-                        text = message.get("text", "")
+                            # 0. Callback Query (Click su pulsanti inline)
+                            if "callback_query" in update:
+                                self.handle_callback_query(update["callback_query"])
+                                continue
 
-                        # 1. Location GPS o Live Location
-                        if "location" in message:
-                            loc = message["location"]
-                            lat = float(loc.get("latitude"))
-                            lon = float(loc.get("longitude"))
-                            alt = loc.get("altitude")
-                            self.handle_location_update(chat_id, lat, lon, alt)
+                            # Supporta sia nuovi messaggi che aggiornamenti Live Location (edited_message)
+                            message = update.get("message") or update.get("edited_message")
+                            if not message:
+                                continue
 
-                        # 2. Note Vocali o Audio
-                        elif "voice" in message:
-                            file_id = message["voice"]["file_id"]
-                            self.process_voice_message(chat_id, file_id)
-                        elif "audio" in message:
-                            file_id = message["audio"]["file_id"]
-                            self.process_voice_message(chat_id, file_id)
-                        elif "video_note" in message:
-                            file_id = message["video_note"]["file_id"]
-                            self.process_voice_message(chat_id, file_id)
-                        elif "video" in message:
-                            file_id = message["video"]["file_id"]
-                            self.process_voice_message(chat_id, file_id)
+                            chat_id = message.get("chat", {}).get("id")
+                            text = message.get("text", "")
 
-                        elif text:
-                            if text.startswith("/"):
-                                self.handle_command(chat_id, text)
-                            else:
-                                self.process_text_message(chat_id, text)
-                else:
-                    err_desc = str(res.get("description", ""))
-                    if "conflict" in err_desc.lower() or res.get("error_code") == 409:
-                        logging.warning("Avviso Telegram Bot: un'altra istanza è già attiva (409 Conflict). In attesa...")
-                        time.sleep(8)
+                            # 1. Location GPS o Live Location
+                            if "location" in message:
+                                loc = message["location"]
+                                lat = float(loc.get("latitude"))
+                                lon = float(loc.get("longitude"))
+                                alt = loc.get("altitude")
+                                self.handle_location_update(chat_id, lat, lon, alt)
+
+                            # 2. Note Vocali o Audio
+                            elif "voice" in message:
+                                file_id = message["voice"]["file_id"]
+                                self.process_voice_message(chat_id, file_id)
+                            elif "audio" in message:
+                                file_id = message["audio"]["file_id"]
+                                self.process_voice_message(chat_id, file_id)
+                            elif "video_note" in message:
+                                file_id = message["video_note"]["file_id"]
+                                self.process_voice_message(chat_id, file_id)
+                            elif "video" in message:
+                                file_id = message["video"]["file_id"]
+                                self.process_voice_message(chat_id, file_id)
+
+                            elif text:
+                                if text.startswith("/"):
+                                    self.handle_command(chat_id, text)
+                                else:
+                                    self.process_text_message(chat_id, text)
                     else:
-                        time.sleep(2)
+                        err_desc = str(res.get("description", ""))
+                        if "conflict" in err_desc.lower() or res.get("error_code") == 409:
+                            logging.warning("Avviso Telegram Bot: un'altra istanza è già attiva (409 Conflict). In attesa...")
+                            time.sleep(8)
+                        else:
+                            time.sleep(2)
 
-                time.sleep(0.5)
-            except KeyboardInterrupt:
-                logging.info("Interruzione manuale del bot.")
-                self.stop()
-                break
-            except Exception as e:
-                logging.error(f"Errore loop polling Telegram: {e}")
-                time.sleep(3)
+                    time.sleep(0.5)
+                except KeyboardInterrupt:
+                    logging.info("Interruzione manuale del bot.")
+                    self.stop()
+                    break
+                except Exception as e:
+                    logging.error(f"Errore loop polling Telegram: {e}")
+                    time.sleep(3)
+        finally:
+            setattr(sys, "_voice_caddy_bot_polling_active", False)
+            self._release_instance_lock()
+            self.is_running = False
 
     def stop(self):
         self.is_running = False
+        import sys
+        setattr(sys, "_voice_caddy_bot_polling_active", False)
+        self._release_instance_lock()
 
 
 if __name__ == "__main__":

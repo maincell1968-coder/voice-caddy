@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -93,6 +93,7 @@ class HoleData(BaseModel):
     shots: List[Shot] = Field(default_factory=list, description="Sequenza dettagliata dei colpi della buca")
     target_landing_analysis: Optional[TargetLandingAnalysis] = Field(None, description="Analisi comparativa dell'area di target ideale vs reale")
     root_cause_error: Optional[str] = Field(None, description="Causa tecnica o tattica principale dell'eventuale errore")
+    coach_evaluation: Optional[Dict[str, Any]] = Field(default=None, description="Valutazione del maestro buca per buca a 6 sezioni secondo la Regola Aurea")
 
 
 class StrokesLostBreakdown(BaseModel):
@@ -142,6 +143,7 @@ class PerformanceSummary(BaseModel):
     strokes_lost_breakdown: StrokesLostBreakdown = Field(..., description="Ripartizione stimata dei colpi persi per area di gioco")
     training_drills_recommended: List[TrainingDrill] = Field(..., description="Drill di allenamento mirati con benchmark di successo quantificabili")
     course_management_stats: Optional[CourseManagementStats] = Field(default=None, description="Statistiche dettagliate di gestione del percorso e scelte tattiche")
+    coach_report: Optional[Dict[str, Any]] = Field(default=None, description="Report analitico del maestro a 14 punti con voti tecnici e priorità")
 
 
 class RoundInfo(BaseModel):

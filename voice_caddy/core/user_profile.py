@@ -134,6 +134,7 @@ class UserProfile(BaseModel):
     clubs_in_bag: List[ClubDetail] = Field(default_factory=get_default_bag, description="Lista completa delle mazze presenti in sacca con dettagli e distanze")
     caddy_tone: str = Field(default="professionale", description="Stile e tono del caddy: professionale, arrabbiato, spensierato, psicologo")
     notes: Optional[str] = Field(default="", description="Note tattiche personali o obiettivi di stagione")
+    updated_at: Optional[str] = Field(default=None, description="Timestamp ISO dell'ultimo salvataggio del profilo")
 
     def sort_clubs(self) -> None:
         """Ordina i bastoni in sacca dal Driver più lungo fino al Putter."""
@@ -356,6 +357,8 @@ class UserProfile(BaseModel):
             return None
 
     def save_for_user(self, user_id: str) -> bool:
+        from datetime import datetime
+        self.updated_at = datetime.now().isoformat()
         PROFILES_DIR.mkdir(parents=True, exist_ok=True)
         file_path = PROFILES_DIR / f"{user_id}.json"
         saved = self.save_to_file(file_path)
@@ -391,19 +394,29 @@ class UserProfile(BaseModel):
         if file_profile is None and bak_path.exists():
             file_profile = cls.load_from_file(bak_path)
 
-        # 4. Sincronizzazione intelligente (Fault-Tolerant & Anti-Loss):
-        # Se esistono sia DB che file, privilegia quello con la sacca più completa (più bastoni)
+        # 4. Sincronizzazione intelligente basata su timestamp (Fault-Tolerant & Anti-Loss):
+        # Il salvataggio con timestamp più recente vince sempre ed allinea l'altro storage
         if db_profile and file_profile:
-            if len(db_profile.clubs_in_bag) >= len(file_profile.clubs_in_bag):
-                profile = db_profile
-                profile.save_to_file(file_path)
-            else:
+            ts_db = getattr(db_profile, "updated_at", None) or ""
+            ts_file = getattr(file_profile, "updated_at", None) or ""
+
+            if ts_file and (not ts_db or ts_file >= ts_db):
                 profile = file_profile
                 try:
                     from core.db import DatabaseManager
-                    DatabaseManager().save_user_profile(user_id, profile.model_dump_json(indent=2))
+                    DatabaseManager().save_user_profile(user_id, file_profile.model_dump_json(indent=2))
                 except Exception:
                     pass
+            elif ts_db and ts_db > ts_file:
+                profile = db_profile
+                profile.save_to_file(file_path)
+            else:
+                # Se entrambi i timestamp non sono valorizzati, usa il file se modificato di recente su disco
+                file_mtime = file_path.stat().st_mtime if file_path.exists() else 0
+                if file_mtime > 0:
+                    profile = file_profile
+                else:
+                    profile = db_profile
             return profile
         elif db_profile:
             db_profile.save_to_file(file_path)

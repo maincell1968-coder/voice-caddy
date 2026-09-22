@@ -1,0 +1,123 @@
+{
+  "type": "FeatureCollection",
+  "name": "Conero Golf Club - Buca 1",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "feature_class": "tee",
+        "hole_number": 1,
+        "par": 4,
+        "length_m": 342,
+        "stroke_index": 5,
+        "elevation_m": 102.0,
+        "label": "Tee di Partenza Buca 1 (Gialli/Bianchi)"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [13.6060, 43.5228]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "feature_class": "pin",
+        "hole_number": 1,
+        "label": "Centro Green Buca 1",
+        "elevation_m": 110.0
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [13.6072, 43.5199]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "feature_class": "fairway",
+        "hole_number": 1,
+        "label": "Fairway Principale Buca 1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [13.606036, 43.522150],
+            [13.606476, 43.521025],
+            [13.606951, 43.520001],
+            [13.607331, 43.520083],
+            [13.606951, 43.521128],
+            [13.606464, 43.522243],
+            [13.606036, 43.522150]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "feature_class": "green",
+        "hole_number": 1,
+        "label": "Putting Green Buca 1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [13.60705, 43.52002],
+            [13.60732, 43.52005],
+            [13.60738, 43.51982],
+            [13.60712, 43.51978],
+            [13.60705, 43.52002]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "feature_class": "bunker",
+        "hole_number": 1,
+        "label": "Bunker di Fairway Destro (215m dal Tee)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [13.606517, 43.520987],
+            [13.606499, 43.520842],
+            [13.606600, 43.520817],
+            [13.606606, 43.520959],
+            [13.606517, 43.520987]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "feature_class": "bunker",
+        "hole_number": 1,
+        "label": "Bunker Sinistro di Green"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [13.607367, 43.519997],
+            [13.607434, 43.519899],
+            [13.607373, 43.519858],
+            [13.607303, 43.519964],
+            [13.607367, 43.519997]
+          ]
+        ]
+      }
+    }
+  ]
+}
