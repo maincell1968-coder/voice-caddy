@@ -15,6 +15,21 @@ class CaddyTone(str, Enum):
     ARRABBIATO = "arrabbiato"
     SPENSIERATO = "spensierato"
     PSICOLOGO = "psicologo"
+    SPIRITOSO = "spiritoso"
+
+    @classmethod
+    def from_string(cls, val: str) -> CaddyTone:
+        clean = str(val).strip().lower()
+        if "spirit" in clean:
+            return cls.SPIRITOSO
+        elif "spensier" in clean or "amico" in clean:
+            return cls.SPENSIERATO
+        elif "psico" in clean or "zen" in clean:
+            return cls.PSICOLOGO
+        elif "arrabb" in clean:
+            return cls.ARRABBIATO
+        else:
+            return cls.PROFESSIONALE
 
     @property
     def display_name(self) -> str:
@@ -23,6 +38,7 @@ class CaddyTone(str, Enum):
             CaddyTone.ARRABBIATO: "🤬 Arrabbiato (Brontolone Romagnolo)",
             CaddyTone.SPENSIERATO: "🍻 Spensierato (Amico al Bar)",
             CaddyTone.PSICOLOGO: "🧘 Psicologo (Mental Coach Zen)",
+            CaddyTone.SPIRITOSO: "😄 Spiritoso (Ironico & Brillante)",
         }
         return names.get(self, self.value.title())
 
@@ -33,6 +49,7 @@ class CaddyTone(str, Enum):
             CaddyTone.ARRABBIATO: "🤬 Arrabbiato",
             CaddyTone.SPENSIERATO: "🍻 Spensierato",
             CaddyTone.PSICOLOGO: "🧘 Psicologo",
+            CaddyTone.SPIRITOSO: "😄 Spiritoso",
         }
         return labels.get(self, self.value.title())
 
@@ -43,6 +60,7 @@ class CaddyTone(str, Enum):
             CaddyTone.ARRABBIATO: "#EF4444",     # Red
             CaddyTone.SPENSIERATO: "#F59E0B",    # Amber
             CaddyTone.PSICOLOGO: "#10B981",      # Emerald
+            CaddyTone.SPIRITOSO: "#8B5CF6",      # Purple
         }
         return colors.get(self, "#6B7280")
 
@@ -53,6 +71,7 @@ class CaddyTone(str, Enum):
             CaddyTone.ARRABBIATO: "Brontolone romagnolo, ironico e sarcastico. Si lamenta della sacca che pesa e delle palline perse, ma tiene sinceramente al tuo score.",
             CaddyTone.SPENSIERATO: "L'amico simpatico del circolo. Zero ansia, celebra ogni bel colpo con una birra promessa e ridimensiona ogni disastro con un sorriso.",
             CaddyTone.PSICOLOGO: "Mental coach PGA. Respira, rilascia la tensione, 'il colpo prima non esiste più'. Focus assoluto sul qui ed ora.",
+            CaddyTone.SPIRITOSO: "Ironico, brillante e divertente. Alleggerisce la tensione con battute intelligenti e tiene alto il morale.",
         }
         return desc.get(self, "")
 
@@ -63,8 +82,89 @@ class CaddyTone(str, Enum):
             CaddyTone.ARRABBIATO: "«Fairway largo 40 metri e tu hai scelto il cespuglio. Preparo il rastrello...»",
             CaddyTone.SPENSIERATO: "«Ogni birdie una birra, ogni bogey una birra di consolazione: vinciamo noi!»",
             CaddyTone.PSICOLOGO: "«Un respiro profondo. Il colpo precedente è concluso: ora c'è solo questa palla.»",
+            CaddyTone.SPIRITOSO: "«Se giochi sempre così, il tuo handicap chiede il trasferimento.»",
         }
         return quotes.get(self, "")
+
+
+ROUND_FINALE_50_PHRASES = {
+    "professionale": {
+        "SOTTO_HANDICAP": [
+            "Ottima prestazione. Hai giocato sotto il tuo potenziale dichiarato e il risultato lo conferma.",
+            "Giro solido dall’inizio alla fine. La gestione dei colpi chiave ha fatto la differenza.",
+            "Risultato eccellente: hai capitalizzato bene le occasioni e limitato gli errori.",
+            "Prestazione superiore al tuo standard. Molto buona la continuità sulle 18 buche.",
+            "Hai prodotto un giro di qualità, con numeri chiaramente migliori rispetto al tuo HCP."
+        ],
+        "IN_RANGE_HANDICAP": [
+            "Giro coerente con il tuo livello di gioco. Buona gestione complessiva.",
+            "Risultato nel range atteso. Qualche dettaglio può ancora spostare il punteggio.",
+            "Prestazione regolare. Hai mantenuto un rendimento vicino al tuo standard.",
+            "Giro equilibrato: alcuni errori, ma anche buone decisioni nei momenti importanti.",
+            "Score in linea. La base è corretta, ora si lavora sulla continuità."
+        ],
+        "SOPRA_HANDICAP": [
+            "Giro sopra il tuo standard, ma i dati ci danno indicazioni utili.",
+            "Prestazione complicata. Serve analizzare dove si sono concentrati gli errori.",
+            "Risultato pesante, ma recuperabile con una lettura tecnica delle buche critiche.",
+            "Oggi il punteggio non premia, ma alcune scelte possono essere corrette facilmente.",
+            "Giro difficile: lavoriamo su dispersione, penalità e gestione dei colpi di recupero."
+        ]
+    },
+    "psicologo": {
+        "SOTTO_HANDICAP": [
+            "Oggi hai dimostrato a te stesso che il tuo livello reale può salire parecchio.",
+            "Questo giro deve diventare un riferimento mentale: sai già come si fa.",
+            "Hai giocato con fiducia e il campo ti ha restituito il risultato.",
+            "Tieniti stretta questa sensazione: lucidità, ritmo e decisioni giuste.",
+            "Non è stato solo un buon score, è stata una prova di maturità."
+        ],
+        "IN_RANGE_HANDICAP": [
+            "Hai giocato vicino al tuo equilibrio attuale. È una base concreta.",
+            "Non serve stravolgere tutto: il tuo gioco c’è, va solo reso più stabile.",
+            "Giro onesto. Alcune buche potevano scappare, invece sei rimasto presente.",
+            "Hai retto bene mentalmente. Ora trasformiamo qualche bogey evitabile in par.",
+            "Questo è un giro da cui imparare senza giudicarsi troppo."
+        ],
+        "SOPRA_HANDICAP": [
+            "Oggi non era facile, ma il punto non è il numero: è capire dove ripartire.",
+            "Il campo ti ha messo pressione, però ogni errore lascia un’informazione utile.",
+            "Non portarti dietro tutto il giro. Prendi due cose da migliorare e basta.",
+            "Le giornate storte fanno parte del percorso. L’importante è non trasformarle in identità.",
+            "Respira: il risultato è solo una fotografia, non una sentenza."
+        ]
+    },
+    "spiritoso": {
+        "SOTTO_HANDICAP": [
+            "Oggi il campo ha chiesto pietà. Prestazione da incorniciare.",
+            "Hai giocato così bene che il tuo handicap sta già preparando le valigie.",
+            "Giro clamoroso: il caddie approva e il campo un po’ meno.",
+            "Oggi più che golf sembrava una lezione privata al percorso.",
+            "Se giochi sempre così, il tuo handicap chiede il trasferimento."
+        ],
+        "IN_RANGE_HANDICAP": [
+            "Giro nel tuo stile: qualche perla, qualche mistero, ma tutto sotto controllo.",
+            "Hai rispettato il copione: golf vero, emozioni comprese.",
+            "Risultato onesto. Il campo non ti ha fregato, ma ci ha provato.",
+            "Giro equilibrato: né miracolo, né disastro. Il caddie resta moderatamente sereno.",
+            "Hai giocato come da manuale… con qualche nota scritta a mano."
+        ],
+        "SOPRA_HANDICAP": [
+            "Oggi il campo aveva un carattere difficile, diciamo così.",
+            "Giro complicato: alcune buche sembravano progettate da un nemico personale.",
+            "Lo score non ride, ma almeno il caddie prova a sdrammatizzare.",
+            "Oggi più che una gara è stata una trattativa con il campo.",
+            "Il risultato pesa, ma tranquillo: nessuna pallina parlerà contro di te."
+        ]
+    },
+    "jolly": [
+        "Giro chiuso. Ora i numeri raccontano dove hai guadagnato e dove hai lasciato colpi.",
+        "La partita è finita, ma l’analisi utile inizia adesso.",
+        "Score registrato. Vediamo cosa confermare e cosa correggere.",
+        "Diciotto buche completate: ora possiamo leggere il giro con lucidità.",
+        "Risultato finale pronto. Prima di archiviarlo, controlliamo che sia tutto corretto."
+    ]
+}
 
 
 class CaddyPersonalityEngine:
@@ -99,6 +199,12 @@ class CaddyPersonalityEngine:
                 self.phrases_catalog = {}
         else:
             self.phrases_catalog = {}
+
+        # Assicura la presenza di tutti i toni per ogni situazione
+        for sit, tones_dict in self.phrases_catalog.items():
+            if isinstance(tones_dict, dict):
+                if "spiritoso" not in tones_dict and "spensierato" in tones_dict:
+                    tones_dict["spiritoso"] = list(tones_dict["spensierato"])
 
     def get_phrase(
         self,
@@ -306,3 +412,29 @@ LINEE GUIDA CHAT:
             return f"⚠️ Errore AI Caddie: {e}"
         except Exception as e:
             return f"⚠️ Connessione con il Cloud Caddie temporaneamente non disponibile ({e})."
+
+    def get_round_finale_quote(
+        self,
+        tone: str | CaddyTone,
+        performance_category: str = "IN_RANGE_HANDICAP"
+    ) -> str:
+        """
+        Restituisce uno dei 50 commenti ufficiali di chiusura giro in base al tono e alla categoria di prestazione
+        (SOTTO_HANDICAP, IN_RANGE_HANDICAP, SOPRA_HANDICAP) o un commento jolly.
+        """
+        tone_str = tone.value if isinstance(tone, CaddyTone) else str(tone).lower().strip()
+        if tone_str in ["spensierato", "arrabbiato"]:
+            tone_str = "spiritoso"
+        if tone_str not in ["professionale", "psicologo", "spiritoso"]:
+            tone_str = "professionale"
+
+        cat = performance_category.upper().strip()
+        if cat not in ["SOTTO_HANDICAP", "IN_RANGE_HANDICAP", "SOPRA_HANDICAP"]:
+            cat = "IN_RANGE_HANDICAP"
+
+        candidates = ROUND_FINALE_50_PHRASES.get(tone_str, {}).get(cat, [])
+        if not candidates:
+            candidates = ROUND_FINALE_50_PHRASES.get("jolly", [])
+
+        return random.choice(candidates)
+

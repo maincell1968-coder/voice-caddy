@@ -24,6 +24,7 @@ from datetime import datetime
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from fpdf import FPDF
+from fpdf.enums import MethodReturnValue
 from core.schemas import GolfRoundData
 from core.metrics import GolfMetricsCalculator
 from core.whs_rules import generate_tournament_summary_data
@@ -320,37 +321,65 @@ def generate_showcase_mobile_pdf(
     pdf.set_text_color(30, 41, 59)
     pdf.cell(190, 6, "4. IL GIUDIZIO DEL MAESTRO PGA (REGOLA AUREA: DOVE, COME & PERCHE)", ln=1)
 
-    pdf.set_fill_color(248, 250, 252)
-    pdf.rect(10, pdf.get_y(), 190, 32, style="DF")
-
-    p_y = pdf.get_y() + 2
-    pdf.set_xy(14, p_y)
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.set_text_color(15, 23, 42)
+    s4_start_y = pdf.get_y()
     diag_score = diag.course_management_score if (diag and diag.course_management_score is not None) else 80
-    pdf.cell(182, 5, f"GIUDIZIO COMPLESSIVO (Punteggio Strategia: {diag_score}/100)", ln=1)
-
-    pdf.set_xy(14, p_y + 6)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(51, 65, 85)
+    score_txt = f"GIUDIZIO COMPLESSIVO (Punteggio Strategia: {diag_score}/100)"
 
     exec_narrative = (diag.executive_narrative if (diag and diag.executive_narrative) else "Giro analizzato secondo la Regola Aurea PGA. Solida tenuta nei colpi e buona regolarità generale.")
     exec_p = f"{exec_narrative[:280]}..." if len(exec_narrative) > 280 else exec_narrative
-    pdf.multi_cell(182, 4.2, exec_p)
 
-    pdf.set_xy(14, p_y + 19)
+    leak_val = diag.biggest_stroke_leak if (diag and diag.biggest_stroke_leak) else "Dispersione standard di colpi."
+    leak_txt = f"Dispersione Primaria di Colpi: {leak_val}"
+
+    split_val = diag.technical_vs_tactical_split if (diag and diag.technical_vs_tactical_split) else "Approccio equilibrato tra esecuzione tecnica e strategia di gioco."
+    split_txt = f"Quadro Tecnico vs Tattico: {split_val}"
+
+    pdf.set_font("Helvetica", "B", 9)
+    h_score = pdf.multi_cell(182, 4.6, score_txt, dry_run=True, output=MethodReturnValue.HEIGHT)
+    pdf.set_font("Helvetica", "", 8)
+    h_narrative = pdf.multi_cell(182, 4.0, exec_p, dry_run=True, output=MethodReturnValue.HEIGHT)
+    pdf.set_font("Helvetica", "B", 8)
+    h_leak = pdf.multi_cell(182, 4.0, leak_txt, dry_run=True, output=MethodReturnValue.HEIGHT)
+    pdf.set_font("Helvetica", "I", 8)
+    h_split = pdf.multi_cell(182, 4.0, split_txt, dry_run=True, output=MethodReturnValue.HEIGHT)
+
+    top_pad_s4 = 2.5
+    bot_pad_s4 = 2.5
+    s4_card_h = top_pad_s4 + h_score + 1.2 + h_narrative + 1.2 + h_leak + 1.0 + h_split + bot_pad_s4
+
+    pdf.set_fill_color(248, 250, 252)
+    pdf.set_draw_color(203, 213, 225)
+    pdf.rect(10, s4_start_y, 190, s4_card_h, style="DF")
+    pdf.set_fill_color(16, 185, 129)
+    pdf.rect(10, s4_start_y, 2.5, s4_card_h, style="F")
+
+    pdf.set_xy(14, s4_start_y + top_pad_s4)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(15, 23, 42)
+    pdf.multi_cell(182, 4.6, score_txt)
+
+    pdf.set_x(14)
+    pdf.ln(1.2)
+    pdf.set_x(14)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(51, 65, 85)
+    pdf.multi_cell(182, 4.0, exec_p)
+
+    pdf.set_x(14)
+    pdf.ln(1.2)
+    pdf.set_x(14)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(225, 29, 72)
-    leak_txt = diag.biggest_stroke_leak if (diag and diag.biggest_stroke_leak) else "Dispersione standard di colpi."
-    pdf.cell(182, 4.5, f"Dispersione Primaria di Colpi: {leak_txt}", ln=1)
+    pdf.multi_cell(182, 4.0, leak_txt)
 
-    pdf.set_xy(14, p_y + 24)
+    pdf.set_x(14)
+    pdf.ln(1.0)
+    pdf.set_x(14)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(37, 99, 235)
-    split_txt = diag.technical_vs_tactical_split if (diag and diag.technical_vs_tactical_split) else "Approccio equilibrato tra esecuzione tecnica e strategia di gioco."
-    pdf.cell(182, 4.5, f"Quadro Tecnico vs Tattico: {split_txt}", ln=1)
+    pdf.multi_cell(182, 4.0, split_txt)
 
-    pdf.ln(12)
+    pdf.set_y(s4_start_y + s4_card_h + 3.0)
 
     # ---------------------------------------------------------
     # 6. SEZIONE E: ANALISI BALISTICA & DISPERSIONE DEI COLPI
@@ -430,32 +459,91 @@ def generate_showcase_mobile_pdf(
         ]
 
     for idx, d in enumerate(drills[:3], 1):
-        pdf.set_fill_color(248, 250, 252)
-        pdf.set_draw_color(203, 213, 225)
         d_start_y = pdf.get_y()
-        pdf.rect(10, d_start_y, 190, 22, style="DF")
 
-        pdf.set_xy(13, d_start_y + 1.5)
+        # Normalizzazione Titolo Drill (evita duplicazioni se target_area coincide col nome)
+        t_area = (d.target_area or "").strip()
+        d_name = (d.drill_name or "").strip()
+        if not d_name:
+            d_name = t_area or f"Drill #{idx}"
+
+        if t_area.lower() == d_name.lower() or d_name.lower().startswith(t_area.lower()):
+            title_text = f"DRILL #{idx}: {d_name.upper()}"
+        elif len(t_area) <= 20:
+            title_text = f"DRILL #{idx} [{t_area.upper()}]: {d_name}"
+        else:
+            title_text = f"DRILL #{idx}: {d_name}"
+
+        bench_text = f"TARGET BENCHMARK: {d.success_benchmark.strip()}"
+        obj_text = f"Obiettivo: {d.objective.strip()}"
+        exec_text = f"Esecuzione: {d.setup_and_execution.strip()}"
+        exec_p = exec_text[:280] + "..." if len(exec_text) > 280 else exec_text
+
+        # Calcolo altezze esatte con dry_run=True (nessuna sovrapposizione possibile)
         pdf.set_font("Helvetica", "B", 8.5)
-        pdf.set_text_color(37, 99, 235)
-        pdf.cell(120, 4.5, f"DRILL #{idx} [{d.target_area.upper()}]: {d.drill_name}", ln=0)
+        h_title = pdf.multi_cell(182, 4.3, title_text, dry_run=True, output=MethodReturnValue.HEIGHT)
 
         pdf.set_font("Helvetica", "B", 8)
-        pdf.set_text_color(16, 185, 129)
-        pdf.cell(64, 4.5, f"BENCHMARK: {d.success_benchmark}", ln=1, align="R")
+        h_bench = pdf.multi_cell(182, 4.0, bench_text, dry_run=True, output=MethodReturnValue.HEIGHT)
 
-        pdf.set_xy(13, d_start_y + 6.5)
+        pdf.set_font("Helvetica", "", 7.5)
+        h_obj = pdf.multi_cell(182, 3.8, obj_text, dry_run=True, output=MethodReturnValue.HEIGHT)
+
+        pdf.set_font("Helvetica", "I", 7.5)
+        h_exec = pdf.multi_cell(182, 3.6, exec_p, dry_run=True, output=MethodReturnValue.HEIGHT)
+
+        top_pad = 2.0
+        bot_pad = 2.0
+        card_h = top_pad + h_title + 0.8 + h_bench + 0.8 + h_obj + 0.8 + h_exec + bot_pad
+
+        # Controllo salto pagina di sicurezza se ci avviciniamo al footer (280mm)
+        if d_start_y + card_h > 280:
+            pdf.add_page()
+            d_start_y = pdf.get_y()
+
+        # Disegno card con sfondo e bordo sinistro colorato
+        pdf.set_fill_color(248, 250, 252)
+        pdf.set_draw_color(203, 213, 225)
+        pdf.rect(10, d_start_y, 190, card_h, style="DF")
+
+        # Barra di accento a sinistra: Blu royal per Drill 1, Ambra per Drill 2, Verde smeraldo per Drill 3
+        accent_colors = [(37, 99, 235), (217, 119, 6), (16, 185, 129)]
+        acc_col = accent_colors[(idx - 1) % len(accent_colors)]
+        pdf.set_fill_color(*acc_col)
+        pdf.rect(10, d_start_y, 2.5, card_h, style="F")
+
+        # 1. Riga Titolo Drill (Blu Royal)
+        pdf.set_xy(14, d_start_y + top_pad)
+        pdf.set_font("Helvetica", "B", 8.5)
+        pdf.set_text_color(30, 64, 175)
+        pdf.multi_cell(182, 4.3, title_text)
+
+        # 2. Riga Target Benchmark (Verde Smeraldo - Riga DEDICATA, mai sovrapposta!)
+        pdf.set_x(14)
+        pdf.ln(0.8)
+        pdf.set_x(14)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_text_color(5, 150, 105)
+        pdf.multi_cell(182, 4.0, bench_text)
+
+        # 3. Riga Obiettivo (Ardesia Scuro)
+        pdf.set_x(14)
+        pdf.ln(0.8)
+        pdf.set_x(14)
         pdf.set_font("Helvetica", "", 7.5)
         pdf.set_text_color(51, 65, 85)
-        pdf.cell(184, 4, f"Obiettivo: {d.objective}", ln=1)
+        pdf.multi_cell(182, 3.8, obj_text)
 
-        pdf.set_xy(13, d_start_y + 11)
+        # 4. Riga Esecuzione Pratica (Ardesia Corsivo)
+        pdf.set_x(14)
+        pdf.ln(0.8)
+        pdf.set_x(14)
         pdf.set_font("Helvetica", "I", 7.5)
         pdf.set_text_color(71, 85, 105)
-        setup_p = d.setup_and_execution[:250] + "..." if len(d.setup_and_execution) > 250 else d.setup_and_execution
-        pdf.multi_cell(184, 3.8, setup_p)
+        pdf.multi_cell(182, 3.6, exec_p)
 
-        pdf.set_y(d_start_y + 24)
+        # Posizionamento per la card successiva (gap di 3mm)
+        pdf.set_y(d_start_y + card_h + 3.0)
 
     return bytes(pdf.output())
 

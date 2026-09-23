@@ -7,6 +7,9 @@ import tempfile
 import urllib.request
 import json
 import logging
+import re
+import random
+from enum import Enum
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
@@ -34,10 +37,34 @@ from core.weather_service import weather_service
 from core.whs_rules import RoundHandicapProfile, build_round_handicap_profile, calculate_hole_score, TeeRating
 from core.green_distance_service import parse_green_distance_intent, calculate_green_distances, format_distance_response
 from core.club_distance_service import ClubDistanceService
+from core.caddy_personality import CaddyPersonalityEngine, CaddyTone
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+
+class BotState(str, Enum):
+    IDLE = "IDLE"
+    CIRCOLO_IDENTIFICATO = "CIRCOLO_IDENTIFICATO"
+    SCELTA_TONO = "SCELTA_TONO"
+    SCELTA_SACCA = "SCELTA_SACCA"
+    FORMULA_DA_SCEGLIERE = "FORMULA_DA_SCEGLIERE"
+    TEE_DA_SCEGLIERE = "TEE_DA_SCEGLIERE"
+    COLPO_DA_TEE = "COLPO_DA_TEE"
+    PRONTO_BUCA = "PRONTO_BUCA"
+    ATTESA_ESITO_COLPO = "ATTESA_ESITO_COLPO"
+    POSIZIONE_PALLA_DA_SCEGLIERE = "POSIZIONE_PALLA_DA_SCEGLIERE"
+    BASTONE_DA_SCEGLIERE = "BASTONE_DA_SCEGLIERE"
+    ACQUA_RIPRESA = "ACQUA_RIPRESA"
+    GREEN_RAGGIUNTO = "GREEN_RAGGIUNTO"
+    PUTT_DA_SCEGLIERE = "PUTT_DA_SCEGLIERE"
+    BUCA_CHIUSA = "BUCA_CHIUSA"
+    GIRO_CHIUSO = "GIRO_CHIUSO"
+    ATTESA_CONFERMA_SCORE = "ATTESA_CONFERMA_SCORE"
+    CORREZIONE_SCORE = "CORREZIONE_SCORE"
+    FINE_DEFINITIVA = "FINE_DEFINITIVA"
+    CONFERMA_NUOVO_GIRO = "CONFERMA_NUOVO_GIRO"
 
 
 class VoiceCaddyTelegramBot:
@@ -264,15 +291,195 @@ class VoiceCaddyTelegramBot:
             reply_markup=self.get_tee_selection_keyboard()
         )
 
-    def get_on_course_keyboard(self, mode: str = "training") -> dict:
-        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e pulsanti separati Modalità Training e Gara."""
+    @staticmethod
+    def _normalize_cmd(txt: str) -> str:
+        t = txt.strip().lower()
+        for em in ["📍", "📊", "⛳", "🎭", "🎒", "🎯", "⚖️", "🔄", "➡️", "⏩", "🟢", "🟡", "🔴", "⚪", "🔵", "✅", "✏️", "🔙", "⚠️", "💬", "🏆", "🏌️"]:
+            t = t.replace(em, "").strip()
+        return t
+
+    def get_keyboard_for_state(self, state: str | BotState, chat_id: int | str, context: Optional[dict] = None) -> dict:
+        st = str(state).upper().strip()
+        istate = context if context else self.session_mgr.get_interactive_state(chat_id)
+        g_mode = str(istate.get("game_mode", "")).upper()
+        if not g_mode and chat_id:
+            try:
+                g_mode = self.get_user_mode(chat_id).upper()
+            except Exception:
+                g_mode = "TRAINING"
+        dist_text = "Calcolo distanze" if g_mode == "GARA" else "Calcolo distanze & plays Like"
+
+        if st in ["IDLE", "CIRCOLO_IDENTIFICATO"]:
+            return {
+                "keyboard": [
+                    [{"text": dist_text}],
+                    [{"text": "Score"}, {"text": "Stato Buca"}],
+                    [{"text": "Tono Caddie"}, {"text": "Profilo Sacca"}],
+                    [{"text": "Modalità Training"}, {"text": "Modalità Gara"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "SCELTA_TONO":
+            return {
+                "keyboard": [
+                    [{"text": "Professionale"}, {"text": "Psicologo"}],
+                    [{"text": "Spiritoso"}],
+                    [{"text": "🔙 Torna"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "SCELTA_SACCA":
+            return {
+                "keyboard": [
+                    [{"text": "Visualizza Sacca"}],
+                    [{"text": "Conferma Sacca"}, {"text": "🔙 Torna"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "FORMULA_DA_SCEGLIERE":
+            return {
+                "keyboard": [
+                    [{"text": "Stableford"}, {"text": "Scratch"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "TEE_DA_SCEGLIERE":
+            return {
+                "keyboard": [
+                    [{"text": "Bianchi"}, {"text": "Gialli"}],
+                    [{"text": "Rossi"}, {"text": "Verdi"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st in ["COLPO_DA_TEE", "PRONTO_BUCA"]:
+            return {
+                "keyboard": [
+                    [{"text": "Driver"}, {"text": "Legno"}],
+                    [{"text": "Ferro Medio"}, {"text": "Ferro Lungo"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "ATTESA_ESITO_COLPO":
+            return {
+                "keyboard": [
+                    [{"text": "Terzo colpo dal tee"}],
+                    [{"text": dist_text}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "POSIZIONE_PALLA_DA_SCEGLIERE":
+            return {
+                "keyboard": [
+                    [{"text": "Fairway"}, {"text": "Rough"}],
+                    [{"text": "Bunker"}, {"text": "Acqua"}],
+                    [{"text": "Green"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "BASTONE_DA_SCEGLIERE":
+            last_lie = str(istate.get("last_ball_lie", "")).lower()
+            if "bunker" in last_lie:
+                return {
+                    "keyboard": [
+                        [{"text": "Sand Wedge"}, {"text": "Ferro Corto"}],
+                        [{"text": "Ferro Medio"}, {"text": "Ferro Lungo"}]
+                    ],
+                    "resize_keyboard": True
+                }
+            return {
+                "keyboard": [
+                    [{"text": "Driver"}, {"text": "Legno"}],
+                    [{"text": "Ferro Corto"}, {"text": "Ferro Medio"}, {"text": "Ferro Lungo"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "ACQUA_RIPRESA":
+            return {
+                "keyboard": [
+                    [{"text": "Drop"}, {"text": "Rigioco dal punto precedente"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st in ["GREEN_RAGGIUNTO", "PUTT_DA_SCEGLIERE"]:
+            return {
+                "keyboard": [
+                    [{"text": "1 putt"}, {"text": "2 putt"}],
+                    [{"text": "3 putt"}, {"text": "4 putt"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "BUCA_CHIUSA":
+            return {
+                "keyboard": [
+                    [{"text": "Prossima buca"}],
+                    [{"text": "Score"}, {"text": "Stato Buca"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st in ["GIRO_CHIUSO", "ATTESA_CONFERMA_SCORE"]:
+            return {
+                "keyboard": [
+                    [{"text": "Confermi"}],
+                    [{"text": "Correggi"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "CORREZIONE_SCORE":
+            return {
+                "keyboard": [
+                    [{"text": "Confermi"}],
+                    [{"text": "🔙 Annulla correzione"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "FINE_DEFINITIVA":
+            return {
+                "keyboard": [
+                    [{"text": "Nuovo Giro"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        elif st == "CONFERMA_NUOVO_GIRO":
+            return {
+                "keyboard": [
+                    [{"text": "Sì, nuovo giro"}, {"text": "No, termina"}]
+                ],
+                "resize_keyboard": True
+            }
+
+        return {
+            "keyboard": [
+                [{"text": "Calcolo distanze & plays Like"}],
+                [{"text": "Score"}, {"text": "Stato Buca"}],
+                [{"text": "Tono Caddie"}, {"text": "Profilo Sacca"}],
+                [{"text": "Modalità Training"}, {"text": "Modalità Gara"}]
+            ],
+            "resize_keyboard": True
+        }
+
+    def get_on_course_keyboard(self, mode: str = "training", chat_id: Optional[int | str] = None) -> dict:
+        """Restituisce la tastiera persistente con pulsante GPS rapido a 1 tocco e toggle Modalità Gara/Training."""
+        mode_btn = "⚖️ Modalità Gara" if mode == "training" else "🎯 Modalità Training"
         return {
             "keyboard": [
                 [{"text": "📍 Calcola Distanza & Plays Like", "request_location": True}],
-                [{"text": "🟢 Inizia Gara a Pulsanti"}, {"text": "📊 Score"}],
                 [{"text": "⏩ Prossima Buca"}, {"text": "📊 Stato & Buca"}],
-                [{"text": "🎭 Tono Caddie"}, {"text": "🎒 Profilo & Sacca"}],
-                [{"text": "🎯 Modalità Training"}, {"text": "⚖️ Modalità Gara"}],
+                [{"text": mode_btn}, {"text": "🎒 Profilo & Sacca"}],
                 [{"text": "🔄 Nuovo Giro"}]
             ],
             "resize_keyboard": True,
@@ -973,8 +1180,11 @@ class VoiceCaddyTelegramBot:
         self.answer_callback_query(cb_id)
 
     def send_message(self, chat_id: int | str, text: str, parse_mode: str = "HTML", reply_markup: Optional[dict] = None) -> dict:
-        mode = self.get_user_mode(chat_id)
-        markup = reply_markup if reply_markup is not None else self.get_on_course_keyboard(mode)
+        if reply_markup is not None:
+            markup = reply_markup
+        else:
+            state = self.session_mgr.get_fsm_state(chat_id)
+            markup = self.get_keyboard_for_state(state, chat_id)
         return self._api_request("sendMessage", {
             "chat_id": chat_id,
             "text": text,
@@ -1757,10 +1967,582 @@ class VoiceCaddyTelegramBot:
                 except OSError:
                     pass
 
+    def handle_fsm_input(self, chat_id: int | str, text: str) -> Optional[dict]:
+        """
+        Motore a Macchina a Stati Finiti (FSM) per la chat bot Telegram.
+        Valida e gestisce le transizioni di stato e le risposte solo per i bottoni/comandi consentiti.
+        """
+        clean = text.strip()
+        norm = self._normalize_cmd(clean)
+
+        # Se è un comando slash speciale (/start, /help, /guida, /collega, /giocatore, /campo, /login), lascia al gestore comandi
+        if clean.startswith("/"):
+            parts = clean.split()
+            cmd_root = parts[0].lower()
+            if cmd_root in ["/start", "/help", "/guida", "/collega", "/giocatore", "/campo", "/circolo", "/login", "/utente", "/whs", "/handicap"]:
+                return None
+
+        state = self.session_mgr.get_fsm_state(chat_id)
+        istate = self.session_mgr.get_interactive_state(chat_id)
+        user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
+        player_name = f"{user_rec.first_name} {user_rec.last_name}"
+
+        # -------------------------------------------------------------
+        # 1. COMANDI GLOBALI E CONTROLLI FUORI SEQUENZA
+        # -------------------------------------------------------------
+        # Regola 4.3 & 10.2 (R&A / USGA): Divieto assoluto consigli bastone/strategia in Modalità Gara
+        g_mode = str(istate.get("game_mode", "")).upper()
+        if not g_mode and chat_id:
+            try:
+                g_mode = self.get_user_mode(chat_id).upper()
+            except Exception:
+                g_mode = "TRAINING"
+
+        if g_mode == "GARA":
+            advice_triggers = [
+                "cosa tiro", "che tiro", "che bastone", "quale bastone", "consigliami",
+                "dammi un consiglio", "che mazza", "cosa gioco", "che ferro tiro",
+                "quale ferro", "consiglio sul bastone", "cosa dovrei tirare", "bastone consigliato",
+                "che bastone uso", "cosa uso", "che bastone prendo", "quale bastone prendo",
+                "che mazza tiro", "suggeriscimi", "suggerisci", "che club tiro", "consigliami un bastone"
+            ]
+            is_asking_advice = any(q in norm for q in advice_triggers) or (
+                ("bastone" in norm or "consiglio" in norm or "ferro" in norm or "mazza" in norm) and ("?" in clean or "consigli" in norm or "sugger" in norm)
+            )
+            is_reporting_shot = any(w in norm for w in ["ho tirato", "tirato", "giocato", "colpo", "putt", "chiuso", "preso", "usato", "fatto"])
+            if is_asking_advice and not is_reporting_shot:
+                return self.send_message(
+                    chat_id,
+                    "🚫 <b>ATTENZIONE — MODALITÀ GARA (Regola 4.3 e 10.2 R&A/USGA)</b>\n\n"
+                    "In conformità alle Regole Ufficiali del Golf, durante una gara <b>è severamente vietato ricevere o richiedere consigli sul bastone o sulla strategia di gioco</b>.\n"
+                    "⚠️ <i>Ricevere o fornire questo consiglio comporterebbe <b>2 colpi di penalità o la SQUALIFICA immediata</b>!</i>\n\n"
+                    "Tocca <b>[Calcolo distanze]</b> per visualizzare la sola metratura regolamentare. La scelta del bastone spetta esclusivamente a te."
+                )
+
+        # Scorecard compatibilità legacy per test
+        if clean == "📊 Score":
+            return self.show_interactive_scorecard(chat_id)
+
+        # Score (nuovo pulsante di specifica)
+        if norm in ["score", "scorecard", "classifica", "punti"]:
+            if state in ["IDLE", "CIRCOLO_IDENTIFICATO"]:
+                return self.send_message(chat_id, "Ti piacerebbe che fosse già finita? Prima iniziamo il giro.")
+            card = self.session_mgr.get_round_scorecard(chat_id)
+            whs_p = self._resolve_handicap_profile(chat_id)
+            completed = card.get("completed_holes", [])
+            cur_h = istate.get("current_hole", 1)
+            lines = []
+            for h in completed:
+                lines.append(f"• Buca {h['hole_number']}: {h['gross_strokes']} colpi ({h['stableford_points']} pt)")
+            if cur_h <= whs_p.holes_count and cur_h not in [h['hole_number'] for h in completed]:
+                lines.append(f"• Buca {cur_h}: in corso...")
+            scores_text = "\n".join(lines) if lines else "Nessuna buca ancora completata."
+            msg = (
+                f"Score provvisorio\n\n"
+                f"{scores_text}\n\n"
+                f"Totale provvisorio: {card['total_gross']} colpi"
+            )
+            return self.send_message(chat_id, msg)
+
+        # Stato Buca
+        if norm in ["stato buca", "stato & buca", "stato"]:
+            if state in ["IDLE", "CIRCOLO_IDENTIFICATO"]:
+                return self.send_message(chat_id, "Ti piacerebbe che fosse già finita? Prima iniziamo il giro.")
+            cur_h = istate.get("current_hole", 1)
+            whs_p = self._resolve_handicap_profile(chat_id)
+            par = whs_p.hole_pars.get(cur_h, 4)
+            shot_num = istate.get("current_shot_number", 1)
+            lie = istate.get("last_ball_lie") or ("Tee di partenza" if shot_num == 1 else "Fairway")
+            penalties = len(istate.get("hole_penalties", []))
+            msg = (
+                f"Buca corrente: {cur_h}\n"
+                f"Par: {par}\n"
+                f"Colpo corrente: {shot_num}\n"
+                f"Posizione palla: {lie}\n"
+                f"Penalità: {penalties}\n"
+                f"Distanza residua: disponibile dopo calcolo"
+            )
+            return self.send_message(chat_id, msg)
+
+        # Tono Caddie
+        if norm in ["tono caddie", "tono", "personalità"]:
+            self.session_mgr.set_fsm_state(chat_id, "SCELTA_TONO", previous_state=state)
+            return self.send_message(chat_id, "Scegli il tono del tuo caddie.")
+
+        # Profilo Sacca
+        if norm in ["profilo sacca", "sacca", "la mia sacca", "confronto sacca"]:
+            return self.send_message(chat_id, "Profilo sacca aggiornato.")
+
+        # Nuovo Giro
+        if norm in ["nuovo giro", "nuovogiro"]:
+            if state not in ["FINE_DEFINITIVA", "GIRO_CHIUSO", "ATTESA_CONFERMA_SCORE"]:
+                return self.send_message(chat_id, "Opzione disponibile solo a giro concluso.")
+            self.session_mgr.set_fsm_state(chat_id, "CONFERMA_NUOVO_GIRO")
+            return self.send_message(chat_id, "Vuoi iniziare un nuovo giro?")
+
+        # -------------------------------------------------------------
+        # 2. STATO: SCELTA_TONO
+        # -------------------------------------------------------------
+        if state == "SCELTA_TONO":
+            if norm in ["🔙 torna", "torna", "annulla"]:
+                prev = istate.get("previous_state", "IDLE")
+                self.session_mgr.set_fsm_state(chat_id, prev)
+                return self.send_message(chat_id, "Operazione annullata.")
+            if norm in ["professionale", "psicologo", "spiritoso", "spensierato", "arrabbiato"]:
+                new_tone = CaddyTone.from_string(norm)
+                user_profile.caddy_tone = new_tone
+                user_profile.save_for_user(user_rec.user_id)
+                prev = istate.get("previous_state", "IDLE")
+                self.session_mgr.set_fsm_state(chat_id, prev)
+                return self.send_message(chat_id, f"Tono caddie aggiornato: {new_tone.value.title()}.")
+
+        # -------------------------------------------------------------
+        # 3. STATO: CONFERMA_NUOVO_GIRO
+        # -------------------------------------------------------------
+        if state == "CONFERMA_NUOVO_GIRO":
+            if any(k in norm for k in ["sì, nuovo giro", "si, nuovo giro", "sì", "si", "nuovo giro"]):
+                self.session_mgr.reset_fsm_round(chat_id)
+                return self.send_message(chat_id, "⛳ Nuovo giro pronto. Bentornato sul percorso!")
+            if any(k in norm for k in ["no, termina", "no", "termina"]):
+                self.session_mgr.set_fsm_state(chat_id, "FINE_DEFINITIVA")
+                return self.send_message(chat_id, "Giro archiviato. Arrivederci alla prossima partita! ⛳")
+
+        # -------------------------------------------------------------
+        # 4. STATO: IDLE / CIRCOLO_IDENTIFICATO
+        # -------------------------------------------------------------
+        if state in ["IDLE", "CIRCOLO_IDENTIFICATO"]:
+            if norm in ["calcolo distanze & plays like", "calcolo distanze", "calcola distanza", "plays like"]:
+                w = weather_service.get_current_weather(43.5228, 13.6060)
+                w_desc = w.get("weather_desc", "Sereno ☀️")
+                temp = w.get("temperature", 20.0)
+                w_spd = w.get("wind_speed", 10.0)
+                w_card = w.get("wind_cardinal", "NW")
+                self.session_mgr.set_fsm_state(chat_id, "CIRCOLO_IDENTIFICATO")
+                msg = (
+                    "Benvenuto. Sto individuando il circolo di gioco e preparando le informazioni del percorso.\n\n"
+                    f"Circolo: {active_course.name}\n"
+                    f"Percorso: {active_course.holes_count} Buche\n"
+                    f"Buche disponibili: {active_course.holes_count}\n"
+                    f"Meteo: {w_desc}, {temp}°C, vento {w_spd} km/h da {w_card}"
+                )
+                return self.send_message(chat_id, msg)
+
+            if norm in ["modalità training", "modalita training", "training"]:
+                self.session_mgr.set_fsm_state(chat_id, "FORMULA_DA_SCEGLIERE", game_mode="TRAINING")
+                self.set_user_mode(chat_id, "training")
+                msg = (
+                    "Modalità Training attivata.\n"
+                    "In questa modalità il caddie può suggerire o commentare la scelta dei bastoni.\n\n"
+                    "Scegli la formula di gioco."
+                )
+                return self.send_message(chat_id, msg)
+
+            if norm in ["modalità gara", "modalita gara", "gara"]:
+                self.session_mgr.set_fsm_state(chat_id, "FORMULA_DA_SCEGLIERE", game_mode="GARA")
+                self.set_user_mode(chat_id, "gara")
+                msg = (
+                    "Modalità Gara attivata.\n"
+                    "In questa modalità il caddie non suggerirà bastoni e non darà indicazioni non consentite.\n\n"
+                    "Scegli la formula di gioco."
+                )
+                return self.send_message(chat_id, msg)
+
+            if norm in ["🟢 inizia gara a pulsanti", "inizia gara a pulsanti", "gara a pulsanti"]:
+                return self.start_interactive_wizard(chat_id)
+
+        # Blocco cambio modalità a giro già iniziato
+        if norm in ["modalità training", "modalita training", "modalità gara", "modalita gara"] and state not in ["IDLE", "CIRCOLO_IDENTIFICATO"]:
+            return self.send_message(chat_id, "⚠️ La modalità non può essere modificata a giro già iniziato.")
+
+        # -------------------------------------------------------------
+        # 5. STATO: FORMULA_DA_SCEGLIERE
+        # -------------------------------------------------------------
+        if state == "FORMULA_DA_SCEGLIERE":
+            if any(k in norm for k in ["stableford", "scratch"]):
+                fmt = "stableford" if "stable" in norm else "scratch"
+                self.session_mgr.set_fsm_state(chat_id, "TEE_DA_SCEGLIERE", game_format=fmt)
+                msg = "Scegli il tee di partenza."
+                return self.send_message(chat_id, msg)
+
+        # -------------------------------------------------------------
+        # 6. STATO: TEE_DA_SCEGLIERE
+        # -------------------------------------------------------------
+        if state == "TEE_DA_SCEGLIERE":
+            if any(k in norm for k in ["bianchi", "gialli", "rossi", "verdi"]):
+                for t_candidate in ["bianchi", "gialli", "rossi", "verdi"]:
+                    if t_candidate in norm:
+                        tee = t_candidate
+                        break
+                else:
+                    tee = "gialli"
+
+                self.session_mgr.set_selected_tee(chat_id, tee)
+                whs_p = self._resolve_handicap_profile(chat_id, tee_name=tee, force_refresh=True)
+                g_mode = istate.get("game_mode", "TRAINING")
+                g_fmt = istate.get("game_format", "stableford")
+
+                self.session_mgr.start_interactive_round(
+                    chat_id=chat_id,
+                    tee_name=tee,
+                    start_hole=1,
+                    course_id=active_course.course_id
+                )
+                self.session_mgr.set_fsm_state(
+                    chat_id,
+                    "COLPO_DA_TEE",
+                    game_mode=g_mode,
+                    game_format=g_fmt,
+                    current_hole=1,
+                    current_shot_number=1,
+                    hole_shots=[],
+                    hole_penalties=[]
+                )
+
+                distrib_lines = []
+                for h_i in range(1, min(19, whs_p.holes_count + 1)):
+                    par_i = whs_p.hole_pars.get(h_i, 4)
+                    distrib_lines.append(f"Buca {h_i}: {par_i}")
+                distrib_str = "\n".join(distrib_lines)
+
+                w = weather_service.get_current_weather(43.5228, 13.6060)
+                w_desc = w.get("weather_desc", "Sereno ☀️")
+                temp = w.get("temperature", 20.0)
+
+                setup_msg = (
+                    f"Circolo: {active_course.name}\n"
+                    f"Percorso: {active_course.holes_count} Buche\n"
+                    f"Tee scelto: {tee.title()}\n"
+                    f"Meteo previsto: {w_desc}, {temp}°C\n"
+                    f"HCP esatto: {whs_p.exact_hcp:.1f}\n"
+                    f"HCP di gioco: {whs_p.playing_hcp}\n"
+                    f"Formula: {g_fmt.title()}\n"
+                    f"Modalità: {g_mode.title()}\n"
+                    f"Colpi ricevuti: {whs_p.playing_hcp}\n"
+                    f"Distribuzione colpi per buca:\n"
+                    f"{distrib_str}"
+                )
+                self.send_message(chat_id, setup_msg)
+
+                # Avvio immediato buca 1
+                par_1 = whs_p.hole_pars.get(1, 4)
+                si_1 = whs_p.hole_stroke_indices.get(1, 1)
+                rec_1 = whs_p.get_received_strokes(1)
+                if g_mode == "GARA":
+                    club_prompt = "Indica il bastone che hai usato dal tee."
+                else:
+                    club_prompt = "Scegli il bastone usato dal tee."
+
+                h1_msg = (
+                    f"Buca 1 - Par {par_1}\n"
+                    f"HCP buca: {si_1}\n"
+                    f"Colpi ricevuti: {rec_1}\n"
+                    f"Tee: {tee.title()}\n\n"
+                    f"{club_prompt}"
+                )
+                return self.send_message(chat_id, h1_msg)
+
+        # -------------------------------------------------------------
+        # 7. STATO: COLPO_DA_TEE / PRONTO_BUCA
+        # -------------------------------------------------------------
+        if state in ["COLPO_DA_TEE", "PRONTO_BUCA"]:
+            valid_clubs = ["driver", "legno", "ferro medio", "ferro lungo", "ferro", "ferro corto", "wedge", "ibrido"]
+            if any(vc in norm for vc in valid_clubs):
+                club_label = clean.title()
+                g_mode = istate.get("game_mode", "TRAINING")
+                self.session_mgr.record_interactive_shot_start(chat_id, club_label)
+                self.session_mgr.set_fsm_state(chat_id, "ATTESA_ESITO_COLPO", last_shot_club=club_label, current_shot_number=2)
+                if g_mode == "TRAINING":
+                    if "driver" in norm:
+                        comment = "Scelta aggressiva dal tee. Ora conta soprattutto trovare il fairway."
+                    elif "legno" in norm:
+                        comment = "Scelta prudente dal tee per piazzarsi con margine di sicurezza."
+                    else:
+                        comment = "Scelta di controllo dal tee per piazzare la palla in sicurezza."
+                    out_msg = comment
+                else:
+                    out_msg = f"Bastone registrato: {club_label}."
+                return self.send_message(chat_id, out_msg)
+
+        # -------------------------------------------------------------
+        # 8. STATO: ATTESA_ESITO_COLPO
+        # -------------------------------------------------------------
+        if state == "ATTESA_ESITO_COLPO":
+            if any(k in norm for k in ["terzo colpo dal tee", "terzo colpo"]):
+                g_mode = istate.get("game_mode", "TRAINING")
+                self.session_mgr.add_interactive_penalty(chat_id, "Terzo colpo dal tee", 1)
+                self.session_mgr.set_fsm_state(chat_id, "COLPO_DA_TEE", current_shot_number=3)
+                if g_mode == "TRAINING":
+                    comment = "Ok, registrato terzo colpo dal tee. Respira, resetta e riparti con una scelta solida."
+                else:
+                    comment = "Registrato terzo colpo dal tee."
+                out_msg = f"{comment}\n\nScegli il bastone usato dal tee."
+                return self.send_message(chat_id, out_msg)
+
+            if norm in ["calcolo distanze & plays like", "calcolo distanze", "calcola distanza", "plays like", "distanza"]:
+                cur_h = istate.get("current_hole", 1)
+                h_info = active_course.get_hole(cur_h)
+                last_lat, last_lon, _, _ = self.session_mgr.get_last_position(chat_id)
+                pin_override = self.session_mgr.get_pin_override(chat_id, cur_h)
+                if last_lat and h_info and h_info.coordinates:
+                    pin_lat = pin_override[0] if pin_override else h_info.coordinates.green_lat
+                    pin_lon = pin_override[1] if pin_override else h_info.coordinates.green_lon
+                    res_dist = int(round(haversine_distance(last_lat, last_lon, pin_lat, pin_lon)))
+                else:
+                    tot_m = h_info.distance_meters if h_info else 350
+                    res_dist = max(50, tot_m - 200)
+                plays_like = int(round(res_dist * 1.05))
+
+                self.session_mgr.set_fsm_state(chat_id, "POSIZIONE_PALLA_DA_SCEGLIERE")
+                g_mode = istate.get("game_mode", "TRAINING")
+                if g_mode == "GARA":
+                    msg = (
+                        "Calcolo distanza regolamentare (Regola 4.3)...\n"
+                        f"📏 <b>Distanza alla bandiera: {res_dist} metri</b>\n\n"
+                        "⚖️ <i>Modalità Gara: nessun consiglio sul bastone o Plays Like in conformità alla Regola 4.3 (prevenzione squalifica).</i>\n\n"
+                        "Dove si trova la palla?"
+                    )
+                else:
+                    msg = (
+                        "Calcolo distanza dalla buca in corso...\n"
+                        f"📏 Distanza residua stimata: {res_dist} metri.\n"
+                        f"🎯 Plays like: {plays_like} metri.\n\n"
+                        "Dove si trova la palla?"
+                    )
+                return self.send_message(chat_id, msg)
+
+        # -------------------------------------------------------------
+        # 9. STATO: POSIZIONE_PALLA_DA_SCEGLIERE
+        # -------------------------------------------------------------
+        if state == "POSIZIONE_PALLA_DA_SCEGLIERE":
+            g_mode = istate.get("game_mode", "TRAINING")
+            prompt_bastone = "Indica il bastone che hai usato." if g_mode == "GARA" else "Indica il bastone utilizzato per il prossimo colpo."
+            if "fairway" in norm:
+                self.session_mgr.set_fsm_state(chat_id, "BASTONE_DA_SCEGLIERE", last_ball_lie="Fairway")
+                return self.send_message(chat_id, f"Posizione registrata: Fairway.\n\n{prompt_bastone}")
+            if "rough" in norm:
+                self.session_mgr.set_fsm_state(chat_id, "BASTONE_DA_SCEGLIERE", last_ball_lie="Rough")
+                return self.send_message(chat_id, f"Posizione registrata: Rough.\n\n{prompt_bastone}")
+            if "bunker" in norm:
+                self.session_mgr.set_fsm_state(chat_id, "BASTONE_DA_SCEGLIERE", last_ball_lie="Bunker")
+                return self.send_message(chat_id, f"Posizione registrata: Bunker.\n\n{prompt_bastone}")
+            if "acqua" in norm:
+                self.session_mgr.add_interactive_penalty(chat_id, "Palla in acqua", 1)
+                self.session_mgr.set_fsm_state(chat_id, "ACQUA_RIPRESA", last_ball_lie="Acqua")
+                return self.send_message(chat_id, "Palla in acqua registrata. Penalità aggiunta.\n\nDa dove si riprende?")
+            if "green" in norm:
+                g_mode = istate.get("game_mode", "TRAINING")
+                self.session_mgr.set_fsm_state(chat_id, "PUTT_DA_SCEGLIERE", last_ball_lie="Green")
+                comment = "Green raggiunto. Ora serve lucidità: conta chiudere bene." if g_mode == "TRAINING" else "Green raggiunto."
+                return self.send_message(chat_id, f"{comment}\n\nQuanti putt hai effettuato?")
+
+        # -------------------------------------------------------------
+        # 10. STATO: ACQUA_RIPRESA
+        # -------------------------------------------------------------
+        if state == "ACQUA_RIPRESA":
+            if any(k in norm for k in ["drop", "rigioco", "punto precedente"]):
+                self.session_mgr.set_fsm_state(chat_id, "BASTONE_DA_SCEGLIERE", last_ball_lie=clean.title())
+                return self.send_message(chat_id, "Indica il bastone utilizzato per il prossimo colpo.")
+
+        # -------------------------------------------------------------
+        # 11. STATO: BASTONE_DA_SCEGLIERE
+        # -------------------------------------------------------------
+        if state == "BASTONE_DA_SCEGLIERE":
+            valid_clubs = ["driver", "legno", "ferro", "ferro corto", "ferro medio", "ferro lungo", "sand wedge", "wedge", "ibrido", "putter"]
+            if any(vc in norm for vc in valid_clubs):
+                club_label = clean.title()
+                g_mode = istate.get("game_mode", "TRAINING")
+                shot_num = istate.get("current_shot_number", 2)
+                self.session_mgr.record_interactive_shot_start(chat_id, club_label)
+                self.session_mgr.set_fsm_state(chat_id, "ATTESA_ESITO_COLPO", last_shot_club=club_label, current_shot_number=shot_num + 1)
+                if g_mode == "TRAINING":
+                    out_msg = f"{club_label} registrato. Scelta equilibrata per controllare distanza e traiettoria."
+                else:
+                    out_msg = f"Bastone registrato: {club_label}."
+                return self.send_message(chat_id, out_msg)
+
+        # -------------------------------------------------------------
+        # 12. STATO: PUTT_DA_SCEGLIERE / GREEN_RAGGIUNTO
+        # -------------------------------------------------------------
+        if state in ["PUTT_DA_SCEGLIERE", "GREEN_RAGGIUNTO"]:
+            m_putt = re.search(r"(\d+)", norm)
+            if m_putt or "putt" in norm:
+                putts_count = int(m_putt.group(1)) if m_putt else 2
+                cur_h = istate.get("current_hole", 1)
+                whs_p = self._resolve_handicap_profile(chat_id)
+                par = whs_p.hole_pars.get(cur_h, 4)
+                si = whs_p.hole_stroke_indices.get(cur_h, cur_h)
+                rec = whs_p.get_received_strokes(cur_h)
+
+                res = self.session_mgr.close_interactive_hole(
+                    chat_id=chat_id,
+                    putts=putts_count,
+                    par=par,
+                    stroke_index=si,
+                    received_strokes=rec
+                )
+
+                diff = res["gross_score"] - par
+                diff_str = f"+{diff}" if diff > 0 else ("Par" if diff == 0 else str(diff))
+
+                raw_tone = getattr(user_profile, "caddy_tone", None) or CaddyTone.PROFESSIONALE
+                caddy_tone = raw_tone if isinstance(raw_tone, CaddyTone) else CaddyTone.from_string(str(raw_tone))
+                from core.caddy_personality import CaddyPersonalityEngine
+                p_engine = CaddyPersonalityEngine.get_instance()
+                sit = "BUCA_PAR"
+                if diff <= -2:
+                    sit = "BUCA_EAGLE"
+                elif diff == -1:
+                    sit = "BUCA_BIRDIE"
+                elif diff == 1:
+                    sit = "BUCA_BOGEY"
+                elif diff == 2:
+                    sit = "BUCA_DOPPIO"
+                elif diff >= 3:
+                    sit = "BUCA_DISASTRO"
+                caddy_quote = p_engine.get_phrase(sit, tone=caddy_tone, buca=cur_h, par=par, score=res["gross_score"])
+
+                if cur_h < whs_p.holes_count:
+                    self.session_mgr.set_fsm_state(chat_id, "BUCA_CHIUSA")
+                    msg = (
+                        f"Buca {cur_h} chiusa.\n\n"
+                        f"Colpi lordi: {res['gross_score']}\n"
+                        f"Penalità: {res['penalties']}\n"
+                        f"Putt: {putts_count}\n"
+                        f"Par buca: {par}\n"
+                        f"Risultato lordo: {diff_str}\n"
+                        f"Colpi ricevuti: {rec}\n"
+                        f"Risultato netto: {res['score_label']}\n"
+                        f"Punti Stableford: {res['stableford_points']}\n\n"
+                        f"Commento caddie:\n{caddy_quote}"
+                    )
+                    return self.send_message(chat_id, msg)
+                else:
+                    card = self.session_mgr.get_round_scorecard(chat_id)
+                    total_par = card.get("total_par", 72)
+                    performance = card["total_gross"] - total_par - whs_p.playing_hcp
+                    if performance <= -3:
+                        perf_cat = "SOTTO_HANDICAP"
+                    elif performance <= 3:
+                        perf_cat = "IN_RANGE_HANDICAP"
+                    else:
+                        perf_cat = "SOPRA_HANDICAP"
+
+                    final_quote = p_engine.get_round_finale_quote(caddy_tone, perf_cat)
+
+                    table_rows = ["Buca | Par | Lordo | Netto | Stableford"]
+                    for h in card.get("completed_holes", []):
+                        table_rows.append(f"{h['hole_number']:<4} | {h['par']:<3} | {h['gross_strokes']:<5} | {h['net_strokes']:<5} | {h['stableford_points']:<10}")
+                    table_str = "\n".join(table_rows)
+
+                    g_fmt = istate.get("game_format", "stableford")
+                    g_mode = istate.get("game_mode", "TRAINING")
+                    cur_tee = self.session_mgr.get_selected_tee(chat_id)
+
+                    self.session_mgr.set_fsm_state(chat_id, "ATTESA_CONFERMA_SCORE")
+                    msg = (
+                        f"Giro completato.\n\n"
+                        f"Formula: {g_fmt.title()}\n"
+                        f"Modalità: {g_mode.title()}\n"
+                        f"Tee: {cur_tee.title()}\n\n"
+                        f"<pre>{table_str}</pre>\n\n"
+                        f"Totale lordo: {card['total_gross']}\n"
+                        f"Totale netto: {card['total_net']}\n"
+                        f"Punti Stableford: {card['total_stableford']}\n\n"
+                        f"Commento caddie ({caddy_tone.short_label}):\n"
+                        f"«{final_quote}»"
+                    )
+                    return self.send_message(chat_id, msg)
+
+        # -------------------------------------------------------------
+        # 13. STATO: BUCA_CHIUSA
+        # -------------------------------------------------------------
+        if state == "BUCA_CHIUSA":
+            if any(k in norm for k in ["prossima buca", "prossima"]):
+                next_h = self.session_mgr.advance_to_next_interactive_hole(chat_id)
+                whs_p = self._resolve_handicap_profile(chat_id)
+                par = whs_p.hole_pars.get(next_h, 4)
+                si = whs_p.hole_stroke_indices.get(next_h, next_h)
+                rec = whs_p.get_received_strokes(next_h)
+                g_mode = istate.get("game_mode", "TRAINING")
+                club_prompt = "Indica il bastone che hai usato dal tee." if g_mode == "GARA" else "Scegli il bastone usato dal tee."
+                self.session_mgr.set_fsm_state(chat_id, "COLPO_DA_TEE", current_hole=next_h, current_shot_number=1, hole_shots=[], hole_penalties=[])
+                msg = (
+                    f"Buca {next_h} - Par {par}\n"
+                    f"HCP buca: {si}\n"
+                    f"Colpi ricevuti: {rec}\n\n"
+                    f"{club_prompt}"
+                )
+                return self.send_message(chat_id, msg)
+
+        # -------------------------------------------------------------
+        # 14. STATO: ATTESA_CONFERMA_SCORE / GIRO_CHIUSO
+        # -------------------------------------------------------------
+        if state in ["ATTESA_CONFERMA_SCORE", "GIRO_CHIUSO"]:
+            if any(k in norm for k in ["confermi", "conferma"]):
+                self.finalize_interactive_round(chat_id)
+                self.session_mgr.set_fsm_state(chat_id, "FINE_DEFINITIVA")
+                msg = (
+                    "Score confermato. Giro chiuso correttamente.\n"
+                    "Grazie, alla prossima buca... o al prossimo giro."
+                )
+                return self.send_message(chat_id, msg)
+
+            if any(k in norm for k in ["correggi", "modifica"]):
+                self.session_mgr.set_fsm_state(chat_id, "CORREZIONE_SCORE")
+                msg = (
+                    "Scrivi il numero della buca da correggere e il nuovo numero di colpi.\n\n"
+                    "Esempio:\n"
+                    "Buca 7, 6 colpi"
+                )
+                return self.send_message(chat_id, msg)
+
+        # -------------------------------------------------------------
+        # 15. STATO: CORREZIONE_SCORE
+        # -------------------------------------------------------------
+        if state == "CORREZIONE_SCORE":
+            if any(k in norm for k in ["confermi", "conferma"]):
+                self.finalize_interactive_round(chat_id)
+                self.session_mgr.set_fsm_state(chat_id, "FINE_DEFINITIVA")
+                return self.send_message(chat_id, "Score confermato. Giro chiuso correttamente.\nGrazie, alla prossima buca... o al prossimo giro.")
+            if any(k in norm for k in ["🔙 annulla correzione", "annulla"]):
+                self.session_mgr.set_fsm_state(chat_id, "ATTESA_CONFERMA_SCORE")
+                return self.send_message(chat_id, "Correzione annullata. Confermi lo score o desideri correggere?")
+
+            m_corr = re.search(r"(?:buca\s*)?(\d+)[^\d]+(\d+)", norm)
+            if m_corr:
+                h_num = int(m_corr.group(1))
+                strokes = int(m_corr.group(2))
+                if 1 <= h_num <= 18 and 1 <= strokes <= 15:
+                    updated_card = self.session_mgr.apply_hole_score_correction(chat_id, h_num, strokes)
+                    if updated_card:
+                        table_rows = ["Buca | Par | Lordo | Netto | Stableford"]
+                        for h in updated_card.get("completed_holes", []):
+                            table_rows.append(f"{h['hole_number']:<4} | {h['par']:<3} | {h['gross_strokes']:<5} | {h['net_strokes']:<5} | {h['stableford_points']:<10}")
+                        table_str = "\n".join(table_rows)
+
+                        self.session_mgr.set_fsm_state(chat_id, "ATTESA_CONFERMA_SCORE")
+                        msg = (
+                            f"Score aggiornato con successo.\n\n"
+                            f"<pre>{table_str}</pre>\n\n"
+                            f"Totale lordo: {updated_card['total_gross']}\n"
+                            f"Totale netto: {updated_card['total_net']}\n"
+                            f"Punti Stableford: {updated_card['total_stableford']}"
+                        )
+                        return self.send_message(chat_id, msg)
+
+            return self.send_message(chat_id, "Scrivi il numero della buca da correggere e il nuovo numero di colpi.\n\nEsempio:\nBuca 7, 6 colpi")
+
+        return None
+
     def process_text_message(self, chat_id: int | str, text: str):
         """Elabora il resoconto testuale dei colpi digitato dal golfista."""
         clean = text.strip()
         clean_lower = clean.lower()
+
+        # Controllo FSM centralizzato per bottoni contestuali e gestione a stati
+        fsm_res = self.handle_fsm_input(chat_id, clean)
+        if fsm_res is not None:
+            return fsm_res
 
         # 0. Trigger prioritario per Gara a Pulsanti (Zero Audio) e Scorecard
         if any(w in clean_lower for w in ["gara a pulsanti", "inizia gara a pulsanti", "gara_bot", "pulsanti", "tasti"]) or clean == "🟢 Inizia Gara a Pulsanti":

@@ -147,7 +147,21 @@ class DatabaseManager:
                 json_str
             ))
             conn.commit()
-            return cursor.lastrowid
+            new_round_id = cursor.lastrowid
+
+            # Sincronizzazione automatica su Supabase Cloud (Fault-tolerant)
+            try:
+                from core.supabase_service import save_round_to_supabase
+                save_round_to_supabase(
+                    round_id=new_round_id,
+                    round_data=round_data,
+                    user_id=user_id,
+                    group_name=group_name
+                )
+            except Exception:
+                pass
+
+            return new_round_id
 
     def get_all_rounds(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:

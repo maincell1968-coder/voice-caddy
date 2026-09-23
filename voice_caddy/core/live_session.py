@@ -820,6 +820,9 @@ class LiveSessionManager:
         c_id = str(chat_id)
         default_state = {
             "state": "IDLE",
+            "fsm_state": "IDLE",
+            "game_mode": "TRAINING",
+            "game_format": "stableford",
             "tee_name": "gialli",
             "start_hole": 1,
             "current_hole": 1,
@@ -827,7 +830,9 @@ class LiveSessionManager:
             "hole_shots": [],
             "hole_penalties": [],
             "active_shot": None,
-            "waiting_location": False
+            "waiting_location": False,
+            "last_ball_lie": None,
+            "previous_state": "IDLE"
         }
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -856,6 +861,112 @@ class LiveSessionManager:
                 SET interactive_state_json = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE chat_id = ?
             """, (json.dumps(state_data), c_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_fsm_state(self, chat_id: int | str) -> str:
+        """Restituisce lo stato FSM corrente della chat."""
+        istate = self.get_interactive_state(chat_id)
+        return istate.get("fsm_state") or istate.get("state") or "IDLE"
+
+    def set_fsm_state(self, chat_id: int | str, state_name: str, **kwargs) -> Dict[str, Any]:
+        """Aggiorna lo stato FSM e memorizza parametri contestuali addizionali."""
+        istate = self.get_interactive_state(chat_id)
+        istate["previous_state"] = istate.get("fsm_state", "IDLE")
+        istate["fsm_state"] = state_name
+        istate["state"] = state_name
+        for k, v in kwargs.items():
+            istate[k] = v
+        self.set_interactive_state(chat_id, istate)
+        return istate
+
+    def apply_hole_score_correction(
+        self,
+        chat_id: int | str,
+        hole_number: int,
+        new_gross_strokes: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Corregge retroattivamente i colpi lordi di una specifica buca e ricalcola
+        colpi netti, par netto e punti Stableford.
+        """
+        c_id = str(chat_id)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT completed_scores_json FROM live_sessions WHERE chat_id = ?", (c_id,))
+            row = cursor.fetchone()
+            if not row or not row["completed_scores_json"]:
+                return None
+            try:
+                scores_list = json.loads(row["completed_scores_json"])
+            except Exception:
+                return None
+
+            target_idx = next((i for i, h in enumerate(scores_list) if h.get("hole_number") == hole_number), None)
+            if target_idx is None:
+                return None
+
+            entry = scores_list[target_idx]
+            par = entry.get("par", 4)
+            rec = entry.get("received_strokes", 0)
+            entry["gross_strokes"] = int(new_gross_strokes)
+            entry["net_strokes"] = int(new_gross_strokes) - rec
+            entry["net_par"] = par + rec
+            entry["stableford_points"] = max(0, 2 + par - entry["net_strokes"])
+
+            diff = entry["gross_strokes"] - par
+            if diff <= -2:
+                entry["score_label"] = "Eagle or Better"
+            elif diff == -1:
+                entry["score_label"] = "Birdie"
+            elif diff == 0:
+                entry["score_label"] = "Par"
+            elif diff == 1:
+                entry["score_label"] = "Bogey"
+            elif diff == 2:
+                entry["score_label"] = "Double Bogey"
+            else:
+                entry["score_label"] = f"+{diff} Triple+ Bogey"
+
+            scores_list[target_idx] = entry
+            cursor.execute("""
+                UPDATE live_sessions
+                SET completed_scores_json = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (json.dumps(scores_list), c_id))
+            conn.commit()
+
+        return self.get_round_scorecard(c_id)
+
+    def reset_fsm_round(self, chat_id: int | str) -> bool:
+        """Resetta completamente la sessione FSM per un nuovo giro azzerando buche e colpi."""
+        c_id = str(chat_id)
+        default_state = {
+            "state": "IDLE",
+            "fsm_state": "IDLE",
+            "game_mode": "TRAINING",
+            "game_format": "stableford",
+            "tee_name": "gialli",
+            "start_hole": 1,
+            "current_hole": 1,
+            "current_shot_number": 1,
+            "hole_shots": [],
+            "hole_penalties": [],
+            "active_shot": None,
+            "waiting_location": False,
+            "last_ball_lie": None,
+            "previous_state": "IDLE"
+        }
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE live_sessions
+                SET completed_scores_json = '[]', current_hole = 1, current_shot_index = 1,
+                    interactive_state_json = ?, last_latitude = NULL, last_longitude = NULL,
+                    last_altitude = NULL, updated_at = CURRENT_TIMESTAMP
+                WHERE chat_id = ?
+            """, (json.dumps(default_state), c_id))
+            cursor.execute("DELETE FROM live_shots WHERE chat_id = ?", (c_id,))
             conn.commit()
             return cursor.rowcount > 0
 

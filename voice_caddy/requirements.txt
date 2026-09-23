@@ -7,3 +7,4 @@ plotly>=5.20.0
 pandas>=2.2.0
 watchdog>=4.0.0
 fpdf2>=2.8.0
+supabase>=2.30.0

@@ -23,6 +23,21 @@ from core.strokes_gained import StrokesGainedBenchmarkEngine
 from core.pdf_export import PDFReportGenerator
 from core.course import CourseRegistry, CONERO_GOLF_CLUB, GolfCourse
 from core.user_profile import UserProfile, PlayerCategory, parse_user_setup_transcript, ClubDetail, ShaftFlex, get_default_bag, sort_clubs_by_distance
+from core.supabase_service import (
+    init_supabase,
+    load_golf_bag_from_supabase,
+    save_golf_bag_to_supabase,
+    check_supabase_health,
+    clubs_json_to_club_details,
+    clubs_json_to_df,
+    df_to_clubs_json,
+    club_details_to_clubs_json,
+    save_round_to_supabase,
+    load_rounds_from_supabase,
+    get_user_rounds_cloud_count,
+    sync_all_local_rounds_to_supabase,
+    MAX_CLOUD_ROUNDS_PER_USER
+)
 from core.visualizer import GolfHoleVisualizer
 from core.caddy_personality import CaddyTone, CaddyPersonalityEngine
 from core.demo_data import get_demo_golf_round
@@ -831,7 +846,7 @@ if st.session_state.auth_user is None:
                 <div class="guide-step-item">
                     <div class="guide-step-num">1</div>
                     <div class="guide-step-content">
-                        <b>Al tee della buca 1:</b> Dì al bot se stai giocando in <b>Training</b> o in <b>Gara</b>. Puoi scrivere un messaggio o inviare un vocale.
+                        <b>Al tee della buca 1:</b> Dì al bot se stai giocando in <b>Training</b> o in <b>Gara</b>. Puoi toccare il pulsante predefinito o scrivere un messaggio.
                     </div>
                 </div>
                 <div class="guide-step-item">
@@ -854,7 +869,7 @@ if st.session_state.auth_user is None:
                 </div>
             </div>
             <div class="guide-phase-footer" style="color: #4ADE80;">
-                🔄 <b>Ripeti dalla 1 alla 18.</b> Nessun taccuino, nessun calcolo: al bot basta un messaggio o un vocale.
+                🔄 <b>Ripeti dalla 1 alla 18.</b> Nessun taccuino, nessun calcolo: al bot basta un tocco sui pulsanti o un messaggio.
             </div>
         </div>
     </div>
@@ -873,7 +888,7 @@ if st.session_state.auth_user is None:
                 <span>📊</span> <span><b>Storico di partite:</b> archivio allenamenti e gare sempre a portata di mano sul portale</span>
             </div>
             <div class="guide-benefit-item">
-                <span>🎙️</span> <span><b>Zero attrito:</b> un vocale o un messaggio rapido, e sei già al colpo successivo</span>
+                <span>🔘</span> <span><b>Zero attrito:</b> un tocco sui pulsanti o un messaggio rapido, e sei già al colpo successivo</span>
             </div>
         </div>
         <div style="text-align: right; margin-top: 10px; font-size: 0.92rem; font-weight: 700; color: #2ECC71;">
@@ -909,7 +924,7 @@ if st.session_state.auth_user is None:
             <div class="disclaimer-text">
                 Per la massima tutela e serenità di tutti i soci e dell'Amministratore, l'architettura è strutturata a <b>costo zero assoluto</b>:
                 <br><br>
-                • <b>🎙️ Trascrizione Audio a ZERO TOKEN:</b> La conversione da voce a testo (da Telegram o web) usa il motore <em>Faster-Whisper locale</em>. Non impiega gettoni/token a pagamento ed è gratuita al 100% (0,00€).
+                • <b>⚡ Tracciamento a Pulsanti & Chat (ZERO TOKEN):</b> La registrazione tramite pulsanti interattivi e chat su Telegram elimina file audio pesanti e trascrizioni. È istantanea e a costo zero (0,00€).
                 <br>
                 • <b>⚡ Analisi Partita Gratuita con Groq Cloud (Llama 3.3):</b> Il motore cloud predefinito sfrutta il piano gratuito di <b>Groq Cloud</b> con modelli open-source Llama 3.3. È gratuito al 100%, <b>non richiede carta di credito</b> e non genera alcun costo né per l'Amministratore né per i giocatori.
                 <br>
@@ -918,7 +933,7 @@ if st.session_state.auth_user is None:
                 • <b>🛡️ Nessun Costo Condiviso (L'Amministratore non paga token per nessuno):</b> Nessun conto o carta è condiviso. Se un giocatore desidera utilizzare modelli a pagamento OpenAI, deve inserire la propria chiave personale; nessun utente può consumare le risorse o i crediti di altri.
             </div>
             <div style="margin-top: 14px;">
-                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🎙️ Trascrizione Vocale = 0 Token</span>
+                <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">⚡ Pulsanti & Chat = 0 Token</span>
                 <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">⚡ Groq Cloud 100% Gratuito (No Carta)</span>
                 <span class="disclaimer-pill" style="color: #2ECC71; border-color: rgba(46, 204, 113, 0.35); background: rgba(46, 204, 113, 0.12);">🛡️ Zero Costi Condivisi</span>
             </div>
@@ -1159,6 +1174,21 @@ if "user_profile" not in st.session_state or st.session_state.user_profile.playe
         default_name=f"{current_user.first_name} {current_user.last_name}"
     )
 
+# Sincronizzazione automatica all'avvio con Supabase Cloud (se configurato e popolato)
+if "supabase_bag_synced" not in st.session_state or st.session_state.get("supabase_synced_user") != current_user.user_id:
+    st.session_state["supabase_bag_synced"] = True
+    st.session_state["supabase_synced_user"] = current_user.user_id
+    try:
+        remote_clubs, sb_err = load_golf_bag_from_supabase(bag_id="default")
+        if remote_clubs and len(remote_clubs) > 0:
+            parsed_clubs = clubs_json_to_club_details(remote_clubs)
+            if parsed_clubs:
+                st.session_state.user_profile.clubs_in_bag = parsed_clubs
+                # Sincronizza anche il SafeVault locale senza perdita dati
+                st.session_state.user_profile.save_for_user(current_user.user_id)
+    except Exception as e_sb_init:
+        pass
+
 # Auto-ripristino trasparente dell'ultima partita registrata nel database se non ancora in memoria
 if st.session_state.round_data is None:
     try:
@@ -1190,9 +1220,9 @@ with header_left:
 with header_info:
     with st.popover("💡 Info Consumi & Token", use_container_width=True):
         st.markdown("""
-            <h4 style="color:#2ECC71; margin-top:0;">🎙️ Trascrizione Vocale: ZERO TOKEN</h4>
+            <h4 style="color:#2ECC71; margin-top:0;">⚡ Tracciamento a Pulsanti & Chat: ZERO TOKEN</h4>
             <p style="font-size:0.88rem; line-height:1.5; color:#CBD5E1;">
-                La conversione della voce in testo (Speech-to-Text per note vocali su Telegram o caricate sul sito) usa il motore <b>Faster-Whisper locale</b> direttamente sul computer.
+                L'inserimento dei colpi con i pulsanti interattivi e la chat di Telegram non richiede file audio pesanti né trascrizione speech-to-text.
                 <br><b>Non consuma alcun token/credito OpenAI (Costo: 0,00€).</b>
             </p>
             <h4 style="color:#F1C40F; margin-top:12px;">⚡ Analisi Partita: 100% Gratuita (Groq Cloud)</h4>
@@ -1469,28 +1499,15 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
-    st.subheader("🎙️ Carica Note Vocali Partita")
-    uploaded_files = st.file_uploader(
-        "Seleziona file audio (.m4a, .mp3, .wav, .opus)",
-        type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr"],
-        accept_multiple_files=True
+    st.subheader("📝 Inserimento Rapido Testo Gara")
+    sb_quick_notes = st.text_area(
+        "Incolla resoconto o note buca per buca:",
+        placeholder="Es: Buca 1 par 4: Driver, ferro 7 in green, 2 putt...",
+        height=75,
+        key="sb_quick_notes"
     )
-
-    whisper_engine = st.radio(
-        "Motore Speech-to-Text:",
-        options=["Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)", "OpenAI Whisper Cloud (Usa tua API Key)", "Faster-Whisper Locale"],
-        index=0
-    )
-
-    whisper_model_local = "base"
-    if "Faster-Whisper" in whisper_engine:
-        whisper_model_local = st.selectbox(
-            "Modello Whisper Locale:",
-            options=["base", "small", "medium"],
-            index=0
-        )
-
-    process_btn = st.button("🚀 Analizza Partita con la Tua IA", type="primary", use_container_width=True, disabled=not uploaded_files)
+    if st.button("🚀 Elabora Testo Gara", key="sb_btn_process_text", type="primary", use_container_width=True, disabled=not (sb_quick_notes and sb_quick_notes.strip())):
+        execute_audio_round_pipeline([], additional_text=sb_quick_notes.strip())
 
     # ---------------------------------------------------------
     # TELEGRAM BOT LIVE IN CAMPO (Smart Pairing & Zero-Friction)
@@ -1589,7 +1606,7 @@ with st.sidebar:
                 <b>1. Collega lo smartphone in 2 secondi:</b><br>
                 Inquadra il QR Code con la fotocamera del tuo cellulare oppure clicca il pulsante blu su questo PC. Si aprirà Telegram con il bot <b>@{bot_username}</b>: premi semplicemente <b>[ AVVIA ]</b>. Il tuo profilo e la tua sacca da golf sono immediatamente sincronizzati!<br><br>
                 <b>2. Durante il gioco sul percorso:</b><br>
-                Sul telefono avrai il grande tasto <code>[ 📍 Calcola Distanza & Plays Like ]</code> per avere subito la distanza al green, il dislivello orografico e il bastone consigliato dalla tua sacca. Dopo il colpo puoi inviare una breve nota vocale (es. <i>"Ferro 7 dal fairway, finita a 3 metri dal green"</i>).<br><br>
+                Sul telefono avrai il grande tasto <code>[ 📍 Calcola Distanza & Plays Like ]</code> per avere subito la distanza al green, il dislivello orografico e il bastone consigliato dalla tua sacca. Per registrare il colpo premi i comodi <b>pulsanti interattivi</b> (bastone, lie, green, putt) oppure scrivi un breve messaggio di testo in chat.<br><br>
                 <b>3. Salvataggio 100% Automatico sul PC:</b><br>
                 Non devi esportare o caricare file a mano: il bot Telegram e questo sito condividono lo stesso database locale. I colpi e le metriche finiscono direttamente nel tuo profilo sul PC!
             </div>
@@ -1616,7 +1633,7 @@ def execute_audio_round_pipeline(
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        status_text.info("⚙️ Preparazione e caricamento note vocali e dati di testo...")
+        status_text.info("⚙️ Preparazione ed elaborazione dati di gara e colpi...")
         progress_bar.progress(15)
 
         for item in (files_or_paths or []):
@@ -1688,7 +1705,7 @@ def execute_audio_round_pipeline(
         has_text = bool(json_texts or (additional_text and additional_text.strip()))
 
         if not has_audio and not has_text:
-            st.error("⚠️ Nessun file audio o testo valido trovato per l'elaborazione.")
+            st.error("⚠️ Nessun dato o testo valido trovato per l'elaborazione.")
             return
 
         transcript_parts = []
@@ -1794,7 +1811,7 @@ def execute_audio_round_pipeline(
 
 def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> Tuple[bool, str]:
     """
-    Controlla e scarica note vocali recenti o colpi registrati su Telegram,
+    Controlla e sincronizza colpi registrati o messaggi recenti su Telegram,
     elaborando e salvando il round aggiornato.
     """
     token = tg_manager.get_token()
@@ -1802,7 +1819,7 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
     if not resolved_cid and (user_id == "strafatti_stefano_pirani" or "stefano" in str(user_id).lower()):
         resolved_cid = tg_manager.get_admin_chat_id()
 
-    # 1. Verifica aggiornamenti audio in arrivo su Telegram
+    # 1. Verifica aggiornamenti in arrivo su Telegram (messaggi di testo o eventuali registrazioni)
     if token:
         try:
             url = f"https://api.telegram.org/bot{token}/getUpdates"
@@ -1811,6 +1828,7 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
                 data = json.loads(resp.read().decode("utf-8"))
                 if data.get("ok"):
                     updates = data.get("result", [])
+                    text_lines = []
                     audio_msgs = []
                     max_u_id = 0
                     for u in updates:
@@ -1821,8 +1839,22 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
                         c_id = str(msg.get("chat", {}).get("id", ""))
                         if resolved_cid and c_id != resolved_cid:
                             continue
-                        if msg.get("voice") or msg.get("audio"):
+                        txt = msg.get("text", "")
+                        if txt and not txt.startswith("/start") and not txt.startswith("/help") and not txt.startswith("/status"):
+                            d_ts = msg.get("date")
+                            time_str = datetime.fromtimestamp(d_ts).strftime("%H:%M") if d_ts else ""
+                            text_lines.append(f"[{time_str}] {txt}" if time_str else txt)
+                        elif msg.get("voice") or msg.get("audio"):
                             audio_msgs.append(msg)
+
+                    if text_lines:
+                        if max_u_id > 0:
+                            try:
+                                urllib.request.urlopen(f"https://api.telegram.org/bot{token}/getUpdates?offset={max_u_id + 1}", timeout=5)
+                            except Exception:
+                                pass
+                        execute_audio_round_pipeline([], additional_text="\n".join(text_lines))
+                        return True, f"Sincronizzati ed elaborati con successo {len(text_lines)} messaggi di testo dalla chat Telegram!"
 
                     if audio_msgs:
                         downloaded = []
@@ -1851,7 +1883,7 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
 
                         if downloaded:
                             execute_audio_round_pipeline(downloaded)
-                            return True, f"Scaricati ed elaborati con successo {len(downloaded)} file vocali da Telegram!"
+                            return True, f"Scaricati ed elaborati con successo {len(downloaded)} registrazioni da Telegram!"
         except Exception:
             pass
 
@@ -1936,18 +1968,13 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
             except Exception as e_sync:
                 return False, f"Errore durante l'elaborazione dei colpi della sessione live: {e_sync}"
 
-
     return False, (
         f"🟢 Smartphone associato con successo a @{tg_manager.get_bot_username()} (Chat ID: `{resolved_cid}`)!\n\n"
-        "ℹ️ Al momento non sono presenti nuovi file audio in arrivo sui server Telegram (le note vocali restano sul server Telegram per 24h se non inviate di recente).\n\n"
-        "👉 **Cosa fare adesso per elaborare la gara di ieri:**\n"
-        "• **Se hai le note vocali salvate sul computer o telefono:** trascinale direttamente nel riquadro verde a fianco *(Opzione 2)* e premi **[ 🚀 TRASCRIVI ED ELABORA LA GARA ORA ]**!\n"
-        "• **Oppure inoltra/invia ora** gli audio della gara nella chat di **@VoiceCaddyGolf_bot** su Telegram, poi torna qui e riclicca questo pulsante!"
+        "ℹ️ Al momento non risultano nuovi colpi registrati o messaggi non elaborati in arrivo dal bot Telegram.\n\n"
+        "👉 **Cosa fare per registrare ed elaborare la gara:**\n"
+        "• **In campo su Telegram:** Usa i pratici pulsanti interattivi per segnare le buche (Tee, Bastone, Lie, Putt) oppure scrivi messaggi di testo nella chat di **@{tg_manager.get_bot_username()}**;\n"
+        "• **Sul PC:** Puoi anche incollare direttamente le note della gara o l'esportazione chat nel riquadro *Opzione 2* qui a fianco e premere **[ 🚀 ELABORA DATI DI GARA ORA ]**!"
     )
-
-
-if process_btn and uploaded_files:
-    execute_audio_round_pipeline(uploaded_files, whisper_engine=whisper_engine, whisper_model_local=whisper_model_local)
 
 
 # =========================================================
@@ -2090,7 +2117,7 @@ with nav_tab1:
         with sim_col_l:
             st.markdown(f"""
                 <div style="background:#0f172a; border-left:4px solid #10B981; border-radius:8px; padding:12px; margin-bottom:12px;">
-                    <span style="color:#34D399; font-weight:bold;">🎙️ Sequenza Vocale Telegram (Esempio Reale):</span><br>
+                    <span style="color:#34D399; font-weight:bold;">💬 Sequenza Colpi Telegram (Esempio Reale):</span><br>
                     <span style="color:#E2E8F0; font-size:0.88rem; font-style:italic;">
                         "Buca 1 a {sim_course_choice}: drive lungo in centro fairway a 220 metri, secondo colpo ferro 7 a 6 metri dalla bandiera, primo putt di avvicinamento a 40 centimetri e tap-in per il Par."
                     </span>
@@ -2221,7 +2248,7 @@ with nav_tab1:
         render_contact_and_inbox(current_user, inbox_mgr, key_suffix="home")
 
     # ---------------------------------------------------------
-    # HERO ACTION HUB: SCARICA ED ELABORA GARA DI IERI (TELEGRAM / AUDIO)
+    # HERO ACTION HUB: SINCRONIZZA ED ELABORA GARA (TELEGRAM / TESTO)
     # ---------------------------------------------------------
     if "show_sync_panel" not in st.session_state:
         st.session_state.show_sync_panel = True
@@ -2233,19 +2260,19 @@ with nav_tab1:
                         margin-bottom: 24px; box-shadow: 0 10px 30px rgba(46, 204, 113, 0.25);">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 14px;">
                     <div style="display:flex; align-items:center; gap: 12px;">
-                        <span style="font-size: 2rem;">📥</span>
+                        <span style="font-size: 2rem;">📲</span>
                         <div>
                             <span style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
-                                SCARICA & ELABORA LA GARA DI IERI / ALLENAMENTO
+                                SINCRONIZZA & ELABORA LA GARA DI IERI / ALLENAMENTO
                             </span>
                             <div style="font-size: 0.9rem; color: #A0AEC0; margin-top: 3px;">
-                                Trasferisci e processa le note vocali e i colpi da Telegram, oppure trascina qui i file audio registrati.
+                                Sincronizza i colpi registrati con i pulsanti interattivi o la chat del Bot Telegram, oppure incolla le note scritte ed esportazioni chat.
                             </div>
                         </div>
                     </div>
                     <span style="background: rgba(46, 204, 113, 0.2); border: 1px solid #2ECC71; color: #2ECC71;
                                  padding: 5px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
-                        ⚡ AZIONE RAPIDA 1-CLIC
+                        ⚡ 100% PULSANTI & CHAT • ZERO AUDIO
                     </span>
                 </div>
             </div>
@@ -2254,29 +2281,29 @@ with nav_tab1:
         col_sync_tg, col_sync_files = st.columns([1, 1], gap="large")
 
         with col_sync_tg:
-            st.markdown("""
-                <div style="background: #131d2a; border: 1px solid #38BDF8; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
-                    <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
-                        <span style="font-size: 1.3rem;">📲</span>
-                        <span style="font-weight: bold; font-size: 1.05rem; color: #38BDF8;">OPZIONE 1: Da Bot Telegram</span>
-                    </div>
-                    <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
-                        Se durante o dopo la gara hai inviato note vocali o registrato colpi al bot Telegram <b>@VoiceCaddyGolf_bot</b>, clicca il pulsante qui sotto per scaricarli e processarli subito.
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-
             linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
             if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
                 linked_cid = tg_manager.get_admin_chat_id()
             bot_uname = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+
+            st.markdown(f"""
+                <div style="background: #131d2a; border: 1px solid #38BDF8; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                    <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
+                        <span style="font-size: 1.3rem;">📲</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #38BDF8;">OPZIONE 1: Sincronizzazione Diretta da Bot Telegram</span>
+                    </div>
+                    <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
+                        Se durante o dopo la gara hai segnato i colpi con i <b>pulsanti interattivi</b> (bastone, lie, putt) o inviato messaggi in chat al bot Telegram <b>@{bot_uname}</b>, clicca il pulsante qui sotto per scaricarli e processarli subito.
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
 
             if linked_cid:
                 st.caption(f"🟢 Collegato: **@{bot_uname}** (Chat ID: `{linked_cid}`)")
             else:
                 st.caption(f"⚠️ Smartphone non ancora associato a @{bot_uname}")
 
-            if st.button("🔄 Scarica ed Elabora Ultimi Dati da Telegram", key="btn_sync_tg_hero", type="primary", use_container_width=True):
+            if st.button("🔄 Sincronizza ed Elabora Ultimi Dati da Telegram", key="btn_sync_tg_hero", type="primary", use_container_width=True):
                 with st.spinner("Connessione a Telegram e controllo aggiornamenti in corso..."):
                     ok_sync, msg_sync = sync_telegram_data_to_round(current_user.user_id, linked_cid)
                     if ok_sync:
@@ -2286,7 +2313,7 @@ with nav_tab1:
                         st.warning(msg_sync)
 
             deep_link_hero = f"https://t.me/{bot_uname}"
-            st.link_button("👉 Apri Chat con @VoiceCaddyGolf_bot su Telegram", deep_link_hero, use_container_width=True)
+            st.link_button(f"👉 Apri Chat con @{bot_uname} su Telegram", deep_link_hero, use_container_width=True)
 
             st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-weight: bold; color: #38BDF8; font-size: 0.88rem;'>☁️ Oppure Recupera Gara Archiviata in Cloud per Data:</div>", unsafe_allow_html=True)
 
@@ -2308,7 +2335,7 @@ with nav_tab1:
                     selected_date = st.selectbox(
                         "Data del Giro:",
                         options=date_options,
-                        format_func=lambda d: f"{d} ({next((x['total_count'] for x in archived_dates if x['round_date'] == d), 0)} note)",
+                        format_func=lambda d: f"{d} ({next((x['total_count'] for x in archived_dates if x['round_date'] == d), 0)} colpi/messaggi)",
                         key="sb_archive_date"
                     )
                 else:
@@ -2378,16 +2405,16 @@ with nav_tab1:
                                     additional_text=unified_transcript
                                 )
                             else:
-                                st.warning("Nessun contenuto testuale o vocale valido trovato per questa data.")
+                                st.warning("Nessun contenuto valido trovato per questa data.")
                         else:
-                            st.info(f"Nessun dato registrato in cloud per la data {selected_date}. Se hai salvato il file sul PC, usa l'Opzione 2 a fianco!")
+                            st.info(f"Nessun dato registrato in cloud per la data {selected_date}. Se hai note scritte, incollale nell'Opzione 2 a fianco!")
 
-            with st.expander("ℹ️ Come inviare gli audio di ieri tramite Telegram", expanded=False):
+            with st.expander("ℹ️ Come funziona il tracciamento su Telegram (Zero Audio)", expanded=False):
                 st.markdown(f"""
                     <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
-                        <b>1.</b> Apri Telegram sul cellulare o PC e cerca <b>@{bot_uname}</b>.<br>
-                        <b>2.</b> Inoltra o invia le note vocali della gara direttamente al bot.<br>
-                        <b>3.</b> Torna qui e premi <b>[ 🔄 Scarica ed Elabora Ultimi Dati da Telegram ]</b>: il sistema li trascriverà e calcolerà all'istante la scorecard e tutte le statistiche PGA!
+                        <b>1.</b> Apri Telegram sul cellulare e avvia la chat con <b>@{bot_uname}</b>.<br>
+                        <b>2.</b> Tocca <b>[ 🟢 Inizia Gara ]</b> e usa i pratici <b>pulsanti interattivi</b> per segnare bastoni, lie e putt a ogni buca, oppure scrivi brevi messaggi di testo.<br>
+                        <b>3.</b> Torna qui e premi <b>[ 🔄 Sincronizza ed Elabora Ultimi Dati da Telegram ]</b>: il sistema genererà all'istante scorecard ufficiale, lordo/netto e l'analisi del Maestro!
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -2395,54 +2422,44 @@ with nav_tab1:
             st.markdown("""
                 <div style="background: #112217; border: 1px solid #2ECC71; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
                     <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
-                        <span style="font-size: 1.3rem;">🎙️</span>
-                        <span style="font-weight: bold; font-size: 1.05rem; color: #2ECC71;">OPZIONE 2: Trascina o Carica File Audio</span>
+                        <span style="font-size: 1.3rem;">📝</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #2ECC71;">OPZIONE 2: Incolla Testo o Esportazione Chat Telegram</span>
                     </div>
                     <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
-                        Hai i file audio salvati sul PC o scaricati da Telegram? Selezionali o trascinali direttamente qui:
+                        Non usi la sincronizzazione diretta? Incolla qui il testo del giro o carica il file di esportazione Telegram (<code>result.json</code> o <code>messages.html</code>). Niente file audio pesanti!
                     </p>
                 </div>
             """, unsafe_allow_html=True)
 
-            hero_uploaded_files = st.file_uploader(
-                "File audio (.m4a, .mp3, .wav, .opus, .ogg) o esportazione Telegram (result.json, messages.html)",
-                type=["m4a", "mp3", "wav", "aac", "opus", "ogg", "3gp", "amr", "json", "html", "htm"],
-                accept_multiple_files=True,
-                key="hero_uploader_files_box"
-            )
-
             hero_text_notes = st.text_area(
-                "📝 Note o Messaggi di Testo della Gara (Opzionale):",
-                placeholder="Hai scritto alcune buche o colpi come messaggi di testo in chat? Incollali qui...",
-                help="Se durante il giro hai alternato vocali e messaggi di testo scritti, incolla qui il testo. Verrà unito in automatico alle note vocali per un'analisi completa a 18 buche!",
-                height=90,
-                key="hero_text_notes_area"
+                "📝 Note, Colpi o Conversazione Testuale della Gara:",
+                placeholder="Incolla qui il testo della chat o le note buca per buca...\nEs: Buca 1 par 4: Driver in fairway, ferro 7 in green a 4m, 2 putt par.\nBuca 2 par 3: ferro 9 a destra del green, approccio con 56° e 1 putt bogey...",
+                height=110,
+                key="hero_text_notes_area",
+                help="Puoi incollare l'intera conversazione Telegram o qualsiasi testo con l'elenco dei colpi giocati."
             )
 
-            hero_whisper = st.radio(
-                "Motore Whisper Trascrizione:",
-                options=["Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)", "OpenAI Whisper Cloud (Usa tua API Key)", "Faster-Whisper Locale"],
-                index=0,
-                key="hero_whisper_choice",
-                horizontal=False
+            hero_uploaded_files = st.file_uploader(
+                "📁 Oppure carica esportazione chat Telegram (.json, .html):",
+                type=["json", "html", "htm"],
+                accept_multiple_files=True,
+                key="hero_uploader_files_box",
+                help="File esportato da Telegram Desktop (result.json o messages.html) senza file multimediali pesanti."
             )
 
             can_process = bool(hero_uploaded_files or (hero_text_notes and hero_text_notes.strip()))
 
-            if st.button("🚀 TRASCRIVI ED ELABORA LA GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not can_process):
+            if st.button("🚀 ELABORA DATI DI GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not can_process):
                 execute_audio_round_pipeline(
                     hero_uploaded_files or [],
-                    whisper_engine=hero_whisper,
-                    whisper_model_local="base",
                     additional_text=hero_text_notes.strip() if hero_text_notes else ""
                 )
 
-            with st.expander("💡 Come gestire audio + messaggi scritti o esportazione Telegram", expanded=False):
-                st.markdown("""
+            with st.expander("💡 Come esportare la chat da Telegram Desktop (Opzionale)", expanded=False):
+                st.markdown(f"""
                     <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
-                        <b>• Se hai vocali e messaggi di testo:</b> trascina i file vocali nel riquadro sopra e fai <i>Copia & Incolla</i> dei messaggi di testo nel box «Note o Messaggi di Testo». Il sistema unirà tutto in automatico!<br>
-                        <b>• Se hai esportato la chat da Telegram Desktop:</b> puoi trascinare direttamente il file <code>result.json</code> nel riquadro: Voice Caddy estrarrà i tuoi messaggi e li elaborerà all'istante!<br>
-                        <b>• Per salvare i singoli vocali da Telegram:</b> tasto destro sul vocale ➔ «Salva con nome...» ➔ trascinalo qui.
+                        <b>• Per esportare la chat da Telegram Desktop:</b> apri Telegram sul PC, apri la chat con <b>@{bot_uname}</b>, clicca sui tre puntini in alto a destra ➔ <i>«Esporta cronologia chat»</i> ➔ togli la spunta a foto/audio/video e seleziona formato <b>JSON</b>.<br>
+                        <b>• Trascina il file result.json</b> nel riquadro sopra oppure fai <i>Copia & Incolla</i> del testo nel riquadro: Voice Caddy estrarrà tutti i colpi ed elaborerà l'intero giro in pochi secondi!
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -2471,7 +2488,7 @@ with nav_tab1:
 
         with col_sync_btn:
             lbl_toggle = "🔼 Nascondi Pannello Sync" if st.session_state.show_sync_panel else "📥 Sincronizza Gara di Ieri"
-            if st.button(lbl_toggle, key="toggle_sync_btn_hdr", use_container_width=True, help="Mostra o nasconde il pannello di sincronizzazione con Telegram e caricamento audio"):
+            if st.button(lbl_toggle, key="toggle_sync_btn_hdr", use_container_width=True, help="Mostra o nasconde il pannello di sincronizzazione con Telegram ed elaborazione dati di gara"):
                 st.session_state.show_sync_panel = not st.session_state.show_sync_panel
                 st.rerun()
 
@@ -2579,7 +2596,7 @@ with nav_tab1:
             "📋 Scorecard Ufficiale",
             "🎯 Mappa Vettoriale & Target Landing",
             "🏋️ Piano di Allenamento Mirato",
-            "🎙️ Trascrizione Vocale"
+            "📝 Registro Colpi & Chat"
         ])
 
         with sub_tab_overview:
@@ -2746,11 +2763,11 @@ with nav_tab1:
                 """, unsafe_allow_html=True)
 
         with sub_tab_transcript:
-            st.markdown("### 🎙️ Trascrizione Integrale Note Vocali")
-            st.text_area("Testo completo trascritto:", value=st.session_state.transcript or "Nessuna trascrizione disponibile.", height=250)
+            st.markdown("### 📝 Cronologia & Registro Colpi / Messaggi di Gara")
+            st.text_area("Dati di testo e sequenza colpi elaborati:", value=st.session_state.transcript or "Nessun registro disponibile.", height=250)
 
     else:
-        st.info("🏌️‍♂️ Carica una nota vocale dal pannello laterale oppure clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
+        st.info("🏌️‍♂️ Sincronizza i dati dal Bot Telegram, incolla il resoconto testuale del giro o clicca su 'Carica Giro Demo PGA' per iniziare l'analisi.")
 
 
 
@@ -3121,36 +3138,40 @@ with nav_tab2:
         """, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("### 🎙️ In alternativa: Importa Profilo da Nota Vocale")
-        setup_audio_file = st.file_uploader("Carica Audio Presentazione Sacca", type=["m4a", "mp3", "wav", "opus", "aac"])
-        if st.button("🪄 Estrai Profilo da Audio", type="primary", disabled=not setup_audio_file):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{setup_audio_file.name}") as tmp_s:
-                tmp_s.write(setup_audio_file.read())
-                tmp_s_path = tmp_s.name
-
+        st.markdown("### 📝 In alternativa: Descrivi la tua Sacca in Linguaggio Naturale")
+        setup_text_input = st.text_area(
+            "Incolla o descrivi i tuoi bastoni, handicap e distanze:",
+            placeholder="Es: Sono handicap 22, gioco Driver Callaway (210m), Legno 3 (185m), Ibrido 4 (170m), Ferri dal 5 al PW...",
+            height=90,
+            key="prof_setup_text_input"
+        )
+        if st.button("🪄 Estrai e Configura Profilo da Testo", type="primary", disabled=not (setup_text_input and setup_text_input.strip())):
             try:
-                audio_eng = VoiceCaddyAudioEngine()
-                setup_transcript, _ = audio_eng.transcribe(tmp_s_path, engine_mode="local")
-                parsed_profile = parse_user_setup_transcript(setup_transcript, ai_config=user_ai)
+                parsed_profile = parse_user_setup_transcript(setup_text_input.strip(), ai_config=user_ai)
                 parsed_profile.save_for_user(current_user.user_id)
                 st.session_state.user_profile = parsed_profile
                 st.success(f"✅ Profilo estratto e salvato nel tuo account! Handicap: {parsed_profile.handicap}")
                 st.rerun()
             except Exception as e:
                 st.error(f"Errore estrazione profilo: {e}")
-            finally:
-                if os.path.exists(tmp_s_path):
-                    try:
-                        os.remove(tmp_s_path)
-                    except OSError:
-                        pass
 
     with col_prof_r:
         st.markdown("### 🎒 Composizione Sacca Bastoni Personale")
         st.caption("⚡ I bastoni salvati si allineano automaticamente in base alla distanza: dal Driver più lungo fino al Putter.")
 
+        # Diagnostica e badge di stato Supabase Cloud
+        sb_health = check_supabase_health()
+        if sb_health["status"] == "connected":
+            st.success("🟢 **Supabase Cloud:** Connesso e sincronizzato. I tuoi bastoni sono salvati online in modo permanente.")
+        elif sb_health["status"] == "not_configured":
+            st.info("ℹ️ **Supabase Cloud:** Non ancora configurato (salvataggio attivo nel SafeVault locale). Per abilitare la persistenza online permanente, configura `SUPABASE_URL` e `SUPABASE_KEY` nei secrets.")
+        else:
+            st.warning(f"⚠️ **Supabase Cloud:** Non raggiungibile ({sb_health.get('details', '')}). I dati vengono comunque salvati nella memoria protetta locale.")
+
         if "bag_save_success" in st.session_state:
             st.success(st.session_state.pop("bag_save_success"))
+        if "bag_save_warning" in st.session_state:
+            st.warning(st.session_state.pop("bag_save_warning"))
 
         sorted_bag = sort_clubs_by_distance(prof.clubs_in_bag)
         clubs_data = []
@@ -3206,32 +3227,63 @@ with nav_tab2:
             st.session_state.user_profile.clubs_in_bag = updated_clubs
             st.session_state.user_profile.caddy_tone = m_caddy_tone
 
+            # 1. Salvataggio locale SafeVault (SQLite + File JSON)
             st.session_state.user_profile.save_for_user(current_user.user_id)
-            st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati e riordinati con successo dal Driver al Putter!"
+
+            # 2. Salvataggio online persistente su Supabase Cloud (Upsert idempotente)
+            sb_saved, sb_msg = save_golf_bag_to_supabase(updated_clubs, bag_id="default")
+
+            if sb_saved:
+                st.session_state["bag_save_success"] = f"✅ Sacca salvata correttamente su Supabase Cloud e nel profilo locale di {current_user.first_name}!"
+            else:
+                if sb_health["status"] == "not_configured":
+                    st.session_state["bag_save_success"] = f"✅ Profilo e Sacca di {current_user.first_name} salvati localmente con successo (Supabase Cloud non configurato)."
+                else:
+                    st.session_state["bag_save_warning"] = f"⚠️ Sacca salvata nel profilo locale protetto, ma Supabase Cloud ha restituito: {sb_msg}"
             st.rerun()
 
-        col_sb1, col_sb2 = st.columns([1, 1])
-        with col_sb1:
-            st.download_button(
-                "⬇️ Scarica la mia Sacca (File JSON)",
-                data=prof.model_dump_json(indent=2),
-                file_name=f"sacca_{current_user.user_id}.json",
-                mime="application/json",
-                use_container_width=True,
-                help="Scarica una copia istantanea della tua sacca sul tuo dispositivo per conservarla sempre al sicuro da qualsiasi aggiornamento cloud."
-            )
-        with col_sb2:
-            with st.popover("📥 Ricarica da File JSON", use_container_width=True):
-                st.caption("Se la tua sacca si è resettata dopo un aggiornamento cloud, ricarica qui il tuo file JSON per ripristinarla in 1 secondo:")
-                uploaded_bag_json = st.file_uploader("Seleziona file JSON sacca:", type=["json"], key="restore_bag_json_pop")
+        col_sb_status, col_sb_action = st.columns([3, 1.2])
+        with col_sb_status:
+            st.caption("🔒 **Cloud Sync:** I bastoni si salvano e si allineano automaticamente su Supabase Cloud ad ogni salvataggio.")
+        with col_sb_action:
+            if st.button("☁️ Sincronizza da Cloud", use_container_width=True, help="Ricarica manualmente i bastoni salvati su Supabase Cloud"):
+                rem_clubs, rem_err = load_golf_bag_from_supabase(bag_id="default")
+                if rem_clubs and len(rem_clubs) > 0:
+                    parsed = clubs_json_to_club_details(rem_clubs)
+                    if parsed:
+                        st.session_state.user_profile.clubs_in_bag = parsed
+                        st.session_state.user_profile.save_for_user(current_user.user_id)
+                        st.session_state["bag_save_success"] = "✅ Sacca ricaricata con successo da Supabase Cloud!"
+                        st.rerun()
+                elif rem_clubs == []:
+                    st.session_state["bag_save_warning"] = "ℹ️ Nessuna sacca salvata su Supabase (la tabella cloud è attualmente vuota)."
+                    st.rerun()
+                else:
+                    st.session_state["bag_save_warning"] = f"⚠️ Errore caricamento da Supabase: {rem_err}"
+                    st.rerun()
+
+        with st.expander("🛠️ Backup locale e strumenti di emergenza (opzionale)", expanded=False):
+            st.caption("Usa questi strumenti solo se desideri un backup manuale del file JSON sul tuo dispositivo:")
+            b_col1, b_col2 = st.columns(2)
+            with b_col1:
+                st.download_button(
+                    "⬇️ Scarica File JSON Sacca",
+                    data=prof.model_dump_json(indent=2),
+                    file_name=f"sacca_{current_user.user_id}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            with b_col2:
+                uploaded_bag_json = st.file_uploader("Ripristina da file JSON locale:", type=["json"], key="restore_bag_json_clean")
                 if uploaded_bag_json is not None:
-                    if st.button("🚀 Ripristina Subito", type="primary", use_container_width=True, key="btn_apply_uploaded_bag"):
+                    if st.button("🚀 Ripristina da JSON", type="primary", use_container_width=True, key="btn_apply_uploaded_bag_clean"):
                         try:
                             raw_data = json.loads(uploaded_bag_json.read().decode("utf-8"))
                             restored_prof = UserProfile.model_validate(raw_data)
                             restored_prof.save_for_user(current_user.user_id)
                             st.session_state.user_profile = restored_prof
-                            st.success("✅ Sacca ripristinata con successo!")
+                            save_golf_bag_to_supabase(restored_prof.clubs_in_bag, bag_id="default")
+                            st.session_state["bag_save_success"] = "✅ Sacca ripristinata e sincronizzata su Supabase Cloud!"
                             st.rerun()
                         except Exception as e_rst:
                             st.error(f"Errore lettura file JSON: {e_rst}")
@@ -3374,8 +3426,25 @@ with nav_tab3:
     filter_user_id = None if show_all_club else current_user.user_id
     rounds_list = db.get_all_rounds(user_id=filter_user_id)
 
+    # Quota Cloud e Persistenza Partite Supabase
+    cloud_count = get_user_rounds_cloud_count(current_user.user_id)
+    quota_col1, quota_col2 = st.columns([3.5, 1.2])
+    with quota_col1:
+        st.caption(f"☁️ **Supabase Cloud Sync:** {cloud_count} / {MAX_CLOUD_ROUNDS_PER_USER} partite sincronizzate online per il tuo account. *(Oltre la quota di 100 partite nel cloud, tutti i tuoi giri rimangono archiviati e protetti illimitatamente nella memoria locale)*.")
+    with quota_col2:
+        if st.button("🔄 Sincronizza Cloud", use_container_width=True, help="Sincronizza le partite con Supabase Cloud"):
+            n_sync, n_tot = sync_all_local_rounds_to_supabase(db, user_id=current_user.user_id)
+            if n_sync > 0:
+                st.session_state["hist_sync_msg"] = f"✅ Sincronizzate {n_sync} partite su Supabase Cloud!"
+            else:
+                st.session_state["hist_sync_msg"] = "ℹ️ Tutte le partite locali sono già allineate con Supabase Cloud."
+            st.rerun()
+
+    if "hist_sync_msg" in st.session_state:
+        st.info(st.session_state.pop("hist_sync_msg"))
+
     if not rounds_list:
-        st.info("Nessuna partita ancora registrata per questo account. Carica una nota vocale o clicca su 'Carica Giro Demo PGA'!")
+        st.info("Nessuna partita ancora registrata per questo account. Sincronizza i dati dal Bot Telegram, inserisci le note di gara o clicca su 'Carica Giro Demo PGA'!")
     else:
         hist_stats = db.get_historical_stats(user_id=filter_user_id)
 
