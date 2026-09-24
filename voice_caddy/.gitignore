@@ -16,6 +16,8 @@ data/*
 !data/users.json
 !data/telegram_config.json
 !data/telegram_users.json
+!data/coordinate_campi.xlsx
+!data/tactical_courses.json
 !data/profiles/
 !data/profiles/*.json
 !data/audio_archive/

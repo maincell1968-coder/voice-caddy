@@ -65,6 +65,8 @@ from golf_strategy_ai import (
     render_view_b_benchmark_html,
     render_view_c_green_radar_html
 )
+from core.tactical_course_manager import tactical_course_manager, TacticalHole
+from golf_strategy_ai.mapping.tactical_corridor_3d import render_tactical_corridor_html, render_green_spectrum_html
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
@@ -2957,35 +2959,106 @@ with nav_pin_gps:
                         </div>
                     """, unsafe_allow_html=True)
 
-                # Mappa Tattica Satellitare Esri HD per la buca selezionata
-                geojson_p = PROJECT_ROOT / "golf_strategy_ai" / "data" / f"conero_hole{selected_h_num}.geojson"
-                hole_geom = None
-                if geojson_p.exists():
-                    try:
-                        hole_geom = load_hole_geometry_from_geojson(geojson_p)
-                    except Exception:
-                        hole_geom = None
-
-                if not hole_geom and h_coords:
-                    try:
-                        hole_geom = HoleGeometry(
-                            hole_number=selected_h_num,
-                            par=h_info.par,
-                            length_m=float(h_info.distance_meters),
-                            stroke_index=int(h_info.handicap_index or 1),
-                            tee=GeoPoint(lat=h_coords.tee_lat, lon=h_coords.tee_lon, alt_m=h_coords.tee_altitude),
-                            green_center=GeoPoint(lat=h_coords.target_lat, lon=h_coords.target_lon, alt_m=h_coords.target_altitude)
+                # -------------------------------------------------------------
+                # CORRIDOIO TATTICO 3D (PIANO INCLINATO) & SPETTRO RADAR GREEN
+                # -------------------------------------------------------------
+                tactical_h = tactical_course_manager.get_tactical_hole(active_course.course_id, selected_h_num)
+                if not tactical_h:
+                    # Fallback generativo se campo personalizzato non in Excel
+                    t_pt = (h_coords.tee_lat, h_coords.tee_lon) if h_coords else None
+                    g_pt = (h_coords.target_lat, h_coords.target_lon) if h_coords else None
+                    nom_d = float(h_info.distance_meters or 300.0)
+                    landing_pt = None
+                    if h_info.par >= 4 and t_pt and g_pt:
+                        landing_pt = (
+                            t_pt[0] + (g_pt[0] - t_pt[0]) * 0.60,
+                            t_pt[1] + (g_pt[1] - t_pt[1]) * 0.60
                         )
-                    except Exception:
-                        hole_geom = None
+                    tactical_h = TacticalHole(
+                        hole_number=selected_h_num,
+                        par=h_info.par,
+                        hcp=h_info.handicap_index or selected_h_num,
+                        dist_gialli=nom_d,
+                        tee_gialli=t_pt,
+                        green_center=g_pt,
+                        landing_1=landing_pt,
+                        fairway_width=35.0,
+                        green_diameter=50.0
+                    )
 
-                if hole_geom:
-                    st.markdown("#### 🛰️ Mappa Tattica Satellitare (Tour Esri HD)")
-                    user_hcp = getattr(st.session_state.user_profile, "handicap", 18.0)
-                    cat = estimate_category_from_handicap(user_hcp)
-                    strategy = analyze_hole_strategy(hole_geom, cat, course_id=active_course.course_id if active_course else "course")
-                    html_code = render_hole_map_html(hole_geom, strategy=strategy, height="360px")
-                    components.html(html_code, height=380)
+                # Recupera i colpi registrati per la buca dal giro attivo (se presenti)
+                current_hole_shots = []
+                if hasattr(st.session_state, "round_data") and st.session_state.round_data:
+                    for rh in getattr(st.session_state.round_data, "holes", []):
+                        if rh.hole_number == selected_h_num:
+                            current_hole_shots = rh.shots
+                            break
+
+                st.markdown("---")
+                st.markdown("#### 📐 Corridoio Tattico 3D & Dispersione Colpi")
+                st.caption("Piano inclinato 3D con Playing Line reale, Landing Area (±20m) e tracciamento colpi registrati nei colori di gara.")
+
+                # Dialog Modali per ingrandimento HD
+                if hasattr(st, "dialog"):
+                    @st.dialog(f"🛰️ Corridoio Tattico 3D — Buca {tactical_h.hole_number} ({active_course.name})", width="large")
+                    def show_expanded_corridor_dialog():
+                        st.markdown(f"### ⛳ {active_course.name} — Buca {tactical_h.hole_number} (Par {tactical_h.par} — {int(tactical_h.get_nominal_length('gialli'))}m)")
+                        st.caption(f"Visualizzazione 3D ad alta definizione con pendenza orografica, corridoio fairway ({tactical_h.fairway_width}m), Playing Line e fascia orizzontale di atterraggio (±20m).")
+                        html_exp = render_tactical_corridor_html(tactical_h, shots=current_hole_shots, tee_color="gialli", is_expanded=True)
+                        components.html(html_exp, height=640)
+                        
+                        if current_hole_shots and len(current_hole_shots) > 0:
+                            st.markdown("##### 📊 Telemetria Balistica dei Colpi Registrati")
+                            prev_c = 0.0
+                            t_cols = st.columns([1, 2, 2, 2, 3, 2])
+                            t_cols[0].markdown("**#**")
+                            t_cols[1].markdown("**Bastone**")
+                            t_cols[2].markdown("**Distanza**")
+                            t_cols[3].markdown("**Terreno (Lie)**")
+                            t_cols[4].markdown("**Deviazione Linea**")
+                            t_cols[5].markdown("**Esito**")
+                            for s in current_hole_shots:
+                                ps = tactical_course_manager.project_shot_along_corridor(tactical_h, s, prev_cumulative_dist=prev_c)
+                                r_cols = st.columns([1, 2, 2, 2, 3, 2])
+                                r_cols[0].markdown(f"**{ps['shot_index']}**")
+                                r_cols[1].markdown(f"{ps['club']}")
+                                r_cols[2].markdown(f"{ps['dist_m']}m")
+                                r_cols[3].markdown(f"<span style='color:{ps['color']}; font-weight:bold;'>{ps['lie'].upper()}</span>", unsafe_allow_html=True)
+                                s_sign = '+' if ps['lateral_offset_m'] >= 0 else ''
+                                r_cols[4].markdown(f"**{s_sign}{ps['lateral_offset_m']}m** {'(In asse)' if abs(ps['lateral_offset_m']) <= 5 else ('(A destra)' if ps['lateral_offset_m'] > 0 else '(A sinistra)')}")
+                                r_cols[5].markdown(f"🎯 {'Target Landing' if ps['in_landing_zone'] else ('Green' if ps['is_on_green'] else ps['result'])}")
+                                prev_c = ps['cum_dist_m']
+
+                    @st.dialog(f"🎯 Spettro Radar Balistico — Colpo al Green Buca {tactical_h.hole_number}", width="large")
+                    def show_expanded_spectrum_dialog():
+                        st.markdown(f"### 🎯 Colpo al Green — Buca {tactical_h.hole_number} ({active_course.name})")
+                        st.caption("Spettro balistico circolare del green (~50m diametro) con coordinate di prossimità alla bandiera e anelli metrici concentrici.")
+                        html_spec = render_green_spectrum_html(tactical_h, shots=current_hole_shots, tee_color="gialli", is_expanded=True)
+                        components.html(html_spec, height=620)
+
+                # Pulsanti di Ingrandimento Pop-up
+                col_btn_pop1, col_btn_pop2 = st.columns(2)
+                with col_btn_pop1:
+                    if st.button("🔍 Ingrandisci Corridoio 3D (Pop-up)", key=f"btn_pop_corr_{selected_h_num}", use_container_width=True):
+                        if hasattr(st, "dialog"):
+                            show_expanded_corridor_dialog()
+                        else:
+                            st.session_state[f"show_corr_exp_{selected_h_num}"] = True
+                with col_btn_pop2:
+                    if st.button("🎯 Colpo al Green (Spettro)", key=f"btn_pop_spec_{selected_h_num}", use_container_width=True):
+                        if hasattr(st, "dialog"):
+                            show_expanded_spectrum_dialog()
+                        else:
+                            st.session_state[f"show_spec_exp_{selected_h_num}"] = True
+
+                # Schede di visualizzazione in pagina (per visione rapida e comoda)
+                tab_corridor, tab_radar_green = st.tabs(["📐 Corridoio 3D Fairway", "🎯 Colpo al Green (Radar Spettro)"])
+                with tab_corridor:
+                    html_view = render_tactical_corridor_html(tactical_h, shots=current_hole_shots, tee_color="gialli", is_expanded=False)
+                    components.html(html_view, height=430)
+                with tab_radar_green:
+                    html_radar = render_green_spectrum_html(tactical_h, shots=current_hole_shots, tee_color="gialli", is_expanded=False)
+                    components.html(html_radar, height=430)
 
     with col_pin_r:
         st.markdown("### 🧮 Calcolatore Balistico Plays Like Distance")

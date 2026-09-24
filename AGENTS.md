@@ -6,6 +6,7 @@
 2. `voice_caddy/data/profiles/*.json` (profili giocatore, handicap, sacca bastoni, marche, flessibilità shaft, distanze carry).
 3. `voice_caddy/data/users.json` (account utenti, ruoli, configurazioni IA).
 4. `voice_caddy/data/telegram_config.json` e `telegram_users.json` (accoppiamento bot Telegram).
+5. `voice_caddy/data/coordinate_campi.xlsx` e `tactical_courses.json` (database coordinate GPS buche, tee, larghezze fairway, landing areas e centro green).
 
 ## 🧪 ISOLAMENTO DEI TEST AUTOMATIZZATI
 Qualsiasi test automatizzato deve obbligatoriamente utilizzare directory temporanee (`tempfile`) o database in memoria (`:memory:`), senza mai puntare ai file operativi in produzione.

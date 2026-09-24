@@ -1,0 +1,1980 @@
+{
+  "conero_golf_club": {
+    "course_id": "conero_golf_club",
+    "name": "Conero Golf Club",
+    "holes_count": 18,
+    "holes": {
+      "1": {
+        "hole_number": 1,
+        "par": 4,
+        "hcp": 5,
+        "dist_bianchi": 342.0,
+        "dist_gialli": 318.0,
+        "dist_rossi": 284.0,
+        "tee_bianchi": [
+          43.511717,
+          13.590219
+        ],
+        "tee_gialli": [
+          43.511498,
+          13.59035
+        ],
+        "tee_rossi": [
+          43.511195,
+          13.590467
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.509635,
+          13.590245
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.508965,
+          13.589385
+        ],
+        "green_diameter": 50.0
+      },
+      "2": {
+        "hole_number": 2,
+        "par": 3,
+        "hcp": 17,
+        "dist_bianchi": 150.0,
+        "dist_gialli": 134.0,
+        "dist_rossi": 119.0,
+        "tee_bianchi": [
+          43.508667,
+          13.590205
+        ],
+        "tee_gialli": [
+          43.508643,
+          13.590097
+        ],
+        "tee_rossi": [
+          43.508487,
+          13.589817
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.508205,
+          13.588398
+        ],
+        "green_diameter": 50.0
+      },
+      "3": {
+        "hole_number": 3,
+        "par": 4,
+        "hcp": 3,
+        "dist_bianchi": 415.0,
+        "dist_gialli": 402.0,
+        "dist_rossi": 371.0,
+        "tee_bianchi": [
+          43.507881,
+          13.587753
+        ],
+        "tee_gialli": [
+          43.507992,
+          13.587519
+        ],
+        "tee_rossi": [
+          43.507847,
+          13.587224
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.507806,
+          13.584604
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.507812,
+          13.582728
+        ],
+        "green_diameter": 50.0
+      },
+      "4": {
+        "hole_number": 4,
+        "par": 5,
+        "hcp": 15,
+        "dist_bianchi": 440.0,
+        "dist_gialli": 433.0,
+        "dist_rossi": 389.0,
+        "tee_bianchi": [
+          43.507756,
+          13.582108
+        ],
+        "tee_gialli": [
+          43.50785,
+          13.582113
+        ],
+        "tee_rossi": [
+          43.508242,
+          13.582178
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.509717,
+          13.58204
+        ],
+        "landing_2": [
+          43.511398,
+          13.581691
+        ],
+        "green_center": [
+          43.511696,
+          13.581725
+        ],
+        "green_diameter": 50.0
+      },
+      "5": {
+        "hole_number": 5,
+        "par": 4,
+        "hcp": 9,
+        "dist_bianchi": 299.0,
+        "dist_gialli": 292.0,
+        "dist_rossi": 259.0,
+        "tee_bianchi": [
+          43.5121,
+          13.582399
+        ],
+        "tee_gialli": [
+          43.512024,
+          13.582436
+        ],
+        "tee_rossi": [
+          43.511666,
+          13.582455
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.510428,
+          13.58314
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.509547,
+          13.583656
+        ],
+        "green_diameter": 50.0
+      },
+      "6": {
+        "hole_number": 6,
+        "par": 3,
+        "hcp": 13,
+        "dist_bianchi": 139.0,
+        "dist_gialli": 131.0,
+        "dist_rossi": 118.0,
+        "tee_bianchi": [
+          43.509658,
+          13.582932
+        ],
+        "tee_gialli": [
+          43.5096,
+          13.582964
+        ],
+        "tee_rossi": [
+          43.50946,
+          13.583014
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": "lago",
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.508493,
+          13.583534
+        ],
+        "green_diameter": 50.0
+      },
+      "7": {
+        "hole_number": 7,
+        "par": 4,
+        "hcp": 7,
+        "dist_bianchi": 320.0,
+        "dist_gialli": 315.0,
+        "dist_rossi": 285.0,
+        "tee_bianchi": [
+          43.508139,
+          13.582631
+        ],
+        "tee_gialli": [
+          43.508143,
+          13.582724
+        ],
+        "tee_rossi": [
+          43.508113,
+          13.583128
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.508249,
+          13.585067
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.508412,
+          13.586552
+        ],
+        "green_diameter": 50.0
+      },
+      "8": {
+        "hole_number": 8,
+        "par": 4,
+        "hcp": 11,
+        "dist_bianchi": 343.0,
+        "dist_gialli": 333.0,
+        "dist_rossi": 309.0,
+        "tee_bianchi": [
+          43.508707,
+          13.587542
+        ],
+        "tee_gialli": [
+          43.5087,
+          13.587434
+        ],
+        "tee_rossi": [
+          43.508743,
+          13.587127
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.509084,
+          13.584793
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.509992,
+          13.584501
+        ],
+        "green_diameter": 50.0
+      },
+      "9": {
+        "hole_number": 9,
+        "par": 4,
+        "hcp": 1,
+        "dist_bianchi": 390.0,
+        "dist_gialli": 362.0,
+        "dist_rossi": 317.0,
+        "tee_bianchi": [
+          43.510558,
+          13.58553
+        ],
+        "tee_gialli": [
+          43.510556,
+          13.585656
+        ],
+        "tee_rossi": [
+          43.51055,
+          13.586127
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.510169,
+          13.587814
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.511241,
+          13.589291
+        ],
+        "green_diameter": 50.0
+      },
+      "10": {
+        "hole_number": 10,
+        "par": 4,
+        "hcp": 10,
+        "dist_bianchi": 334.0,
+        "dist_gialli": 327.0,
+        "dist_rossi": 297.0,
+        "tee_bianchi": [
+          43.512651,
+          13.590031
+        ],
+        "tee_gialli": [
+          43.512659,
+          13.589941
+        ],
+        "tee_rossi": [
+          43.512788,
+          13.589553
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.512821,
+          13.587478
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.513813,
+          13.586978
+        ],
+        "green_diameter": 50.0
+      },
+      "11": {
+        "hole_number": 11,
+        "par": 4,
+        "hcp": 6,
+        "dist_bianchi": 320.0,
+        "dist_gialli": 307.0,
+        "dist_rossi": 272.0,
+        "tee_bianchi": [
+          43.513529,
+          13.586489
+        ],
+        "tee_gialli": [
+          43.513653,
+          13.58652
+        ],
+        "tee_rossi": [
+          43.514013,
+          13.586421
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.515159,
+          13.587026
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.515355,
+          13.588503
+        ],
+        "green_diameter": 50.0
+      },
+      "12": {
+        "hole_number": 12,
+        "par": 5,
+        "hcp": 18,
+        "dist_bianchi": 487.0,
+        "dist_gialli": 477.0,
+        "dist_rossi": 433.0,
+        "tee_bianchi": [
+          43.515707,
+          13.588868
+        ],
+        "tee_gialli": [
+          43.51575,
+          13.588766
+        ],
+        "tee_rossi": [
+          43.515808,
+          13.588184
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.516047,
+          13.586234
+        ],
+        "landing_2": [
+          43.515154,
+          13.583645
+        ],
+        "green_center": [
+          43.515011,
+          13.58323
+        ],
+        "green_diameter": 50.0
+      },
+      "13": {
+        "hole_number": 13,
+        "par": 3,
+        "hcp": 14,
+        "dist_bianchi": 196.0,
+        "dist_gialli": 168.0,
+        "dist_rossi": 149.0,
+        "tee_bianchi": [
+          43.514328,
+          13.583717
+        ],
+        "tee_gialli": [
+          43.514112,
+          13.583904
+        ],
+        "tee_rossi": [
+          43.513914,
+          13.583863
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.512754,
+          13.58478
+        ],
+        "green_diameter": 50.0
+      },
+      "14": {
+        "hole_number": 14,
+        "par": 4,
+        "hcp": 12,
+        "dist_bianchi": 294.0,
+        "dist_gialli": 287.0,
+        "dist_rossi": 249.0,
+        "tee_bianchi": [
+          43.512791,
+          13.584206
+        ],
+        "tee_gialli": [
+          43.512699,
+          13.584187
+        ],
+        "tee_rossi": [
+          43.512367,
+          13.584021
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.511,
+          13.583794
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.51031,
+          13.584326
+        ],
+        "green_diameter": 50.0
+      },
+      "15": {
+        "hole_number": 15,
+        "par": 5,
+        "hcp": 4,
+        "dist_bianchi": 521.0,
+        "dist_gialli": 500.0,
+        "dist_rossi": 455.0,
+        "tee_bianchi": [
+          43.51051,
+          13.584946
+        ],
+        "tee_gialli": [
+          43.510587,
+          13.584959
+        ],
+        "tee_rossi": [
+          43.510941,
+          13.585071
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.512636,
+          13.585327
+        ],
+        "landing_2": [
+          43.513863,
+          13.584756
+        ],
+        "green_center": [
+          43.514678,
+          13.583855
+        ],
+        "green_diameter": 50.0
+      },
+      "16": {
+        "hole_number": 16,
+        "par": 3,
+        "hcp": 16,
+        "dist_bianchi": 143.0,
+        "dist_gialli": 133.0,
+        "dist_rossi": 125.0,
+        "tee_bianchi": [
+          43.51496,
+          13.584248
+        ],
+        "tee_gialli": [
+          43.515,
+          13.584365
+        ],
+        "tee_rossi": [
+          43.514847,
+          13.584532
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.51531,
+          13.585908
+        ],
+        "green_diameter": 50.0
+      },
+      "17": {
+        "hole_number": 17,
+        "par": 4,
+        "hcp": 8,
+        "dist_bianchi": 386.0,
+        "dist_gialli": 376.0,
+        "dist_rossi": 344.0,
+        "tee_bianchi": [
+          43.515717,
+          13.586456
+        ],
+        "tee_gialli": [
+          43.515638,
+          13.586435
+        ],
+        "tee_rossi": [
+          43.515341,
+          13.586381
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.513672,
+          13.58578
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.512352,
+          13.586085
+        ],
+        "green_diameter": 50.0
+      },
+      "18": {
+        "hole_number": 18,
+        "par": 4,
+        "hcp": 2,
+        "dist_bianchi": 349.0,
+        "dist_gialli": 334.0,
+        "dist_rossi": 312.0,
+        "tee_bianchi": [
+          43.511714,
+          13.585494
+        ],
+        "tee_gialli": [
+          43.511784,
+          13.585655
+        ],
+        "tee_rossi": [
+          43.511897,
+          13.585926
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.512219,
+          13.587773
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.512193,
+          13.589564
+        ],
+        "green_diameter": 50.0
+      }
+    }
+  },
+  "torrenova_golf_club": {
+    "course_id": "torrenova_golf_club",
+    "name": "Torrenova Golf",
+    "holes_count": 9,
+    "holes": {
+      "1": {
+        "hole_number": 1,
+        "par": 4,
+        "hcp": 8,
+        "dist_bianchi": 320.0,
+        "dist_gialli": 310.0,
+        "dist_rossi": 295.0,
+        "tee_bianchi": [
+          43.399929,
+          13.676525
+        ],
+        "tee_gialli": [
+          43.399978,
+          13.676506
+        ],
+        "tee_rossi": [
+          43.400204,
+          13.67642
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.401407,
+          13.675905
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.402567,
+          13.67578
+        ],
+        "green_diameter": 50.0
+      },
+      "2": {
+        "hole_number": 2,
+        "par": 3,
+        "hcp": 9,
+        "dist_bianchi": 130.0,
+        "dist_gialli": 120.0,
+        "dist_rossi": 110.0,
+        "tee_bianchi": [
+          43.402582,
+          13.67513
+        ],
+        "tee_gialli": [
+          43.402563,
+          13.674986
+        ],
+        "tee_rossi": [
+          43.402644,
+          13.674837
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.402431,
+          13.673685
+        ],
+        "green_diameter": 50.0
+      },
+      "3": {
+        "hole_number": 3,
+        "par": 4,
+        "hcp": 7,
+        "dist_bianchi": 330.0,
+        "dist_gialli": 315.0,
+        "dist_rossi": 300.0,
+        "tee_bianchi": [
+          43.402308,
+          13.674536
+        ],
+        "tee_gialli": [
+          43.402267,
+          13.674549
+        ],
+        "tee_rossi": [
+          43.402085,
+          13.674635
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.400596,
+          13.675312
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.399877,
+          13.675584
+        ],
+        "green_diameter": 50.0
+      },
+      "4": {
+        "hole_number": 4,
+        "par": 3,
+        "hcp": 5,
+        "dist_bianchi": 145.0,
+        "dist_gialli": 135.0,
+        "dist_rossi": 120.0,
+        "tee_bianchi": [
+          43.399851,
+          13.674952
+        ],
+        "tee_gialli": [
+          43.3999,
+          13.674942
+        ],
+        "tee_rossi": [
+          43.400046,
+          13.674906
+        ],
+        "fairway_width": 20.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.401035,
+          13.67439
+        ],
+        "green_diameter": 50.0
+      },
+      "5": {
+        "hole_number": 5,
+        "par": 5,
+        "hcp": 3,
+        "dist_bianchi": 510.0,
+        "dist_gialli": 465.0,
+        "dist_rossi": 144.0,
+        "tee_bianchi": [
+          43.402419,
+          13.673049
+        ],
+        "tee_gialli": [
+          43.402009,
+          13.672941
+        ],
+        "tee_rossi": [
+          43.401616,
+          13.67281
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.400515,
+          13.672536
+        ],
+        "landing_2": [
+          43.398871,
+          13.672997
+        ],
+        "green_center": [
+          43.397887,
+          13.673178
+        ],
+        "green_diameter": 50.0
+      },
+      "6": {
+        "hole_number": 6,
+        "par": 4,
+        "hcp": 1,
+        "dist_bianchi": 375.0,
+        "dist_gialli": 355.0,
+        "dist_rossi": 335.0,
+        "tee_bianchi": [
+          43.397736,
+          13.672439
+        ],
+        "tee_gialli": [
+          43.397907,
+          13.672429
+        ],
+        "tee_rossi": [
+          43.398313,
+          13.672263
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.399734,
+          13.671908
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.400875,
+          13.671751
+        ],
+        "green_diameter": 50.0
+      },
+      "7": {
+        "hole_number": 7,
+        "par": 4,
+        "hcp": 4,
+        "dist_bianchi": 345.0,
+        "dist_gialli": 315.0,
+        "dist_rossi": 285.0,
+        "tee_bianchi": [
+          43.400866,
+          13.671139
+        ],
+        "tee_gialli": [
+          43.400382,
+          13.671151
+        ],
+        "tee_rossi": [
+          43.400053,
+          13.671142
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.398656,
+          13.671578
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.397642,
+          13.671787
+        ],
+        "green_diameter": 50.0
+      },
+      "8": {
+        "hole_number": 8,
+        "par": 5,
+        "hcp": 2,
+        "dist_bianchi": 540.0,
+        "dist_gialli": 515.0,
+        "dist_rossi": 490.0,
+        "tee_bianchi": [
+          43.39798,
+          13.671168
+        ],
+        "tee_gialli": [
+          43.398301,
+          13.671001
+        ],
+        "tee_rossi": [
+          43.398491,
+          13.670813
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.399939,
+          13.670053
+        ],
+        "landing_2": [
+          43.401364,
+          13.670694
+        ],
+        "green_center": [
+          43.401993,
+          13.672129
+        ],
+        "green_diameter": 50.0
+      },
+      "9": {
+        "hole_number": 9,
+        "par": 3,
+        "hcp": 6,
+        "dist_bianchi": 150.0,
+        "dist_gialli": 140.0,
+        "dist_rossi": 130.0,
+        "tee_bianchi": [
+          43.40152,
+          13.673596
+        ],
+        "tee_gialli": [
+          43.40146,
+          13.673629
+        ],
+        "tee_rossi": [
+          43.401373,
+          13.673659
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.400332,
+          13.674124
+        ],
+        "green_diameter": 50.0
+      }
+    }
+  },
+  "riviera_golf_resort": {
+    "course_id": "riviera_golf_resort",
+    "name": "Riviera Golf",
+    "holes_count": 18,
+    "holes": {
+      "1": {
+        "hole_number": 1,
+        "par": 4,
+        "hcp": 2,
+        "dist_bianchi": 423.0,
+        "dist_gialli": 394.0,
+        "dist_rossi": 341.0,
+        "tee_bianchi": [
+          43.951365,
+          12.691013
+        ],
+        "tee_gialli": [
+          43.951486,
+          12.690997
+        ],
+        "tee_rossi": [
+          43.95177,
+          12.690938
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.953247,
+          12.690804
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.954057,
+          12.692657
+        ],
+        "green_diameter": 50.0
+      },
+      "2": {
+        "hole_number": 2,
+        "par": 4,
+        "hcp": 6,
+        "dist_bianchi": 349.0,
+        "dist_gialli": 315.0,
+        "dist_rossi": 271.0,
+        "tee_bianchi": [
+          43.9542,
+          12.693078
+        ],
+        "tee_gialli": [
+          43.953819,
+          12.69313
+        ],
+        "tee_rossi": [
+          43.953513,
+          12.693239
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.952254,
+          12.693505
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.951406,
+          12.692553
+        ],
+        "green_diameter": 50.0
+      },
+      "3": {
+        "hole_number": 3,
+        "par": 3,
+        "hcp": 16,
+        "dist_bianchi": 155.0,
+        "dist_gialli": 139.0,
+        "dist_rossi": 115.0,
+        "tee_bianchi": [
+          43.951787,
+          12.692365
+        ],
+        "tee_gialli": [
+          43.952006,
+          12.69247
+        ],
+        "tee_rossi": [
+          43.95215,
+          12.692586
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.953193,
+          12.692649
+        ],
+        "green_diameter": 50.0
+      },
+      "4": {
+        "hole_number": 4,
+        "par": 4,
+        "hcp": 8,
+        "dist_bianchi": 346.0,
+        "dist_gialli": 333.0,
+        "dist_rossi": 282.0,
+        "tee_bianchi": [
+          43.953705,
+          12.692592
+        ],
+        "tee_gialli": [
+          43.953603,
+          12.692503
+        ],
+        "tee_rossi": [
+          43.953259,
+          12.692233
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.951647,
+          12.691684
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.950774,
+          12.69116
+        ],
+        "green_diameter": 50.0
+      },
+      "5": {
+        "hole_number": 5,
+        "par": 4,
+        "hcp": 18,
+        "dist_bianchi": 285.0,
+        "dist_gialli": 265.0,
+        "dist_rossi": 233.0,
+        "tee_bianchi": [
+          43.950407,
+          12.691521
+        ],
+        "tee_gialli": [
+          43.950044,
+          12.691114
+        ],
+        "tee_rossi": [
+          43.949793,
+          12.690846
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.948904,
+          12.689349
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.948515,
+          12.68923
+        ],
+        "green_diameter": 50.0
+      },
+      "6": {
+        "hole_number": 6,
+        "par": 3,
+        "hcp": 12,
+        "dist_bianchi": 185.0,
+        "dist_gialli": 170.0,
+        "dist_rossi": 130.0,
+        "tee_bianchi": [
+          43.947636,
+          12.68939
+        ],
+        "tee_gialli": [
+          43.947709,
+          12.689869
+        ],
+        "tee_rossi": [
+          43.947847,
+          12.690374
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.948097,
+          12.691621
+        ],
+        "green_diameter": 50.0
+      },
+      "7": {
+        "hole_number": 7,
+        "par": 5,
+        "hcp": 4,
+        "dist_bianchi": 560.0,
+        "dist_gialli": 520.0,
+        "dist_rossi": 436.0,
+        "tee_bianchi": [
+          43.946777,
+          12.692009
+        ],
+        "tee_gialli": [
+          43.946416,
+          12.692163
+        ],
+        "tee_rossi": [
+          43.946071,
+          12.692279
+        ],
+        "fairway_width": 45.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.944719,
+          12.692413
+        ],
+        "landing_2": [
+          43.94293,
+          12.691656
+        ],
+        "green_center": [
+          43.941945,
+          12.691007
+        ],
+        "green_diameter": 50.0
+      },
+      "8": {
+        "hole_number": 8,
+        "par": 5,
+        "hcp": 10,
+        "dist_bianchi": 525.0,
+        "dist_gialli": 488.0,
+        "dist_rossi": 448.0,
+        "tee_bianchi": [
+          43.941832,
+          12.691841
+        ],
+        "tee_gialli": [
+          43.942124,
+          12.692061
+        ],
+        "tee_rossi": [
+          43.942365,
+          12.692342
+        ],
+        "fairway_width": 45.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.94376,
+          12.693067
+        ],
+        "landing_2": [
+          43.944973,
+          12.694263
+        ],
+        "green_center": [
+          43.945283,
+          12.695577
+        ],
+        "green_diameter": 50.0
+      },
+      "9": {
+        "hole_number": 9,
+        "par": 4,
+        "hcp": 14,
+        "dist_bianchi": 310.0,
+        "dist_gialli": 280.0,
+        "dist_rossi": 220.0,
+        "tee_bianchi": [
+          43.945618,
+          12.696438
+        ],
+        "tee_gialli": [
+          43.945715,
+          12.696097
+        ],
+        "tee_rossi": [
+          43.945802,
+          12.695795
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.94625,
+          12.693931
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.946037,
+          12.692881
+        ],
+        "green_diameter": 50.0
+      },
+      "10": {
+        "hole_number": 10,
+        "par": 4,
+        "hcp": 1,
+        "dist_bianchi": 410.0,
+        "dist_gialli": 378.0,
+        "dist_rossi": 345.0,
+        "tee_bianchi": [
+          43.946783,
+          12.691749
+        ],
+        "tee_gialli": [
+          43.946485,
+          12.691734
+        ],
+        "tee_rossi": [
+          43.946204,
+          12.691689
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.944559,
+          12.691307
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.943223,
+          12.690777
+        ],
+        "green_diameter": 50.0
+      },
+      "11": {
+        "hole_number": 11,
+        "par": 4,
+        "hcp": 5,
+        "dist_bianchi": 390.0,
+        "dist_gialli": 360.0,
+        "dist_rossi": 330.0,
+        "tee_bianchi": [
+          43.94335,
+          12.69015
+        ],
+        "tee_gialli": [
+          43.943049,
+          12.690162
+        ],
+        "tee_rossi": [
+          43.942824,
+          12.690293
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.941335,
+          12.690266
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.939889,
+          12.689852
+        ],
+        "green_diameter": 50.0
+      },
+      "12": {
+        "hole_number": 12,
+        "par": 4,
+        "hcp": 17,
+        "dist_bianchi": 345.0,
+        "dist_gialli": 315.0,
+        "dist_rossi": 272.0,
+        "tee_bianchi": [
+          43.939216,
+          12.689724
+        ],
+        "tee_gialli": [
+          43.939452,
+          12.689483
+        ],
+        "tee_rossi": [
+          43.939645,
+          12.688914
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.940951,
+          12.688378
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.941959,
+          12.687928
+        ],
+        "green_diameter": 50.0
+      },
+      "13": {
+        "hole_number": 13,
+        "par": 3,
+        "hcp": 7,
+        "dist_bianchi": 205.0,
+        "dist_gialli": 160.0,
+        "dist_rossi": 132.0,
+        "tee_bianchi": [
+          43.942472,
+          12.688315
+        ],
+        "tee_gialli": [
+          43.94229,
+          12.6885
+        ],
+        "tee_rossi": [
+          43.942121,
+          12.688685
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.941221,
+          12.689202
+        ],
+        "green_diameter": 50.0
+      },
+      "14": {
+        "hole_number": 14,
+        "par": 4,
+        "hcp": 13,
+        "dist_bianchi": 380.0,
+        "dist_gialli": 354.0,
+        "dist_rossi": 325.0,
+        "tee_bianchi": [
+          43.941905,
+          12.689541
+        ],
+        "tee_gialli": [
+          43.942128,
+          12.689487
+        ],
+        "tee_rossi": [
+          43.94233,
+          12.689283
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.943973,
+          12.689242
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.944964,
+          12.690482
+        ],
+        "green_diameter": 50.0
+      },
+      "15": {
+        "hole_number": 15,
+        "par": 3,
+        "hcp": 11,
+        "dist_bianchi": 145.0,
+        "dist_gialli": 129.0,
+        "dist_rossi": 118.0,
+        "tee_bianchi": [
+          43.945258,
+          12.690701
+        ],
+        "tee_gialli": [
+          43.94537,
+          12.690733
+        ],
+        "tee_rossi": [
+          43.945534,
+          12.690816
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.9465,
+          12.69106
+        ],
+        "green_diameter": 50.0
+      },
+      "16": {
+        "hole_number": 16,
+        "par": 4,
+        "hcp": 3,
+        "dist_bianchi": 358.0,
+        "dist_gialli": 344.0,
+        "dist_rossi": 304.0,
+        "tee_bianchi": [
+          43.948138,
+          12.692711
+        ],
+        "tee_gialli": [
+          43.947987,
+          12.692442
+        ],
+        "tee_rossi": [
+          43.947775,
+          12.691957
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.947233,
+          12.690274
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.947152,
+          12.688909
+        ],
+        "green_diameter": 50.0
+      },
+      "17": {
+        "hole_number": 17,
+        "par": 4,
+        "hcp": 9,
+        "dist_bianchi": 320.0,
+        "dist_gialli": 300.0,
+        "dist_rossi": 245.0,
+        "tee_bianchi": [
+          43.948007,
+          12.689515
+        ],
+        "tee_gialli": [
+          43.948111,
+          12.689161
+        ],
+        "tee_rossi": [
+          43.948262,
+          12.688785
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.948782,
+          12.687141
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.948948,
+          12.685875
+        ],
+        "green_diameter": 50.0
+      },
+      "18": {
+        "hole_number": 18,
+        "par": 4,
+        "hcp": 15,
+        "dist_bianchi": 370.0,
+        "dist_gialli": 352.0,
+        "dist_rossi": 310.0,
+        "tee_bianchi": [
+          43.949214,
+          12.686221
+        ],
+        "tee_gialli": [
+          43.94933,
+          12.686513
+        ],
+        "tee_rossi": [
+          43.94945,
+          12.686975
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.949525,
+          12.688681
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.950189,
+          12.69051
+        ],
+        "green_diameter": 50.0
+      }
+    }
+  },
+  "golf_club_perugia": {
+    "course_id": "golf_club_perugia",
+    "name": "Golf Club Perugia",
+    "holes_count": 18,
+    "holes": {
+      "1": {
+        "hole_number": 1,
+        "par": 5,
+        "hcp": 7,
+        "dist_bianchi": null,
+        "dist_gialli": 460.0,
+        "dist_rossi": 405.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.087447,
+          12.316422
+        ],
+        "tee_rossi": [
+          43.087065,
+          12.316559
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.086187,
+          12.316744
+        ],
+        "landing_2": [
+          43.084221,
+          12.31702
+        ],
+        "green_center": [
+          43.083511,
+          12.31724
+        ],
+        "green_diameter": 50.0
+      },
+      "2": {
+        "hole_number": 2,
+        "par": 4,
+        "hcp": 11,
+        "dist_bianchi": null,
+        "dist_gialli": 340.0,
+        "dist_rossi": 299.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.083909,
+          12.316148
+        ],
+        "tee_rossi": [
+          43.084059,
+          12.315913
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.084664,
+          12.314218
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.085689,
+          12.314119
+        ],
+        "green_diameter": 50.0
+      },
+      "3": {
+        "hole_number": 3,
+        "par": 4,
+        "hcp": 9,
+        "dist_bianchi": null,
+        "dist_gialli": 378.0,
+        "dist_rossi": 270.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.087415,
+          12.31424
+        ],
+        "tee_rossi": [
+          43.086354,
+          12.314098
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.085326,
+          12.314887
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.084451,
+          12.316062
+        ],
+        "green_diameter": 50.0
+      },
+      "4": {
+        "hole_number": 4,
+        "par": 4,
+        "hcp": 17,
+        "dist_bianchi": null,
+        "dist_gialli": 255.0,
+        "dist_rossi": 224.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.083619,
+          12.316534
+        ],
+        "tee_rossi": [
+          43.08361,
+          12.316145
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.083839,
+          12.314457
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.084194,
+          12.313907
+        ],
+        "green_diameter": 50.0
+      },
+      "5": {
+        "hole_number": 5,
+        "par": 5,
+        "hcp": 13,
+        "dist_bianchi": null,
+        "dist_gialli": 485.0,
+        "dist_rossi": 438.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.084288,
+          12.313516
+        ],
+        "tee_rossi": [
+          43.083982,
+          12.313573
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.082672,
+          12.31367
+        ],
+        "landing_2": [
+          43.081373,
+          12.314091
+        ],
+        "green_center": [
+          43.080265,
+          12.314175
+        ],
+        "green_diameter": 50.0
+      },
+      "6": {
+        "hole_number": 6,
+        "par": 5,
+        "hcp": 5,
+        "dist_bianchi": null,
+        "dist_gialli": 416.0,
+        "dist_rossi": 387.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.07948,
+          12.314315
+        ],
+        "tee_rossi": [
+          43.079797,
+          12.314679
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.081013,
+          12.315625
+        ],
+        "landing_2": [
+          43.082256,
+          12.316554
+        ],
+        "green_center": [
+          43.082729,
+          12.316328
+        ],
+        "green_diameter": 50.0
+      },
+      "7": {
+        "hole_number": 7,
+        "par": 3,
+        "hcp": 15,
+        "dist_bianchi": null,
+        "dist_gialli": 128.0,
+        "dist_rossi": 105.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.081791,
+          12.315591
+        ],
+        "tee_rossi": [
+          43.081735,
+          12.315594
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.081014,
+          12.3149
+        ],
+        "green_diameter": 50.0
+      },
+      "8": {
+        "hole_number": 8,
+        "par": 4,
+        "hcp": 3,
+        "dist_bianchi": null,
+        "dist_gialli": 351.0,
+        "dist_rossi": 294.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.08106,
+          12.314604
+        ],
+        "tee_rossi": [
+          43.08121,
+          12.31464
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.082533,
+          12.314919
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.083336,
+          12.31637
+        ],
+        "green_diameter": 50.0
+      },
+      "9": {
+        "hole_number": 9,
+        "par": 4,
+        "hcp": 1,
+        "dist_bianchi": null,
+        "dist_gialli": 375.0,
+        "dist_rossi": 330.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.083368,
+          12.317656
+        ],
+        "tee_rossi": [
+          43.083666,
+          12.317589
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.085278,
+          12.317396
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.086612,
+          12.317582
+        ],
+        "green_diameter": 50.0
+      },
+      "10": {
+        "hole_number": 10,
+        "par": 4,
+        "hcp": 8,
+        "dist_bianchi": null,
+        "dist_gialli": 351.0,
+        "dist_rossi": 310.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.086622,
+          12.317959
+        ],
+        "tee_rossi": [
+          43.086258,
+          12.317995
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.084866,
+          12.318004
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.083514,
+          12.318153
+        ],
+        "green_diameter": 50.0
+      },
+      "11": {
+        "hole_number": 11,
+        "par": 4,
+        "hcp": 12,
+        "dist_bianchi": null,
+        "dist_gialli": 294.0,
+        "dist_rossi": 257.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.083535,
+          12.318942
+        ],
+        "tee_rossi": [
+          43.083815,
+          12.319446
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.085358,
+          12.319963
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.085675,
+          12.319296
+        ],
+        "green_diameter": 50.0
+      },
+      "12": {
+        "hole_number": 12,
+        "par": 3,
+        "hcp": 18,
+        "dist_bianchi": null,
+        "dist_gialli": 136.0,
+        "dist_rossi": 115.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.085778,
+          12.318836
+        ],
+        "tee_rossi": [
+          43.085895,
+          12.31885
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.086799,
+          12.319232
+        ],
+        "green_diameter": 50.0
+      },
+      "13": {
+        "hole_number": 13,
+        "par": 4,
+        "hcp": 10,
+        "dist_bianchi": null,
+        "dist_gialli": 340.0,
+        "dist_rossi": 313.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.086939,
+          12.319414
+        ],
+        "tee_rossi": [
+          43.086837,
+          12.319516
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.085261,
+          12.320757
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.084669,
+          12.321921
+        ],
+        "green_diameter": 50.0
+      },
+      "14": {
+        "hole_number": 14,
+        "par": 4,
+        "hcp": 2,
+        "dist_bianchi": null,
+        "dist_gialli": 390.0,
+        "dist_rossi": 358.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.08457,
+          12.322519
+        ],
+        "tee_rossi": [
+          43.084764,
+          12.322419
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.086033,
+          12.321189
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.087332,
+          12.319779
+        ],
+        "green_diameter": 50.0
+      },
+      "15": {
+        "hole_number": 15,
+        "par": 3,
+        "hcp": 14,
+        "dist_bianchi": null,
+        "dist_gialli": 139.0,
+        "dist_rossi": 126.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.087103,
+          12.319275
+        ],
+        "tee_rossi": [
+          43.087164,
+          12.319279
+        ],
+        "fairway_width": 25.0,
+        "special_hazard": null,
+        "landing_1": null,
+        "landing_2": null,
+        "green_center": [
+          43.088262,
+          12.31969
+        ],
+        "green_diameter": 50.0
+      },
+      "16": {
+        "hole_number": 16,
+        "par": 4,
+        "hcp": 16,
+        "dist_bianchi": null,
+        "dist_gialli": 316.0,
+        "dist_rossi": 283.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.087474,
+          12.320147
+        ],
+        "tee_rossi": [
+          43.087332,
+          12.320377
+        ],
+        "fairway_width": 35.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.086357,
+          12.321715
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.085421,
+          12.32252
+        ],
+        "green_diameter": 50.0
+      },
+      "17": {
+        "hole_number": 17,
+        "par": 4,
+        "hcp": 4,
+        "dist_bianchi": null,
+        "dist_gialli": 329.0,
+        "dist_rossi": 296.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.084446,
+          12.322478
+        ],
+        "tee_rossi": [
+          43.084411,
+          12.322223
+        ],
+        "fairway_width": 30.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.084164,
+          12.320417
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.083285,
+          12.319097
+        ],
+        "green_diameter": 50.0
+      },
+      "18": {
+        "hole_number": 18,
+        "par": 4,
+        "hcp": 6,
+        "dist_bianchi": null,
+        "dist_gialli": 341.0,
+        "dist_rossi": 296.0,
+        "tee_bianchi": null,
+        "tee_gialli": [
+          43.083214,
+          12.318637
+        ],
+        "tee_rossi": [
+          43.083523,
+          12.318709
+        ],
+        "fairway_width": 40.0,
+        "special_hazard": null,
+        "landing_1": [
+          43.084903,
+          12.318514
+        ],
+        "landing_2": null,
+        "green_center": [
+          43.086156,
+          12.318324
+        ],
+        "green_diameter": 50.0
+      }
+    }
+  }
+}

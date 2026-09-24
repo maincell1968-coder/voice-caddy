@@ -27,6 +27,8 @@ SAFEVAULT_FILES = [
     os.path.join(VOICE_CADDY_DIR, "data", "telegram_config.json"),
     os.path.join(VOICE_CADDY_DIR, "data", "telegram_users.json"),
     os.path.join(VOICE_CADDY_DIR, "data", "golf_courses.json"),
+    os.path.join(VOICE_CADDY_DIR, "data", "coordinate_campi.xlsx"),
+    os.path.join(VOICE_CADDY_DIR, "data", "tactical_courses.json"),
 ]
 
 EXCLUDE_DIRS = {"__pycache__", ".pytest_cache", ".git"}
