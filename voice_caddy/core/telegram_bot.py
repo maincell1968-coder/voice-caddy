@@ -2632,7 +2632,7 @@ class VoiceCaddyTelegramBot:
                 f"• <b>Percorso:</b> {seq_intent['description']}\n"
                 f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
                 f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
-                f"🎙️ <i>Invia ora le tue note vocali o il testo con i colpi giocati buca per buca!</i>"
+                f"💬 <i>Usa i pulsanti interattivi o scrivi in chat per segnare i colpi giocati buca per buca!</i>"
             )
             return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
 
@@ -3156,7 +3156,7 @@ class VoiceCaddyTelegramBot:
                         f"• <b>Percorso:</b> {seq_intent['description']}\n"
                         f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
                         f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
-                        f"🎙️ <i>Invia ora le tue note vocali o il testo con i colpi giocati!</i>"
+                        f"💬 <i>Usa i pulsanti interattivi o scrivi in chat per segnare i colpi giocati!</i>"
                     )
                     return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
             return self.send_message(
@@ -3502,7 +3502,7 @@ class VoiceCaddyTelegramBot:
                     f"• <b>Categoria & Tono Caddie:</b> {prof.category.value}\n"
                     f"• <b>Modalità Attiva:</b> {mode_str}\n"
                     f"• <b>Mazza più lunga:</b> {prof.clubs_in_bag[0].club_name if prof.clubs_in_bag else 'Driver'}\n\n"
-                    f"🏌️ Ora puoi inviare le coordinate GPS o note vocali durante il gioco!"
+                    f"🏌️ Ora puoi usare i pulsanti interattivi e inviare le coordinate GPS durante il gioco!"
                 )
 
                 # Notifica all'amministratore (Stefano) dell'accesso via Telegram di un compagno
@@ -3678,7 +3678,7 @@ class VoiceCaddyTelegramBot:
             print(f"  VOICE CADDY PRO — BOT TELEGRAM ATTIVO!")
             print(f"  Bot Username: @{bot_uname}")
             print(f"  Link diretto: https://t.me/{bot_uname}")
-            print(f"  In ascolto di posizioni GPS, note vocali e messaggi...")
+            print(f"  In ascolto di posizioni GPS, pulsanti interattivi e messaggi chat...")
             print(f"=======================================================\n")
         else:
             logging.warning(f"Avviso verifica token Telegram: {msg}")

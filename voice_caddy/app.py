@@ -67,6 +67,12 @@ from golf_strategy_ai import (
 )
 from core.tactical_course_manager import tactical_course_manager, TacticalHole
 from golf_strategy_ai.mapping.tactical_corridor_3d import render_tactical_corridor_html, render_green_spectrum_html
+from core.advanced_golf_stats import AdvancedGolfStatsEngine
+
+try:
+    from monitoring.runner import MonitoringOrchestrator
+except ImportError:
+    from voice_caddy.monitoring.runner import MonitoringOrchestrator
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 live_session_mgr = LiveSessionManager()
@@ -237,6 +243,10 @@ st.markdown("""
             align-items: center;
             gap: 10px;
             font-size: 0.95rem;
+        }
+        div[data-baseweb="tab-list"] {
+            flex-wrap: wrap !important;
+            gap: 4px !important;
         }
         .ai-status-card {
             background-color: #151a24;
@@ -1501,14 +1511,14 @@ with st.sidebar:
             st.rerun()
 
     st.markdown("---")
-    st.subheader("📝 Inserimento Rapido Testo Gara")
+    st.subheader("💬 Note o Colpi da Chat Telegram")
     sb_quick_notes = st.text_area(
-        "Incolla resoconto o note buca per buca:",
+        "Incolla testo della chat Telegram o note buca per buca:",
         placeholder="Es: Buca 1 par 4: Driver, ferro 7 in green, 2 putt...",
         height=75,
         key="sb_quick_notes"
     )
-    if st.button("🚀 Elabora Testo Gara", key="sb_btn_process_text", type="primary", use_container_width=True, disabled=not (sb_quick_notes and sb_quick_notes.strip())):
+    if st.button("🚀 Elabora Note da Chat Telegram", key="sb_btn_process_text", type="primary", use_container_width=True, disabled=not (sb_quick_notes and sb_quick_notes.strip())):
         execute_audio_round_pipeline([], additional_text=sb_quick_notes.strip())
 
     # ---------------------------------------------------------
@@ -1516,7 +1526,7 @@ with st.sidebar:
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📱 Bot Telegram (Live in Campo)")
-    st.caption("Registra o scrivi i colpi buca per buca durante la partita dallo smartphone.")
+    st.caption("Segna i colpi con i pulsanti interattivi o scrivi in chat dallo smartphone.")
 
     curr_token = tg_manager.get_token()
     bot_username = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
@@ -1635,7 +1645,7 @@ def execute_audio_round_pipeline(
         progress_bar = st.progress(0)
         status_text = st.empty()
 
-        status_text.info("⚙️ Preparazione ed elaborazione dati di gara e colpi...")
+        status_text.info("⚙️ Preparazione ed elaborazione colpi dalla chat Telegram...")
         progress_bar.progress(15)
 
         for item in (files_or_paths or []):
@@ -1811,6 +1821,9 @@ def execute_audio_round_pipeline(
                     pass
 
 
+execute_round_pipeline = execute_audio_round_pipeline
+
+
 def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> Tuple[bool, str]:
     """
     Controlla e sincronizza colpi registrati o messaggi recenti su Telegram,
@@ -1971,11 +1984,11 @@ def sync_telegram_data_to_round(user_id: str, chat_id: Optional[str] = None) -> 
                 return False, f"Errore durante l'elaborazione dei colpi della sessione live: {e_sync}"
 
     return False, (
-        f"🟢 Smartphone associato con successo a @{tg_manager.get_bot_username()} (Chat ID: `{resolved_cid}`)!\n\n"
-        "ℹ️ Al momento non risultano nuovi colpi registrati o messaggi non elaborati in arrivo dal bot Telegram.\n\n"
-        "👉 **Cosa fare per registrare ed elaborare la gara:**\n"
-        "• **In campo su Telegram:** Usa i pratici pulsanti interattivi per segnare le buche (Tee, Bastone, Lie, Putt) oppure scrivi messaggi di testo nella chat di **@{tg_manager.get_bot_username()}**;\n"
-        "• **Sul PC:** Puoi anche incollare direttamente le note della gara o l'esportazione chat nel riquadro *Opzione 2* qui a fianco e premere **[ 🚀 ELABORA DATI DI GARA ORA ]**!"
+        f"🟢 Smartphone associato con successo alla chat @{tg_manager.get_bot_username()} (Chat ID: `{resolved_cid}`)!\n\n"
+        "ℹ️ Al momento non risultano nuovi colpi registrati o messaggi non elaborati in arrivo dalla chat Telegram.\n\n"
+        "👉 **Come registrare ed elaborare la gara:**\n"
+        "• **In campo (Chat Telegram):** Tocca `[ 🟢 Inizia Gara ]` e usa i pulsanti interattivi per segnare le buche (Bastone, Lie, Putt) oppure scrivi messaggi di testo nella chat di **@{tg_manager.get_bot_username()}**;\n"
+        "• **Sul PC:** Puoi anche incollare direttamente i messaggi o le note nel riquadro *Note dalla Chat Telegram* a fianco e premere **[ 🚀 ELABORA NOTE DA CHAT TELEGRAM ]**!"
     )
 
 
@@ -2044,7 +2057,7 @@ tab_titles = [
 if current_user.is_admin:
     unread_admin_cnt = inbox_mgr.get_unread_count()
     admin_badge = f" ({unread_admin_cnt} nuovi)" if unread_admin_cnt > 0 else ""
-    tab_titles.append(f"👑 Amministrazione & Utenti{admin_badge}")
+    tab_titles.append(f"👑 Amministrazione & Monitoraggio{admin_badge}")
 
 all_tabs = st.tabs(tab_titles)
 nav_tab1 = all_tabs[0]
@@ -2076,7 +2089,7 @@ with nav_tab1:
                         </span>
                         <div style="font-size: 0.88rem; color: #94A3B8; margin-top: 4px;">
                             Voice Caddy Pro unifica l'esperienza di gioco su tutti i percorsi: raccoglie i colpi da Telegram,
-                            proietta le <b>3 Viste Tattiche Balistiche</b> (Mappa Satellitare, Dispersione Trackman e Green Radar),
+                            proietta le <b>3 Viste Tattiche Balistiche</b> (Corridoio Tattico 3D Fairway, Dispersione Trackman e Green Radar),
                             applica il <b>Metodo del Maestro PGA</b> ed esporta il <b>Report PDF pronto per WhatsApp e Telegram</b>.
                         </div>
                     </div>
@@ -2147,24 +2160,34 @@ with nav_tab1:
             else:
                 sim_geom = None
 
+            sim_tactical_h = tactical_course_manager.get_tactical_hole(c_obj.course_id, 1)
+
             sim_view_mode = st.radio(
                 "Modalità Vista Tattica:",
-                options=["🗺️ Vista A (Mappa Satellitare)", "📊 Vista B (Dispersione Trackman)", "🎯 Vista C (Green Radar)"],
+                options=[
+                    "📐 Corridoio Tattico 3D (Piano Inclinato & Landing ±20m)",
+                    "🎯 Spettro Radar Green (50m)",
+                    "🗺️ Mappa Cartografica (Dati Reali Excel)",
+                    "📊 Dispersione Trackman"
+                ],
                 horizontal=True,
                 key="sim_view_mode_radio"
             )
 
-            if sim_geom and sim_h:
-                perf_eval = sim_agent.evaluate_played_hole(sim_geom, sim_h.shots, user_handicap=st.session_state.user_profile.handicap, score=sim_h.score, putts=sim_h.putts)
-                if sim_view_mode == "🗺️ Vista A (Mappa Satellitare)":
-                    html_code = render_view_a_map_html(sim_geom, perf_eval=perf_eval, height="380px")
-                    components.html(html_code, height=400)
-                elif sim_view_mode == "📊 Vista B (Dispersione Trackman)":
-                    html_code = render_view_b_benchmark_html(perf_eval=perf_eval)
-                    st.markdown(html_code, unsafe_allow_html=True)
-                else:
-                    html_code = render_view_c_green_radar_html(sim_geom, app_eval=perf_eval.green_evaluation, height="380px")
-                    components.html(html_code, height=400)
+            if sim_tactical_h and sim_view_mode == "📐 Corridoio Tattico 3D (Piano Inclinato & Landing ±20m)":
+                html_code = render_tactical_corridor_html(sim_tactical_h, shots=sim_h.shots if sim_h else None, tee_color="gialli", is_expanded=False)
+                components.html(html_code, height=430)
+            elif sim_tactical_h and sim_view_mode == "🎯 Spettro Radar Green (50m)":
+                html_code = render_green_spectrum_html(sim_tactical_h, shots=sim_h.shots if sim_h else None, tee_color="gialli", is_expanded=False)
+                components.html(html_code, height=430)
+            elif sim_geom and sim_view_mode == "🗺️ Mappa Cartografica (Dati Reali Excel)":
+                perf_eval = sim_agent.evaluate_played_hole(sim_geom, sim_h.shots if sim_h else [], user_handicap=st.session_state.user_profile.handicap, score=sim_h.score if sim_h else 4, putts=sim_h.putts if sim_h else 2)
+                html_code = render_view_a_map_html(sim_geom, perf_eval=perf_eval, tactical_hole=sim_tactical_h, height="400px")
+                components.html(html_code, height=420)
+            elif sim_geom and sim_view_mode == "📊 Dispersione Trackman":
+                perf_eval = sim_agent.evaluate_played_hole(sim_geom, sim_h.shots if sim_h else [], user_handicap=st.session_state.user_profile.handicap, score=sim_h.score if sim_h else 4, putts=sim_h.putts if sim_h else 2)
+                html_code = render_view_b_benchmark_html(perf_eval=perf_eval)
+                st.markdown(html_code, unsafe_allow_html=True)
 
         with sim_col_r:
             st.markdown(f"""
@@ -2250,62 +2273,62 @@ with nav_tab1:
         render_contact_and_inbox(current_user, inbox_mgr, key_suffix="home")
 
     # ---------------------------------------------------------
-    # HERO ACTION HUB: SINCRONIZZA ED ELABORA GARA (TELEGRAM / TESTO)
+    # HERO ACTION HUB: CHAT TELEGRAM (INPUT & OUTPUT DI GARA)
     # ---------------------------------------------------------
     if "show_sync_panel" not in st.session_state:
         st.session_state.show_sync_panel = True
 
     if st.session_state.show_sync_panel:
-        st.markdown("""
-            <div style="background: linear-gradient(135deg, #0f1e16 0%, #162a20 50%, #0c1824 100%);
+        bot_uname = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
+        linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
+        if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
+            linked_cid = tg_manager.get_admin_chat_id()
+
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #0a1f14 0%, #122b1c 50%, #0c1a27 100%);
                         border: 2px solid #2ECC71; border-radius: 14px; padding: 22px 26px;
-                        margin-bottom: 24px; box-shadow: 0 10px 30px rgba(46, 204, 113, 0.25);">
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 14px;">
-                    <div style="display:flex; align-items:center; gap: 12px;">
-                        <span style="font-size: 2rem;">📲</span>
+                        margin-bottom: 24px; box-shadow: 0 10px 30px rgba(46, 204, 113, 0.22);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-bottom: 12px;">
+                    <div style="display:flex; align-items:center; gap: 14px;">
+                        <span style="font-size: 2.2rem;">📱</span>
                         <div>
-                            <span style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
-                                SINCRONIZZA & ELABORA LA GARA DI IERI / ALLENAMENTO
+                            <span style="font-size: 1.35rem; font-weight: 800; color: #FFFFFF; letter-spacing: -0.3px;">
+                                CHAT TELEGRAM: INPUT & OUTPUT DI GARA
                             </span>
-                            <div style="font-size: 0.9rem; color: #A0AEC0; margin-top: 3px;">
-                                Sincronizza i colpi registrati con i pulsanti interattivi o la chat del Bot Telegram, oppure incolla le note scritte ed esportazioni chat.
+                            <div style="font-size: 0.92rem; color: #CBD5E1; margin-top: 3px;">
+                                Registra i colpi dallo smartphone e ricevi le distanze in tempo reale. <b>Zero file audio da caricare</b>: tutto passa dalla chat di Telegram!
                             </div>
                         </div>
                     </div>
-                    <span style="background: rgba(46, 204, 113, 0.2); border: 1px solid #2ECC71; color: #2ECC71;
-                                 padding: 5px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
-                        ⚡ 100% PULSANTI & CHAT • ZERO AUDIO
+                    <span style="background: rgba(46, 204, 113, 0.18); border: 1px solid #2ECC71; color: #2ECC71;
+                                 padding: 6px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;">
+                        ⚡ 100% PULSANTI & CHAT TELEGRAM • ZERO AUDIO
                     </span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-        col_sync_tg, col_sync_files = st.columns([1, 1], gap="large")
+        col_sync_tg, col_sync_manual = st.columns([1.1, 0.9], gap="large")
 
         with col_sync_tg:
-            linked_cid = tg_manager.get_chat_id_for_user(current_user.user_id, current_user.first_name)
-            if not linked_cid and (current_user.user_id == "strafatti_stefano_pirani" or getattr(current_user, "is_admin", False)):
-                linked_cid = tg_manager.get_admin_chat_id()
-            bot_uname = tg_manager.get_bot_username() or "VoiceCaddyGolf_bot"
-
             st.markdown(f"""
-                <div style="background: #131d2a; border: 1px solid #38BDF8; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+                <div style="background: #111e2e; border: 1px solid #38BDF8; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
                     <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
                         <span style="font-size: 1.3rem;">📲</span>
-                        <span style="font-weight: bold; font-size: 1.05rem; color: #38BDF8;">OPZIONE 1: Sincronizzazione Diretta da Bot Telegram</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #38BDF8;">Sincronizzazione Diretta con la Chat Telegram</span>
                     </div>
                     <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
-                        Se durante o dopo la gara hai segnato i colpi con i <b>pulsanti interattivi</b> (bastone, lie, putt) o inviato messaggi in chat al bot Telegram <b>@{bot_uname}</b>, clicca il pulsante qui sotto per scaricarli e processarli subito.
+                        Durante la gara hai segnato i colpi con i <b>pulsanti interattivi</b> (bastone, lie, putt) o inviato messaggi in chat a <b>@{bot_uname}</b>? Clicca qui sotto per scaricarli e generare all'istante scorecard, statistiche e analisi!
                     </p>
                 </div>
             """, unsafe_allow_html=True)
 
             if linked_cid:
-                st.caption(f"🟢 Collegato: **@{bot_uname}** (Chat ID: `{linked_cid}`)")
+                st.caption(f"🟢 Collegato alla Chat: **@{bot_uname}** (Chat ID: `{linked_cid}`)")
             else:
-                st.caption(f"⚠️ Smartphone non ancora associato a @{bot_uname}")
+                st.caption(f"⚠️ Smartphone non ancora associato a @{bot_uname} (collegalo nella barra laterale)")
 
-            if st.button("🔄 Sincronizza ed Elabora Ultimi Dati da Telegram", key="btn_sync_tg_hero", type="primary", use_container_width=True):
+            if st.button("🔄 Sincronizza ed Elabora Partita da Chat Telegram", key="btn_sync_tg_hero", type="primary", use_container_width=True):
                 with st.spinner("Connessione a Telegram e controllo aggiornamenti in corso..."):
                     ok_sync, msg_sync = sync_telegram_data_to_round(current_user.user_id, linked_cid)
                     if ok_sync:
@@ -2317,7 +2340,7 @@ with nav_tab1:
             deep_link_hero = f"https://t.me/{bot_uname}"
             st.link_button(f"👉 Apri Chat con @{bot_uname} su Telegram", deep_link_hero, use_container_width=True)
 
-            st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-weight: bold; color: #38BDF8; font-size: 0.88rem;'>☁️ Oppure Recupera Gara Archiviata in Cloud per Data:</div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top: 14px; margin-bottom: 6px; font-weight: bold; color: #38BDF8; font-size: 0.88rem;'>☁️ Oppure Recupera Gara Archiviata da Telegram per Data:</div>", unsafe_allow_html=True)
 
             if not hasattr(db, "get_telegram_archived_dates"):
                 import importlib
@@ -2345,8 +2368,8 @@ with nav_tab1:
 
             with col_btn:
                 st.write("")  # alignment spacing
-                if st.button("🚀 Elabora da Cloud", key="btn_elabora_data_cloud", type="secondary", use_container_width=True):
-                    with st.spinner(f"Recupero ed elaborazione cronologica dati del {selected_date} dal Cloud..."):
+                if st.button("🚀 Elabora da Telegram", key="btn_elabora_data_cloud", type="secondary", use_container_width=True):
+                    with st.spinner(f"Recupero ed elaborazione messaggi del {selected_date} dalla chat Telegram..."):
                         if not hasattr(db, "get_telegram_messages_for_date"):
                             import importlib
                             import core.db
@@ -2355,46 +2378,11 @@ with nav_tab1:
 
                         msgs = db.get_telegram_messages_for_date(selected_date, chat_id=linked_cid, user_id=current_user.user_id) if hasattr(db, "get_telegram_messages_for_date") else []
                         if msgs:
-                            # Ordina rigorosamente in sequenza cronologica
                             msgs = sorted(msgs, key=lambda m: (m.get("timestamp") or "", m.get("id") or 0))
-
-                            whisper_choice = st.session_state.get("hero_whisper_choice", "Groq Whisper Turbo (Consigliato, Gratuito & Istantaneo)")
-                            engine_mode = "groq" if "Groq" in whisper_choice else ("cloud" if "Cloud" in whisper_choice or "OpenAI" in whisper_choice else "local")
-                            audio_engine = VoiceCaddyAudioEngine(model_size="base")
-                            whisper_api_key = user_ai.openai_api_key or os.environ.get("OPENAI_API_KEY", "")
-                            groq_api_key = user_ai.groq_api_key or os.environ.get("GROQ_API_KEY", "")
-                            if not groq_api_key:
-                                try:
-                                    from core.ai_provider import get_default_groq_key
-                                    groq_api_key = get_default_groq_key()
-                                except Exception:
-                                    pass
-
                             timeline_lines = []
                             for m in msgs:
-                                m_type = m.get("message_type", "text")
-                                f_path = m.get("file_path")
                                 c_text = m.get("content_text")
                                 ts_short = m.get("timestamp", "")[11:16]
-                                is_audio_msg = m_type in ("voice", "audio", "video_note") or bool(f_path)
-                                is_dummy_name = bool(c_text and any(c_text.strip().lower().endswith(ext) for ext in ('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.aac', '.3gp', '.amr')))
-                                needs_transcription = is_audio_msg and (not c_text or is_dummy_name)
-
-                                if needs_transcription and f_path:
-                                    full_p = Path(f_path) if os.path.isabs(f_path) else (PROJECT_ROOT / f_path)
-                                    if full_p.exists():
-                                        try:
-                                            t_text, _ = audio_engine.transcribe(
-                                                full_p, engine_mode=engine_mode, api_key=whisper_api_key, groq_api_key=groq_api_key
-                                            )
-                                            if t_text:
-                                                c_text = t_text
-                                                m["content_text"] = t_text
-                                                if hasattr(db, "update_telegram_message_text") and m.get("id"):
-                                                    db.update_telegram_message_text(m["id"], t_text)
-                                        except Exception as tx_err:
-                                            logger.warning(f"Errore trascrizione audio {f_path}: {tx_err}")
-
                                 if c_text and not any(c_text.strip().lower().endswith(ext) for ext in ('.ogg', '.mp3', '.wav', '.m4a', '.opus', '.aac', '.3gp', '.amr')):
                                     line = f"[{ts_short}] {c_text.strip()}" if ts_short else c_text.strip()
                                     timeline_lines.append(line)
@@ -2403,67 +2391,62 @@ with nav_tab1:
                             if unified_transcript.strip():
                                 execute_audio_round_pipeline(
                                     [],
-                                    whisper_engine=whisper_choice,
                                     additional_text=unified_transcript
                                 )
                             else:
-                                st.warning("Nessun contenuto valido trovato per questa data.")
+                                st.warning("Nessun messaggio testuale valido trovato per questa data.")
                         else:
-                            st.info(f"Nessun dato registrato in cloud per la data {selected_date}. Se hai note scritte, incollale nell'Opzione 2 a fianco!")
+                            st.info(f"Nessun dato registrato nella chat per la data {selected_date}. Se hai note scritte, incollale a fianco!")
 
-            with st.expander("ℹ️ Come funziona il tracciamento su Telegram (Zero Audio)", expanded=False):
+            with st.expander("ℹ️ Come funziona l'Input e Output con la Chat Telegram", expanded=False):
                 st.markdown(f"""
-                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
-                        <b>1.</b> Apri Telegram sul cellulare e avvia la chat con <b>@{bot_uname}</b>.<br>
-                        <b>2.</b> Tocca <b>[ 🟢 Inizia Gara ]</b> e usa i pratici <b>pulsanti interattivi</b> per segnare bastoni, lie e putt a ogni buca, oppure scrivi brevi messaggi di testo.<br>
-                        <b>3.</b> Torna qui e premi <b>[ 🔄 Sincronizza ed Elabora Ultimi Dati da Telegram ]</b>: il sistema genererà all'istante scorecard ufficiale, lordo/netto e l'analisi del Maestro!
+                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.6;">
+                        <b>1. INPUT (Sul Percorso):</b> Apri Telegram sul cellulare e avvia la chat con <b>@{bot_uname}</b>.<br>
+                        Tocca <b>[ 🟢 Inizia Gara ]</b> e usa i pratici <b>pulsanti interattivi</b> per segnare bastoni, lie e putt a ogni buca, oppure scrivi brevi messaggi di testo.<br>
+                        <b>2. OUTPUT (In Tempo Reale):</b> Il bot risponde in chat con distanza GPS, pendenza Plays Like e bastone consigliato.<br>
+                        <b>3. SINCRONIZZAZIONE (Su questo PC):</b> Premi <b>[ 🔄 Sincronizza ed Elabora Partita da Chat Telegram ]</b> per visualizzare scorecard ufficiale Lordo/Netto, mappa buche e analisi del Maestro!
                     </div>
                 """, unsafe_allow_html=True)
 
-        with col_sync_files:
+        with col_sync_manual:
             st.markdown("""
                 <div style="background: #112217; border: 1px solid #2ECC71; border-radius: 10px; padding: 16px; margin-bottom: 12px;">
                     <div style="display:flex; align-items:center; gap: 8px; margin-bottom: 6px;">
-                        <span style="font-size: 1.3rem;">📝</span>
-                        <span style="font-weight: bold; font-size: 1.05rem; color: #2ECC71;">OPZIONE 2: Incolla Testo o Esportazione Chat Telegram</span>
+                        <span style="font-size: 1.3rem;">💬</span>
+                        <span style="font-weight: bold; font-size: 1.05rem; color: #2ECC71;">Incolla Messaggi o Note dalla Chat Telegram</span>
                     </div>
                     <p style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 4px;">
-                        Non usi la sincronizzazione diretta? Incolla qui il testo del giro o carica il file di esportazione Telegram (<code>result.json</code> o <code>messages.html</code>). Niente file audio pesanti!
+                        Hai copiato la conversazione della chat o hai appuntato i colpi buca per buca? Incolla qui il testo: l'IA estrarrà tutti i colpi all'istante senza caricare alcun file audio!
                     </p>
                 </div>
             """, unsafe_allow_html=True)
 
             hero_text_notes = st.text_area(
-                "📝 Note, Colpi o Conversazione Testuale della Gara:",
-                placeholder="Incolla qui il testo della chat o le note buca per buca...\nEs: Buca 1 par 4: Driver in fairway, ferro 7 in green a 4m, 2 putt par.\nBuca 2 par 3: ferro 9 a destra del green, approccio con 56° e 1 putt bogey...",
-                height=110,
+                "📝 Messaggi o Note della Gara dalla Chat:",
+                placeholder="Incolla qui i messaggi scambiati in chat o le note buca per buca...\nEs: Buca 1 par 4: Driver in fairway, ferro 7 in green a 4m, 2 putt par.\nBuca 2 par 3: ferro 9 a destra del green, approccio con 56° e 1 putt bogey...",
+                height=140,
                 key="hero_text_notes_area",
-                help="Puoi incollare l'intera conversazione Telegram o qualsiasi testo con l'elenco dei colpi giocati."
+                help="Puoi incollare il testo della chat Telegram o qualsiasi appunto testuale dei colpi giocati."
             )
 
-            hero_uploaded_files = st.file_uploader(
-                "📁 Oppure carica esportazione chat Telegram (.json, .html):",
-                type=["json", "html", "htm"],
-                accept_multiple_files=True,
-                key="hero_uploader_files_box",
-                help="File esportato da Telegram Desktop (result.json o messages.html) senza file multimediali pesanti."
-            )
-
-            can_process = bool(hero_uploaded_files or (hero_text_notes and hero_text_notes.strip()))
-
-            if st.button("🚀 ELABORA DATI DI GARA ORA", key="btn_hero_process_audio", type="primary", use_container_width=True, disabled=not can_process):
-                execute_audio_round_pipeline(
-                    hero_uploaded_files or [],
-                    additional_text=hero_text_notes.strip() if hero_text_notes else ""
+            with st.expander("📁 Oppure carica file esportazione chat Telegram (.json)", expanded=False):
+                st.caption("Se hai esportato la cronologia chat in JSON da Telegram Desktop (`result.json`), selezionalo qui:")
+                hero_json_file = st.file_uploader(
+                    "Seleziona result.json:",
+                    type=["json"],
+                    accept_multiple_files=False,
+                    key="hero_json_file_uploader",
+                    help="File JSON di esportazione chat senza file multimediali pesanti."
                 )
 
-            with st.expander("💡 Come esportare la chat da Telegram Desktop (Opzionale)", expanded=False):
-                st.markdown(f"""
-                    <div style="font-size:0.82rem; color:#CBD5E1; line-height:1.5;">
-                        <b>• Per esportare la chat da Telegram Desktop:</b> apri Telegram sul PC, apri la chat con <b>@{bot_uname}</b>, clicca sui tre puntini in alto a destra ➔ <i>«Esporta cronologia chat»</i> ➔ togli la spunta a foto/audio/video e seleziona formato <b>JSON</b>.<br>
-                        <b>• Trascina il file result.json</b> nel riquadro sopra oppure fai <i>Copia & Incolla</i> del testo nel riquadro: Voice Caddy estrarrà tutti i colpi ed elaborerà l'intero giro in pochi secondi!
-                    </div>
-                """, unsafe_allow_html=True)
+            can_process = bool(hero_json_file or (hero_text_notes and hero_text_notes.strip()))
+
+            if st.button("🚀 ELABORA NOTE DA CHAT TELEGRAM", key="btn_hero_process_text_tg", type="primary", use_container_width=True, disabled=not can_process):
+                files_to_pass = [hero_json_file] if hero_json_file else []
+                execute_audio_round_pipeline(
+                    files_to_pass,
+                    additional_text=hero_text_notes.strip() if hero_text_notes else ""
+                )
 
         st.markdown("---")
 
@@ -2489,8 +2472,8 @@ with nav_tab1:
             st.caption(f"Giocatore: **{st.session_state.user_profile.player_name}** • Partita di {h_played} Buche • Data: {r_date} • {cat_badge}")
 
         with col_sync_btn:
-            lbl_toggle = "🔼 Nascondi Pannello Sync" if st.session_state.show_sync_panel else "📥 Sincronizza Gara di Ieri"
-            if st.button(lbl_toggle, key="toggle_sync_btn_hdr", use_container_width=True, help="Mostra o nasconde il pannello di sincronizzazione con Telegram ed elaborazione dati di gara"):
+            lbl_toggle = "🔼 Nascondi Pannello Chat Telegram" if st.session_state.show_sync_panel else "📱 Chat Telegram: Sincronizza Gara"
+            if st.button(lbl_toggle, key="toggle_sync_btn_hdr", use_container_width=True, help="Mostra o nasconde il pannello di sincronizzazione con la chat Telegram"):
                 st.session_state.show_sync_panel = not st.session_state.show_sync_panel
                 st.rerun()
 
@@ -2625,13 +2608,15 @@ with nav_tab1:
                     map_col, table_col = st.columns([2, 3])
 
                     with map_col:
+                        tactical_h = tactical_course_manager.get_tactical_hole(active_course.course_id, h.hole_number)
                         map_mode = st.radio(
                             "Visualizzazione Buca:",
                             [
-                                "🗺️ Vista A (Mappa ①②③ & Asse)",
-                                "📊 Vista B (Benchmark & Dispersione)",
-                                "🎯 Vista C (Green Radar & Pin)",
-                                "📐 Grafico Traiettoria"
+                                "📐 Corridoio Tattico 3D (Piano Inclinato & Landing ±20m)",
+                                "🎯 Spettro Radar Balistico Green (50m)",
+                                "🗺️ Mappa Cartografica Buca (Dati Reali Excel)",
+                                "📊 Benchmark Categoria & Dispersione",
+                                "📐 Grafico Traiettoria Plotly"
                             ],
                             horizontal=True,
                             key=f"map_mode_{h.hole_number}"
@@ -2653,7 +2638,8 @@ with nav_tab1:
                                     length_m=float(getattr(c_hole, 'distance_meters', 350.0)),
                                     stroke_index=int(getattr(c_hole, 'handicap_index', 1) or 1),
                                     tee=GeoPoint(lat=hc.tee_lat, lon=hc.tee_lon, alt_m=hc.tee_altitude),
-                                    green_center=GeoPoint(lat=hc.target_lat, lon=hc.target_lon, alt_m=hc.target_altitude)
+                                    green_center=GeoPoint(lat=hc.target_lat, lon=hc.target_lon, alt_m=hc.target_altitude),
+                                    course_id=active_course.course_id if active_course else "course"
                                 )
                             except Exception:
                                 hole_geom = None
@@ -2661,18 +2647,20 @@ with nav_tab1:
                         agent = HoleStrategyAgent()
                         user_hcp = getattr(st.session_state.user_profile, "handicap", 18.0)
 
-                        if hole_geom and map_mode == "🗺️ Vista A (Mappa ①②③ & Asse)":
+                        if tactical_h and map_mode == "📐 Corridoio Tattico 3D (Piano Inclinato & Landing ±20m)":
+                            html_corr = render_tactical_corridor_html(tactical_h, shots=h.shots, tee_color="gialli", is_expanded=False)
+                            components.html(html_corr, height=440)
+                        elif tactical_h and map_mode == "🎯 Spettro Radar Balistico Green (50m)":
+                            html_spec = render_green_spectrum_html(tactical_h, shots=h.shots, tee_color="gialli", is_expanded=False)
+                            components.html(html_spec, height=440)
+                        elif hole_geom and map_mode == "🗺️ Mappa Cartografica Buca (Dati Reali Excel)":
                             perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
-                            html_code = render_view_a_map_html(hole_geom, perf_eval=perf_eval, height="420px")
+                            html_code = render_view_a_map_html(hole_geom, perf_eval=perf_eval, tactical_hole=tactical_h, height="420px")
                             components.html(html_code, height=440)
-                        elif hole_geom and map_mode == "📊 Vista B (Benchmark & Dispersione)":
+                        elif hole_geom and map_mode == "📊 Benchmark Categoria & Dispersione":
                             perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
                             html_code = render_view_b_benchmark_html(perf_eval=perf_eval)
                             st.markdown(html_code, unsafe_allow_html=True)
-                        elif hole_geom and map_mode == "🎯 Vista C (Green Radar & Pin)":
-                            perf_eval = agent.evaluate_played_hole(hole_geom, h.shots, user_handicap=user_hcp, score=h.score, putts=h.putts)
-                            html_code = render_view_c_green_radar_html(hole_geom, app_eval=perf_eval.green_evaluation, height="420px")
-                            components.html(html_code, height=440)
                         else:
                             fig_map = GolfHoleVisualizer.create_hole_trajectory_map(
                                 h,
@@ -3052,13 +3040,28 @@ with nav_pin_gps:
                             st.session_state[f"show_spec_exp_{selected_h_num}"] = True
 
                 # Schede di visualizzazione in pagina (per visione rapida e comoda)
-                tab_corridor, tab_radar_green = st.tabs(["📐 Corridoio 3D Fairway", "🎯 Colpo al Green (Radar Spettro)"])
+                tab_corridor, tab_radar_green, tab_map_plan = st.tabs(["📐 Corridoio 3D Fairway", "🎯 Colpo al Green (Radar Spettro)", "🗺️ Mappa Cartografica (Excel)"])
                 with tab_corridor:
                     html_view = render_tactical_corridor_html(tactical_h, shots=current_hole_shots, tee_color="gialli", is_expanded=False)
                     components.html(html_view, height=430)
                 with tab_radar_green:
                     html_radar = render_green_spectrum_html(tactical_h, shots=current_hole_shots, tee_color="gialli", is_expanded=False)
                     components.html(html_radar, height=430)
+                with tab_map_plan:
+                    h_geom_pin = None
+                    if h_coords:
+                        h_geom_pin = HoleGeometry(
+                            hole_number=selected_h_num,
+                            par=h_info.par,
+                            length_m=float(h_info.distance_meters or 300.0),
+                            stroke_index=int(h_info.handicap_index or selected_h_num),
+                            tee=GeoPoint(lat=h_coords.tee_lat, lon=h_coords.tee_lon, alt_m=h_coords.tee_altitude),
+                            green_center=GeoPoint(lat=h_coords.target_lat, lon=h_coords.target_lon, alt_m=h_coords.target_altitude),
+                            course_id=active_course.course_id
+                        )
+                    if h_geom_pin:
+                        html_map_pin = render_view_a_map_html(h_geom_pin, tactical_hole=tactical_h, height="430px")
+                        components.html(html_map_pin, height=450)
 
     with col_pin_r:
         st.markdown("### 🧮 Calcolatore Balistico Plays Like Distance")
@@ -3603,102 +3606,385 @@ with nav_rules:
 # ---------------------------------------------------------
 if current_user.is_admin and nav_admin:
     with nav_admin:
-        st.subheader("👑 Pannello di Controllo Amministratore (Stefano)")
-        st.caption("Pannello riservato all'Amministratore di Sistema per visualizzare tutti i membri, reimpostare password e monitorare il circolo.")
+        st.subheader("👑 Console di Controllo & Monitoraggio Amministratore (Stefano)")
+        st.markdown('<span class="user-header-pill" style="border-color:#f59e0b; color:#f59e0b; font-weight:bold; margin-bottom:12px;">👑 Accesso Riservato all\'Amministratore di Sistema</span>', unsafe_allow_html=True)
+        st.caption("Pannello unificato per la gestione dei membri, il monitoraggio continuo dell'infrastruttura (Zero Token) e l'analisi statistica avanzata di Golf Intelligence.")
 
-        all_users = auth_manager.get_all_users()
+        # Sotto-schede immediatamente visibili per l'Amministratore
+        adm_sub_users, adm_sub_mon, adm_sub_golf, adm_sub_agents = st.tabs([
+            "👥 Registro Membri & Circolo",
+            "🛡️ Monitoraggio Telemetria & Server (Zero Token)",
+            "📊 Analisi Statistica Golf Intelligence (8 Aree)",
+            "🤖 Suite Agenti Specializzati Gratuiti"
+        ])
 
-        col_a1, col_a2, col_a3 = st.columns(3)
-        col_a1.metric("Membri Totali Iscritti", len(all_users))
-        strafatti_count = sum(1 for u in all_users if u.group == "strafatti")
-        amici_count = sum(1 for u in all_users if u.group == "amici")
-        col_a2.metric("Membri Gruppo Strafatti", strafatti_count)
-        col_a3.metric("Membri Gruppo Amici", amici_count)
+        # ----------------- SOTTO-SCHEDA 1: MEMBRI & CREDENZIALI -----------------
+        with adm_sub_users:
+            all_users = auth_manager.get_all_users()
 
-        st.markdown("---")
-        st.markdown("### 📋 Registro Membri & Credenziali")
+            col_a1, col_a2, col_a3 = st.columns(3)
+            col_a1.metric("Membri Totali Iscritti", len(all_users))
+            strafatti_count = sum(1 for u in all_users if u.group == "strafatti")
+            amici_count = sum(1 for u in all_users if u.group == "amici")
+            col_a2.metric("Membri Gruppo Strafatti", strafatti_count)
+            col_a3.metric("Membri Gruppo Amici", amici_count)
 
-        users_table_data = []
-        for u in all_users:
-            role_tag = "👑 Admin" if u.is_admin else "Membro"
-            status_tag = "⚠️ Primo Accesso (In Attesa)" if u.must_change_password else "✅ Password Attiva"
-            users_table_data.append({
-                "User ID": u.user_id,
-                "Nome": u.first_name,
-                "Cognome": u.last_name,
-                "Gruppo": "Strafatti" if u.group == "strafatti" else "Amici",
-                "Ruolo": role_tag,
-                "Stato Password": status_tag,
-                "Provider IA": u.ai_config.provider.upper()
-            })
+            st.markdown("---")
+            st.markdown("### 📋 Registro Membri & Credenziali")
 
-        st.dataframe(pd.DataFrame(users_table_data), use_container_width=True, hide_index=True)
+            users_table_data = []
+            for u in all_users:
+                role_tag = "👑 Admin" if u.is_admin else "Membro"
+                status_tag = "⚠️ Primo Accesso (In Attesa)" if u.must_change_password else "✅ Password Attiva"
+                users_table_data.append({
+                    "User ID": u.user_id,
+                    "Nome": u.first_name,
+                    "Cognome": u.last_name,
+                    "Gruppo": "Strafatti" if u.group == "strafatti" else "Amici",
+                    "Ruolo": role_tag,
+                    "Stato Password": status_tag,
+                    "Provider IA": u.ai_config.provider.upper()
+                })
 
-        st.markdown("---")
-        st.markdown("### 🔧 Gestione Credenziali & Azioni Rapide")
+            st.dataframe(pd.DataFrame(users_table_data), use_container_width=True, hide_index=True)
 
-        target_user_id = st.selectbox(
-            "Seleziona l'utente su cui intervenire:",
-            options=[u.user_id for u in all_users],
-            format_func=lambda uid: next(f"{u.first_name} {u.last_name} ({u.group}) — ID: {u.user_id}" for u in all_users if u.user_id == uid)
-        )
+            st.markdown("---")
+            st.markdown("### 🔧 Gestione Credenziali & Azioni Rapide")
 
-        col_act1, col_act2 = st.columns(2)
-        with col_act1:
-            if st.button("🔄 Reimposta Password Utente", use_container_width=True, help="Reimposta la password al valore iniziale del Cognome"):
-                ok_rst, msg_rst = auth_manager.admin_reset_user_password(target_user_id)
-                if ok_rst:
-                    st.success(msg_rst)
+            target_user_id = st.selectbox(
+                "Seleziona l'utente su cui intervenire:",
+                options=[u.user_id for u in all_users],
+                format_func=lambda uid: next(f"{u.first_name} {u.last_name} ({u.group}) — ID: {u.user_id}" for u in all_users if u.user_id == uid)
+            )
+
+            col_act1, col_act2 = st.columns(2)
+            with col_act1:
+                if st.button("🔄 Reimposta Password Utente", use_container_width=True, help="Reimposta la password al valore iniziale del Cognome"):
+                    ok_rst, msg_rst = auth_manager.admin_reset_user_password(target_user_id)
+                    if ok_rst:
+                        st.success(msg_rst)
+                        st.rerun()
+                    else:
+                        st.error(msg_rst)
+
+            with col_act2:
+                if st.button("🗑️ Elimina Utente (Non Amministratore)", type="secondary", use_container_width=True):
+                    ok_del, msg_del = auth_manager.admin_delete_user(target_user_id)
+                    if ok_del:
+                        st.success(msg_del)
+                        st.rerun()
+                    else:
+                        st.error(msg_del)
+
+            st.markdown("---")
+            st.markdown("### 🤖 Configurazione & Chat Telegram del Circolo")
+            st.caption("Stato globale del server Telegram e associazioni chat dei membri.")
+
+            col_tadmin1, col_tadmin2 = st.columns([3, 2])
+            with col_tadmin1:
+                admin_tok = tg_manager.get_token()
+                new_admin_tok = st.text_input("TELEGRAM_BOT_TOKEN globale:", value=admin_tok, type="password", key="admin_tg_tok_input")
+                if st.button("💾 Salva Token Globale", key="admin_save_tg_btn"):
+                    tg_manager.set_token(new_admin_tok)
+                    bot_service.restart(token=new_admin_tok)
+                    st.success("Token salvato e Bot Server aggiornato!")
                     st.rerun()
+
+                ok_adm, msg_adm, adm_uname = tg_manager.test_token(new_admin_tok)
+                if ok_adm:
+                    st.success(f"✅ Bot Telegram Operativo: **@{adm_uname}**")
+                    st.markdown(f"[👉 **Apri Bot su Telegram (@{adm_uname})**](https://t.me/{adm_uname})")
+                elif new_admin_tok:
+                    st.warning(f"Verifica connessione: {msg_adm}")
+
+            with col_tadmin2:
+                st.markdown("<b>Chat Collegate:</b>", unsafe_allow_html=True)
+                users_map = tg_manager.load_users_map()
+                if not users_map:
+                    st.info("Nessun membro ha ancora collegato la propria chat Telegram. I membri possono collegarsi istantaneamente tramite QR Code o cliccando sul pulsante nella barra laterale.")
                 else:
-                    st.error(msg_rst)
+                    for cid, data in users_map.items():
+                        st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)
 
-        with col_act2:
-            if st.button("🗑️ Elimina Utente (Non Amministratore)", type="secondary", use_container_width=True):
-                ok_del, msg_del = auth_manager.admin_delete_user(target_user_id)
-                if ok_del:
-                    st.success(msg_del)
-                    st.rerun()
+            st.markdown("---")
+            st.markdown("### 📬 Casella Messaggi Utenti & Assistenza (Inbox)")
+            st.caption("Messaggi inviati dagli utenti tramite il modulo 'Contatta l'Amministratore' presente nella Home Page.")
+            _render_inbox_messages(current_user, inbox_mgr, key_suffix="admin")
+
+        # ----------------- SOTTO-SCHEDA 2: MONITORAGGIO TELEMETRIA & SERVER -----------------
+        with adm_sub_mon:
+            st.markdown("### 🛡️ Salute Server & Funnel di Conversione (Zero Token)")
+            st.caption("Monitoraggio in tempo reale a livello di processo e socket HTTP senza alcun costo token LLM.")
+
+            # Inizializza Orchestratore
+            mon_db_path = PROJECT_ROOT / "voice_caddy.db"
+            mon_orchestrator = MonitoringOrchestrator(db_path=mon_db_path, exporter_port=9102, cycle_interval_seconds=15)
+            admin_telemetry = mon_orchestrator.run_single_iteration()
+            adm_srv = admin_telemetry["server"]
+            adm_tg = admin_telemetry["telegram"]
+            adm_brw = admin_telemetry["browser"]
+
+            # Top KPI
+            ak1, ak2, ak3, ak4, ak5 = st.columns(5)
+            with ak1:
+                srv_up = adm_srv.get("server_up", False)
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-lbl">Stato Server (8501)</div>
+                    <div class="metric-val" style="color: {'#10b981' if srv_up else '#ef4444'};">{'ONLINE' if srv_up else 'OFFLINE'}</div>
+                    <div style="font-size:0.8rem; color:#94a3b8;">Latenza: <b>{adm_srv.get('latency_ms', 0)} ms</b></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with ak2:
+                st.markdown("""
+                <div class="metric-card">
+                    <div class="metric-lbl">Costo Token LLM</div>
+                    <div class="metric-val" style="color:#10b981;">0 Tokens</div>
+                    <div><span class="badge-zero">100% GRATUITO (0.00€)</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with ak3:
+                fn_rate = adm_brw.get("completion_rate_pct", 0.0)
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-lbl">Funnel Conversion</div>
+                    <div class="metric-val" style="color:{'#10b981' if fn_rate >= 50 else '#f59e0b'};">{fn_rate}%</div>
+                    <div style="font-size:0.8rem; color:#94a3b8;">Telegram ➡️ Browser</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with ak4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-lbl">Giocatori Attivi Live</div>
+                    <div class="metric-val" style="color:#3b82f6;">{adm_tg.get('active_now', 0)}</div>
+                    <div><span class="badge-active">In Campo</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with ak5:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-lbl">Giri Consolidati a DB</div>
+                    <div class="metric-val" style="color:#a855f7;">{adm_brw.get('browser_completed', 0)}</div>
+                    <div style="font-size:0.8rem; color:#94a3b8;">Scorecard Salvate</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("---")
+            srv_col_l, srv_col_r = st.columns(2)
+
+            with srv_col_l:
+                st.markdown("#### ⚡ Stato Infrastruttura & Connessioni")
+                st.markdown(f"- **Target URL Streamlit:** `{mon_orchestrator.server_agent.target_url}`")
+                st.markdown(f"- **Uptime Stimato:** `{adm_srv.get('uptime_seconds', 0)} secondi`")
+                st.markdown(f"- **Porta Web (8501):** `{'APERTA (IN ASCOLTO)' if mon_orchestrator.server_agent.state.get('port_8501_open') else 'CHIUSA'}`")
+                st.markdown(f"- **Porta Prometheus (9102):** `{'APERTA' if mon_orchestrator.exporter.is_running else 'CHIUSA'}`")
+                st.markdown(f"- **Errori Applicativi 5xx:** `{adm_srv.get('errors_5xx', 0)}`")
+                st.markdown(f"- **UptimeRobot API:** `{'CONFIGURATA' if mon_orchestrator.server_agent.uptimerobot_api_key else 'PROBE LOCALE ATTIVO'}`")
+
+                fig_srv_lat = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=adm_srv.get("latency_ms", 0),
+                    title={'text': "Latenza Risposta HTTP (ms)"},
+                    gauge={
+                        'axis': {'range': [0, 800]},
+                        'bar': {'color': "#38bdf8"},
+                        'steps': [
+                            {'range': [0, 150], 'color': "rgba(16, 185, 129, 0.4)"},
+                            {'range': [150, 400], 'color': "rgba(245, 158, 11, 0.4)"},
+                            {'range': [400, 800], 'color': "rgba(239, 68, 68, 0.4)"}
+                        ]
+                    }
+                ))
+                fig_srv_lat.update_layout(height=230, margin=dict(l=10, r=10, t=35, b=10), paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_srv_lat, use_container_width=True)
+
+            with srv_col_r:
+                st.markdown("#### 🏌️‍♂️ Funnel Telegram ➡️ Browser")
+                st.info(f"**Diagnosi:** {adm_brw.get('funnel_diagnosis', 'Ottimale')}")
+
+                t_st = adm_tg.get("sessions_started", 0)
+                t_cp = adm_tg.get("sessions_completed", 0)
+                b_cp = adm_brw.get("browser_completed", 0)
+
+                fig_fn = go.Figure(go.Funnel(
+                    y=["1. Avvio Partita Telegram", "2. Conclusione 18 Buche Telegram", "3. Revisione & Salvataggio Browser"],
+                    x=[t_st, t_cp, b_cp],
+                    textinfo="value+percent initial",
+                    marker={"color": ["#3b82f6", "#06b6d4", "#10b981"]}
+                ))
+                fig_fn.update_layout(height=240, margin=dict(l=10, r=10, t=20, b=10), paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#f8fafc"))
+                st.plotly_chart(fig_fn, use_container_width=True)
+
+                stalled_cnt = adm_tg.get("stalled_count", 0)
+                if stalled_cnt > 0:
+                    st.warning(f"⚠️ {stalled_cnt} sessione/i ferme da oltre 45 minuti senza chiusura.")
                 else:
-                    st.error(msg_del)
+                    st.success("✅ Nessun giocatore in stallo anomalo sul percorso.")
 
-        st.markdown("---")
-        st.markdown("### 🤖 Configurazione & Chat Telegram del Circolo")
-        st.caption("Stato globale del server Telegram e associazioni chat dei membri.")
+        # ----------------- SOTTO-SCHEDA 3: ANALISI STATISTICA GOLF INTELLIGENCE -----------------
+        with adm_sub_golf:
+            st.markdown("### 📊 Analisi Statistica Golf Intelligence (8 Aree dell'Esperto)")
+            st.caption("Elaborazione deterministica e balistica a costo token zero sui dati reali di gioco.")
 
-        col_tadmin1, col_tadmin2 = st.columns([3, 2])
-        with col_tadmin1:
-            admin_tok = tg_manager.get_token()
-            new_admin_tok = st.text_input("TELEGRAM_BOT_TOKEN globale:", value=admin_tok, type="password", key="admin_tg_tok_input")
-            if st.button("💾 Salva Token Globale", key="admin_save_tg_btn"):
-                tg_manager.set_token(new_admin_tok)
-                bot_service.restart(token=new_admin_tok)
-                st.success("Token salvato e Bot Server aggiornato!")
-                st.rerun()
+            all_users_adm = auth_manager.get_all_users()
+            u_choices = ["Tutti i Giocatori (Aggregato Circolo)"] + [f"{u.first_name} {u.last_name} ({u.user_id})" for u in all_users_adm]
+            sel_user = st.selectbox("Seleziona il bacino per l'analisi statistica:", options=u_choices, index=0, key="adm_sub_user_select")
 
-            ok_adm, msg_adm, adm_uname = tg_manager.test_token(new_admin_tok)
-            if ok_adm:
-                st.success(f"✅ Bot Telegram Operativo: **@{adm_uname}**")
-                st.markdown(f"[👉 **Apri Bot su Telegram (@{adm_uname})**](https://t.me/{adm_uname})")
-            elif new_admin_tok:
-                st.warning(f"Verifica connessione: {msg_adm}")
+            filter_uid = None
+            if sel_user != "Tutti i Giocatori (Aggregato Circolo)":
+                filter_uid = sel_user.split("(")[-1].replace(")", "").strip()
 
-        with col_tadmin2:
-            st.markdown("<b>Chat Collegate:</b>", unsafe_allow_html=True)
-            users_map = tg_manager.load_users_map()
-            if not users_map:
-                st.info("Nessun membro ha ancora collegato la propria chat Telegram. I membri possono collegarsi istantaneamente tramite QR Code o cliccando sul pulsante nella barra laterale.")
+            raw_rounds = db.get_all_rounds(user_id=filter_uid)
+            loaded_rounds_adm = []
+            for r in raw_rounds:
+                rd = db.get_round_by_id(r["id"])
+                if rd:
+                    loaded_rounds_adm.append(rd)
+
+            stats_engine_adm = AdvancedGolfStatsEngine()
+            ref_hcp = 18.0
+            if filter_uid:
+                try:
+                    p_prof = UserProfile.load_for_user(filter_uid)
+                    ref_hcp = p_prof.handicap
+                except Exception:
+                    ref_hcp = 18.0
+
+            adv_report = stats_engine_adm.compile_full_player_report(loaded_rounds_adm, player_handicap=ref_hcp)
+            n_holes = adv_report.get("total_holes_analyzed", 0)
+
+            if n_holes == 0:
+                st.warning("⚠️ Nessuna buca registrata per questo filtro. Gioca partite con il bot Telegram per visualizzare le 8 aree balistiche.")
             else:
-                for cid, data in users_map.items():
-                    st.markdown(f"• Chat ID <code>{cid}</code> ➔ <b>{data.get('first_name')}</b> ({data.get('group_name', '').upper()}) — Campo: <i>{data.get('active_course_name')}</i>", unsafe_allow_html=True)
+                st.success(f"✅ Analisi su **{len(loaded_rounds_adm)} giri storici** e **{n_holes} buche registrate** (Handicap: **{ref_hcp}**).")
 
-        st.markdown("---")
-        st.markdown("### 📬 Casella Messaggi Utenti & Assistenza (Inbox)")
-        st.caption("Messaggi inviati dagli utenti tramite il modulo 'Contatta l'Amministratore' presente nella Home Page.")
-        _render_inbox_messages(current_user, inbox_mgr, key_suffix="admin")
+                row1_1, row1_2 = st.columns(2)
+                with row1_1:
+                    st.markdown("#### 1. 🎯 Ellisse di Dispersione & Miss-Side (Tee Shot)")
+                    d_data = adv_report["dispersion"]
+                    m_tend = d_data["miss_tendency"]
+                    fig_pie_disp = go.Figure(data=[go.Pie(
+                        labels=["Miss Sinistra (Hook/Pull)", "Centro Fairway", "Miss Destra (Slice/Push)"],
+                        values=[m_tend["left_pct"], m_tend["center_fairway_pct"], m_tend["right_pct"]],
+                        hole=.45,
+                        marker_colors=["#ef4444", "#10b981", "#3b82f6"]
+                    )])
+                    fig_pie_disp.update_layout(title=f"Distribuzione: {d_data['primary_bias']}", height=250, margin=dict(l=10, r=10, t=35, b=10), paper_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig_pie_disp, use_container_width=True)
+                    st.markdown(f"- **Distanza Media:** `{d_data['avg_distance_m']} m` | **Dispersione Laterale (±):** `{d_data['dispersion_lateral_std_m']} m`\n- 💡 **Consiglio:** *{d_data['tactical_advice']}*")
+
+                with row1_2:
+                    st.markdown("#### 2. 🌿 Lie-to-GIR Conversion Matrix (Approcci)")
+                    ltg_data = adv_report["lie_to_gir"]
+                    c_mat = ltg_data["conversion_matrix"]
+                    fig_bar_gir = go.Figure(data=[go.Bar(
+                        x=["Fairway", "Rough", "Bunker", "Tee (Par 3)"],
+                        y=[c_mat.get("fairway", {}).get("gir_pct", 0), c_mat.get("rough", {}).get("gir_pct", 0), c_mat.get("bunker", {}).get("gir_pct", 0), c_mat.get("tee", {}).get("gir_pct", 0)],
+                        marker_color=["#10b981", "#f59e0b", "#d97706", "#3b82f6"],
+                        text=[f"{v}%" for v in [c_mat.get("fairway", {}).get("gir_pct", 0), c_mat.get("rough", {}).get("gir_pct", 0), c_mat.get("bunker", {}).get("gir_pct", 0), c_mat.get("tee", {}).get("gir_pct", 0)]],
+                        textposition="auto"
+                    )])
+                    fig_bar_gir.update_layout(title="Green Presi in Regolazione (GIR %) per Lie", yaxis=dict(range=[0, 100]), height=250, margin=dict(l=10, r=10, t=35, b=10), paper_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig_bar_gir, use_container_width=True)
+                    st.info(f"💡 **Impatto Lie:** {ltg_data['key_finding']} (Penalità Rough: -{ltg_data['lie_penalty_rough_vs_fairway']}%)")
+
+                st.markdown("---")
+                row2_1, row2_2 = st.columns(2)
+
+                with row2_1:
+                    st.markdown("#### 3. 📈 Strokes Gained 4-Way (Metodo Broadie)")
+                    sg_data = adv_report["strokes_gained"]
+                    sg_cats = ["Off-The-Tee", "Approach", "Around-Green", "Putting"]
+                    sg_vals = [sg_data["sg_off_the_tee"], sg_data["sg_approach"], sg_data["sg_around_green"], sg_data["sg_putting"]]
+                    fig_sg_bar = go.Figure(data=[go.Bar(
+                        x=sg_cats, y=sg_vals,
+                        marker_color=["#10b981" if v >= 0 else "#ef4444" for v in sg_vals],
+                        text=[f"{v:+.2f}" for v in sg_vals], textposition="auto"
+                    )])
+                    fig_sg_bar.update_layout(title=f"Strokes Gained vs Benchmark HCP {ref_hcp} (Tot: {sg_data['sg_total']:+.2f})", height=250, margin=dict(l=10, r=10, t=35, b=10), paper_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig_sg_bar, use_container_width=True)
+                    st.warning(f"⚠️ **Settore Critico:** {sg_data['recommendation']}")
+
+                with row2_2:
+                    st.markdown("#### 4. 🧠 Bounce-Back Factor (Resilienza Mentale)")
+                    bb_data = adv_report["bounce_back"]
+                    fig_bb_gauge = go.Figure(go.Indicator(
+                        mode="gauge+number",
+                        value=bb_data.get("bounce_back_rate_pct", 0),
+                        title={'text': "Tasso di Recupero Post-Double Bogey (%)"},
+                        gauge={
+                            'axis': {'range': [0, 100]},
+                            'bar': {'color': "#a855f7"},
+                            'steps': [
+                                {'range': [0, 25], 'color': "rgba(239, 68, 68, 0.3)"},
+                                {'range': [25, 50], 'color': "rgba(245, 158, 11, 0.3)"},
+                                {'range': [50, 100], 'color': "rgba(16, 185, 129, 0.3)"}
+                            ]
+                        }
+                    ))
+                    fig_bb_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=35, b=10), paper_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig_bb_gauge, use_container_width=True)
+                    st.markdown(f"- **Opportunità Rimbalzo:** `{bb_data.get('opportunities', 0)} buche` | **Par/Birdie Immediati:** `{bb_data.get('recovered_holes', 0)} buche`\n- 💡 **Diagnosi:** *{bb_data.get('mental_diagnosis', 'N/D')}*")
+
+                st.markdown("---")
+                row3_1, row3_2 = st.columns(2)
+
+                with row3_1:
+                    st.markdown("#### 5. ⛳ Putting Performance per Fasce di Distanza")
+                    pz_data = adv_report["putting_zones"]
+                    c_pt1, c_pt2, c_pt3 = st.columns(3)
+                    c_pt1.metric("Media Putt / Giro", f"{pz_data.get('avg_putts_per_round_18', 0)}")
+                    c_pt2.metric("Pressure (<1.5m)", f"{pz_data.get('pressure_putts_less_than_1_5m_pct', 0)}%")
+                    c_pt3.metric("3-Putt Avoidance", f"{pz_data.get('three_putt_avoidance_pct', 0)}%")
+                    st.write(f"• **1-Putt Conversion:** `{pz_data.get('one_putt_pct', 0)}%` delle buche.")
+                    st.write(f"• **2-Putt Regolari:** `{pz_data.get('two_putt_pct', 0)}%` delle buche.")
+                    st.write(f"• **Lag Putting (>7m):** *{pz_data.get('lag_putting_rating', 'Buono')}*")
+
+                with row3_2:
+                    st.markdown("#### 6. 🛡️ Caddy Compliance ROI & Curva Affaticamento")
+                    cc_data = adv_report["caddy_compliance"]
+                    fc_data = adv_report["fatigue_curve"]
+                    st.markdown(f"""
+                    <div style="background:#131d2a; border-left:4px solid #10b981; border-radius:8px; padding:12px; margin-bottom:10px;">
+                        <b>🎯 Valore Strategico dell'IA (Caddy Compliance):</b><br>
+                        Seguendo il bastone e il bersaglio conservativo del caddy, il giocatore risparmia in media 
+                        <b style="color:#10b981;">{cc_data.get('strokes_saved_by_caddy_discipline', 0.8)} colpi a buca</b>.
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if fc_data.get("has_18_holes"):
+                        st.write(f"• **Front 9 (Buche 1-9):** {fc_data['front_9_score_to_par']:+d} dal par ({fc_data['front_gir_count']} GIR)")
+                        st.write(f"• **Back 9 (Buche 10-18):** {fc_data['back_9_score_to_par']:+d} dal par ({fc_data['back_gir_count']} GIR)")
+                        st.info(f"💡 **Diagnosi Ritmo/Fisico:** {fc_data['fatigue_diagnosis']}")
+                    else:
+                        st.caption(f"ℹ️ *{fc_data.get('note')}*")
+
+        # ----------------- SOTTO-SCHEDA 4: SUITE AGENTI FUNZIONALI -----------------
+        with adm_sub_agents:
+            st.markdown("### 🤖 Suite di Agenti Specializzati e Gratuiti")
+            st.caption("Progettata dall'agente GolfIntelligenceAdvisorAgent per estendere le funzionalità senza costi di inferenza.")
+
+            mon_db_path = PROJECT_ROOT / "voice_caddy.db"
+            mon_orchestrator = MonitoringOrchestrator(db_path=mon_db_path, exporter_port=9102, cycle_interval_seconds=15)
+            prop_agents = mon_orchestrator.advisor_agent.execute_tool("suggest_free_specialized_agents_suite")
+            for ag in prop_agents["suite_agenti_specializzati_gratuiti"]:
+                st.markdown(f"""
+                <div class="metric-card" style="margin-bottom: 12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h4 style="margin:0; color:#38bdf8;">🛡️ {ag['nome_agente']}</h4>
+                        <span class="badge-zero">{ag['natura']}</span>
+                    </div>
+                    <p style="margin-top:6px; color:#cbd5e1; font-size:0.92rem;">{ag['ruolo']}</p>
+                    <div style="font-size:0.85rem; color:#10b981;"><b>🎯 Utilità Progetto:</b> {ag['utilità']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("#### Endpoint Prometheus Scraped (`/metrics`)")
+            st.code(mon_orchestrator.prom_hook.render_prometheus_text(), language="text")
 
 
 # =========================================================
 # GLOBAL FOOTER & INTELLECTUAL PROPERTY
 # =========================================================
 render_footer()
+

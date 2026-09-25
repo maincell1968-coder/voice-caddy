@@ -9,69 +9,63 @@ from ..strategy.hole_agent import HolePerformanceEvaluation, GreenApproachEvalua
 from ..geo.geometry import haversine_distance_m, bearing_deg
 
 
+from core.tactical_course_manager import tactical_course_manager, TacticalHole
+
+
 def render_view_a_map_html(
     hole: HoleGeometry,
     perf_eval: Optional[HolePerformanceEvaluation] = None,
+    tactical_hole: Optional[TacticalHole] = None,
     centerline: Optional[List[Tuple[float, float]]] = None,
     width: str = "100%",
     height: str = "520px"
 ) -> str:
     """
-    VISTA A: Mappa Tattica Satellitare con Sequenza Colpi Numerati ①②③,
-    Asse Centrale del Fairway (Centerline) e Corridoio di Ingresso al Green.
+    VISTA A: Mappa Tattica con Costruzione Completa del Piano dai dati Excel:
+    - Corridoio Fairway Vettoriale (larghezza reale es. 35m)
+    - Fascia Orizzontale Ottimale di Atterraggio Landing Area 1 e 2 (±20m)
+    - 3 Tee di Partenza Reali (Bianchi, Gialli, Rossi) con distanze metriche
+    - Superficie Green (diametro 50m) e Pin
+    - Sequenza Colpi Numerati ①②③ e Playing Line
+    - Layer switcher: Piano Architettonico Vettoriale Scuro (default) vs Ortofoto Satellitare Esri HD
     """
+    # Recupera TacticalHole dai dati reali di coordinate_campi.xlsx se non fornito
+    tactical_h = tactical_hole
+    if not tactical_h:
+        tactical_h = tactical_course_manager.get_tactical_hole(hole.course_id, hole.hole_number)
+
     center_lat = (hole.tee.lat + hole.green_center.lat) / 2.0
     center_lon = (hole.tee.lon + hole.green_center.lon) / 2.0
 
-    # Punti della Centerline
-    if not centerline:
-        t_lat, t_lon = hole.tee.lat, hole.tee.lon
-        g_lat, g_lon = hole.green_center.lat, hole.green_center.lon
-        centerline = [
-            (t_lat + (g_lat - t_lat) * (i / 10.0), t_lon + (g_lon - t_lon) * (i / 10.0))
-            for i in range(11)
-        ]
-    centerline_geojson = [[p[1], p[0]] for p in centerline]
-
-    # Marker Colpi
-    shots_data = []
-    trajectory_coords = [[hole.tee.lon, hole.tee.lat]]
-
-    if perf_eval and perf_eval.shots_evaluations:
-        for se in perf_eval.shots_evaluations:
-            shots_data.append({
-                "index": se.shot_index,
-                "club": se.club,
-                "distance": se.distance_m,
-                "lat_offset": se.lateral_offset_m,
-                "status": se.lateral_status,
-                "lie": se.landing_lie,
-                "lat": se.end_coord[0],
-                "lon": se.end_coord[1]
-            })
-            trajectory_coords.append([se.end_coord[1], se.end_coord[0]])
+    # Ricava GeoJSON completo dai dati reali Excel
+    if tactical_h:
+        tactical_geojson = tactical_course_manager.get_hole_tactical_geojson(
+            tactical_h,
+            tee_color="gialli",
+            shots=perf_eval.shots_evaluations if perf_eval else None
+        )
+        hole_par = tactical_h.par
+        hole_hcp = tactical_h.hcp
+        dist_b = int(tactical_h.dist_bianchi) if tactical_h.dist_bianchi else None
+        dist_g = int(tactical_h.dist_gialli) if tactical_h.dist_gialli else int(hole.length_m)
+        dist_r = int(tactical_h.dist_rossi) if tactical_h.dist_rossi else None
+        fw_w = int(tactical_h.fairway_width)
     else:
-        # Colpi di default simulati se la buca non ha ancora colpi registrati
-        shots_data.append({
-            "index": 1,
-            "club": "Tee di Partenza",
-            "distance": 0.0,
-            "lat_offset": 0.0,
-            "status": "tee",
-            "lie": "tee",
-            "lat": hole.tee.lat,
-            "lon": hole.tee.lon
-        })
+        tactical_geojson = {"type": "FeatureCollection", "features": []}
+        hole_par = hole.par
+        hole_hcp = hole.stroke_index
+        dist_b, dist_g, dist_r = None, int(hole.length_m), None
+        fw_w = 35
 
-    shots_json = json.dumps(shots_data)
-    trajectory_json = json.dumps(trajectory_coords)
-    centerline_json = json.dumps(centerline_geojson)
+    tactical_geojson_str = json.dumps(tactical_geojson)
 
-    # Poligoni della buca per il layer vettoriale
-    fairway_coords = [[[p[1], p[0]] for p in poly] for poly in hole.fairway_polygons]
-    green_coords = [[[p[1], p[0]] for p in poly] for poly in hole.green_polygons]
-    bunker_coords = [[[p[1], p[0]] for p in poly] for poly in hole.bunker_polygons]
-    water_coords = [[[p[1], p[0]] for p in poly] for poly in hole.water_polygons]
+    hud_tees = []
+    if dist_b:
+        hud_tees.append(f"<span style='color:#ffffff; font-weight:600;'>⚪ {dist_b}m</span>")
+    hud_tees.append(f"<span style='color:#fbbf24; font-weight:600;'>🟡 {dist_g}m</span>")
+    if dist_r:
+        hud_tees.append(f"<span style='color:#ef4444; font-weight:600;'>🔴 {dist_r}m</span>")
+    tees_str = " &nbsp;|&nbsp; ".join(hud_tees)
 
     html_code = f"""<!DOCTYPE html>
 <html lang="it">
@@ -80,123 +74,141 @@ def render_view_a_map_html(
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body, html {{ margin: 0; padding: 0; width: 100%; height: 100%; background: #0d1117; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+        body, html {{ margin: 0; padding: 0; width: 100%; height: 100%; background: #0b111e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
         #map {{ width: {width}; height: {height}; }}
         .hud-overlay {{
             position: absolute; top: 12px; left: 12px; z-index: 1000;
-            background: rgba(13, 17, 23, 0.92); backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.15); border-radius: 10px;
-            padding: 10px 14px; max-width: 320px; color: #f0f6fc; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            background: rgba(11, 17, 30, 0.92); backdrop-filter: blur(8px);
+            border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px;
+            padding: 10px 14px; max-width: 340px; color: #f0f6fc; box-shadow: 0 8px 24px rgba(0,0,0,0.6);
         }}
-        .hud-title {{ font-size: 14px; font-weight: 700; color: #58a6ff; margin-bottom: 4px; }}
-        .hud-sub {{ font-size: 11px; color: #8b949e; line-height: 1.4; }}
+        .hud-title {{ font-size: 14px; font-weight: 800; color: #38bdf8; margin-bottom: 4px; display:flex; justify-content:space-between; }}
+        .hud-sub {{ font-size: 11px; color: #94a3b8; line-height: 1.45; }}
         .shot-marker-div {{
-            width: 26px; height: 26px; border-radius: 50%;
+            width: 24px; height: 24px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            font-weight: 800; font-size: 13px; color: #ffffff;
+            font-weight: 800; font-size: 12px; color: #ffffff;
             border: 2px solid #ffffff; box-shadow: 0 0 8px rgba(0,0,0,0.8);
         }}
         .legend-box {{
             position: absolute; bottom: 15px; right: 12px; z-index: 1000;
-            background: rgba(13, 17, 23, 0.88); border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 8px; padding: 8px 12px; font-size: 11px; color: #c9d1d9;
+            background: rgba(11, 17, 30, 0.90); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px; padding: 8px 12px; font-size: 11px; color: #cbd5e1;
+            backdrop-filter: blur(6px);
         }}
         .legend-row {{ display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }}
         .dot {{ width: 10px; height: 10px; border-radius: 50%; display: inline-block; }}
+        .leaflet-control-layers {{
+            background: rgba(11, 17, 30, 0.92) !important;
+            color: #f1f5f9 !important;
+            border: 1px solid rgba(56, 189, 248, 0.3) !important;
+            border-radius: 8px !important;
+            font-size: 11px !important;
+        }}
     </style>
 </head>
 <body>
     <div id="map"></div>
 
     <div class="hud-overlay">
-        <div class="hud-title">📍 VISTA A: Tracciato Colpi ①②③</div>
+        <div class="hud-title">
+            <span>⛳ Buca {hole.hole_number} — Par {hole_par}</span>
+            <span style="color:#22c55e; font-size:12px;">HCP {hole_hcp}</span>
+        </div>
         <div class="hud-sub">
-            <b>Buca {hole.hole_number} (Par {hole.par} — {int(hole.length_m)}m)</b><br>
-            • Linea gialla: Asse centrale del Fairway (Centerline)<br>
-            • Linea ciano: Traiettoria effettiva dei tuoi colpi
+            📐 <b>Costruzione da Dati Excel:</b> Fairway {fw_w}m | Green Ø 50m<br>
+            🏌️ <b>Battitori:</b> {tees_str}<br>
+            🎯 <b>Target:</b> Landing Area (±20m) & Playing Line attiva
         </div>
     </div>
 
     <div class="legend-box">
-        <div class="legend-row"><span class="dot" style="background:#2ECC71;"></span> Fairway / Green</div>
-        <div class="legend-row"><span class="dot" style="background:#E67E22;"></span> Rough</div>
-        <div class="legend-row"><span class="dot" style="background:#D35400;"></span> Bunker</div>
-        <div class="legend-row"><span style="width:14px; height:2px; background:#F1C40F; display:inline-block;"></span> Asse Centro Fairway</div>
+        <div class="legend-row"><span class="dot" style="background:#10B981;"></span> Corridoio Fairway ({fw_w}m)</div>
+        <div class="legend-row"><span class="dot" style="background:#06B6D4;"></span> Landing Area 1 (±20m Drive)</div>
+        <div class="legend-row"><span class="dot" style="background:#22C55E;"></span> Green (Diametro 50m)</div>
+        <div class="legend-row"><span style="width:14px; height:2px; background:#F59E0B; display:inline-block;"></span> Playing Line Ideale</div>
+        <div class="legend-row"><span class="dot" style="background:#DC2626;"></span> Pin / Bandiera</div>
     </div>
 
     <script>
+        // 1. Basemap Vettoriale Architettonico Scuro (Dark Blueprint — Sostituisce la visione satellitare)
+        const darkBasemap = L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
+            maxZoom: 19,
+            attribution: '&copy; CartoDB &copy; OpenStreetMap'
+        }});
+
+        // 2. Mappa centrata sul fairway
         const map = L.map('map', {{
             center: [{center_lat}, {center_lon}],
             zoom: 17,
+            layers: [darkBasemap],
             attributionControl: false
         }});
 
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
-            maxZoom: 19
-        }}).addTo(map);
+        // 4. Caricamento Dati GeoJSON Vettoriali da Excel
+        const tacticalData = {tactical_geojson_str};
 
-        // 1. Poligoni Fairway
-        const fwCoords = {json.dumps(fairway_coords)};
-        fwCoords.forEach(c => {{
-            L.polygon(c.map(p => [p[1], p[0]]), {{ color: '#1E8449', weight: 2, fillColor: '#27AE60', fillOpacity: 0.45 }}).addTo(map);
-        }});
+        if (tacticalData.features && tacticalData.features.length > 0) {{
+            L.geoJSON(tacticalData, {{
+                style: function(feature) {{
+                    const p = feature.properties || {{}};
+                    return {{
+                        color: p.stroke_color || '#10b981',
+                        weight: p.stroke_weight || 2,
+                        opacity: p.stroke_opacity !== undefined ? p.stroke_opacity : 0.9,
+                        dashArray: p.dash_array || null,
+                        fillColor: p.fill_color || '#10b981',
+                        fillOpacity: p.fill_opacity !== undefined ? p.fill_opacity : 0.4
+                    }};
+                }},
+                pointToLayer: function(feature, latlng) {{
+                    const p = feature.properties || {{}};
+                    if (p.feature_class === 'tee') {{
+                        return L.circleMarker(latlng, {{
+                            radius: p.radius || 7,
+                            fillColor: p.marker_color || '#FBBF24',
+                            color: '#FFFFFF',
+                            weight: 2,
+                            fillOpacity: 1.0
+                        }});
+                    }} else if (p.feature_class === 'pin') {{
+                        return L.circleMarker(latlng, {{
+                            radius: 8,
+                            fillColor: '#DC2626',
+                            color: '#FFFFFF',
+                            weight: 2,
+                            fillOpacity: 1.0
+                        }});
+                    }} else if (p.feature_class === 'shot') {{
+                        const customIcon = L.divIcon({{
+                            className: 'custom-div-icon',
+                            html: `<div class="shot-marker-div" style="background:${{p.marker_color || '#10B981'}};">${{p.shot_index || 1}}</div>`,
+                            iconSize: [24, 24],
+                            iconAnchor: [12, 12]
+                        }});
+                        return L.marker(latlng, {{ icon: customIcon }});
+                    }}
+                    return L.circleMarker(latlng, {{
+                        radius: 6,
+                        fillColor: p.marker_color || '#38BDF8',
+                        color: '#FFFFFF',
+                        weight: 1.5,
+                        fillOpacity: 0.9
+                    }});
+                }},
+                onEachFeature: function(feature, layer) {{
+                    if (feature.properties && feature.properties.label) {{
+                        layer.bindTooltip(feature.properties.label, {{
+                            sticky: true,
+                            direction: 'top'
+                        }});
+                    }}
+                }}
+            }}).addTo(map);
+        }}
 
-        // 2. Poligoni Green
-        const grCoords = {json.dumps(green_coords)};
-        grCoords.forEach(c => {{
-            L.polygon(c.map(p => [p[1], p[0]]), {{ color: '#27AE60', weight: 2, fillColor: '#2ECC71', fillOpacity: 0.75 }}).addTo(map);
-        }});
-
-        // 3. Poligoni Bunker
-        const bkCoords = {json.dumps(bunker_coords)};
-        bkCoords.forEach(c => {{
-            L.polygon(c.map(p => [p[1], p[0]]), {{ color: '#D68910', weight: 2, fillColor: '#F39C12', fillOpacity: 0.7 }}).addTo(map);
-        }});
-
-        // 4. Asse Centrale Fairway (Centerline)
-        const centerline = {centerline_json};
-        L.polyline(centerline.map(p => [p[1], p[0]]), {{
-            color: '#F1C40F',
-            weight: 3,
-            dashArray: '5, 5',
-            opacity: 0.95
-        }}).addTo(map).bindTooltip('🎯 Asse Centrale del Fairway (Linea Ideale)', {{ sticky: true }});
-
-        // 5. Traiettoria Effettiva Colpi
-        const traj = {trajectory_json};
-        L.polyline(traj.map(p => [p[1], p[0]]), {{
-            color: '#00D2D3',
-            weight: 3,
-            opacity: 0.9
-        }}).addTo(map);
-
-        // 6. Marker Numerati dei Colpi ①②③
-        const shots = {shots_json};
-        shots.forEach(s => {{
-            let bg = '#2ECC71';
-            if (s.lie === 'rough') bg = '#E67E22';
-            else if (s.lie === 'bunker') bg = '#D35400';
-            else if (s.index === 1) bg = '#3498DB';
-
-            const customIcon = L.divIcon({{
-                className: 'custom-div-icon',
-                html: `<div class="shot-marker-div" style="background:${{bg}};">${{s.index}}</div>`,
-                iconSize: [26, 26],
-                iconAnchor: [13, 13]
-            }});
-
-            const offText = s.lat_offset >= 0 ? `+${{s.lat_offset}}m a destra` : `${{s.lat_offset}}m a sinistra`;
-            L.marker([s.lat, s.lon], {{ icon: customIcon }}).addTo(map)
-             .bindPopup(`<b>Colpo ${{s.index}} — ${{s.club}}</b><br>Distanza: <b>${{s.distance}}m</b><br>Scostamento asse: <b>${{offText}}</b><br>Superficie: <b>${{s.lie}}</b>`);
-        }});
-
-        // Bandiera Pin Green
-        L.circleMarker([{hole.green_center.lat}, {hole.green_center.lon}], {{
-            radius: 7, fillColor: '#E74C3C', color: '#FFFFFF', weight: 2, fillOpacity: 1
-        }}).addTo(map).bindTooltip('🚩 Bandiera / Centro Green');
-
-        // Fit Bounds
-        map.fitBounds([[{hole.tee.lat}, {hole.tee.lon}], [{hole.green_center.lat}, {hole.green_center.lon}]], {{ padding: [50, 50] }});
+        // 5. Adattamento vista ai limiti della buca
+        map.fitBounds([[{hole.tee.lat}, {hole.tee.lon}], [{hole.green_center.lat}, {hole.green_center.lon}]], {{ padding: [60, 60] }});
     </script>
 </body>
 </html>

@@ -475,6 +475,313 @@ class TacticalCourseManager:
             "is_on_green": ("green" in lie_str or remaining_to_green <= 15.0)
         }
 
+    @staticmethod
+    def _calc_bearing(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+        lat1, lon1 = math.radians(p1[0]), math.radians(p1[1])
+        lat2, lon2 = math.radians(p2[0]), math.radians(p2[1])
+        dlon = lon2 - lon1
+        y = math.sin(dlon) * math.cos(lat2)
+        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+    @staticmethod
+    def _offset_point(lat: float, lon: float, dist_m: float, bearing_deg: float) -> Tuple[float, float]:
+        lat_r = math.radians(lat)
+        brg_r = math.radians(bearing_deg)
+        d_lat = (dist_m * math.cos(brg_r)) / 111320.0
+        d_lon = (dist_m * math.sin(brg_r)) / (111320.0 * math.cos(lat_r))
+        return (lat + d_lat, lon + d_lon)
+
+    def generate_fairway_polygon_coords(
+        self,
+        tactical_hole: TacticalHole,
+        tee_color: str = "gialli"
+    ) -> List[Tuple[float, float]]:
+        """
+        Genera il poligono vettoriale del corridoio fairway (lat, lon)
+        basato sulla larghezza fairway e sui waypoints della Playing Line estratti da Excel.
+        """
+        waypoints = self.get_playing_line_waypoints(tactical_hole, tee_color)
+        if len(waypoints) < 2:
+            return []
+
+        half_w = max(10.0, tactical_hole.fairway_width / 2.0)
+        left_pts = []
+        right_pts = []
+
+        for i in range(len(waypoints)):
+            curr = waypoints[i]
+            if i == 0:
+                nxt = waypoints[i + 1]
+                brg = self._calc_bearing(curr, nxt)
+            elif i == len(waypoints) - 1:
+                prv = waypoints[i - 1]
+                brg = self._calc_bearing(prv, curr)
+            else:
+                prv = waypoints[i - 1]
+                nxt = waypoints[i + 1]
+                brg1 = self._calc_bearing(prv, curr)
+                brg2 = self._calc_bearing(curr, nxt)
+                brg = (brg1 + brg2) / 2.0
+
+            p_left = self._offset_point(curr[0], curr[1], half_w, brg - 90.0)
+            p_right = self._offset_point(curr[0], curr[1], half_w, brg + 90.0)
+            left_pts.append(p_left)
+            right_pts.append(p_right)
+
+        poly = left_pts + list(reversed(right_pts))
+        if poly:
+            poly.append(poly[0])
+        return poly
+
+    def generate_landing_area_polygon_coords(
+        self,
+        tactical_hole: TacticalHole,
+        landing_idx: int = 1,
+        tee_color: str = "gialli"
+    ) -> Optional[List[Tuple[float, float]]]:
+        """
+        Genera il rettangolo geodetico della fascia orizzontale di atterraggio (±20 metri)
+        attorno al waypoint Landing Area 1 o 2.
+        """
+        pt = tactical_hole.landing_1 if landing_idx == 1 else tactical_hole.landing_2
+        if not pt:
+            return None
+
+        waypoints = self.get_playing_line_waypoints(tactical_hole, tee_color)
+        if len(waypoints) < 2:
+            return None
+
+        # Determina la direzione del colpo in arrivo verso la landing area
+        tee_pt = waypoints[0]
+        brg = self._calc_bearing(tee_pt, pt)
+        half_w = max(10.0, tactical_hole.fairway_width / 2.0)
+
+        # Centro meno 20m verso il tee e più 20m verso il green
+        pt_back = self._offset_point(pt[0], pt[1], 20.0, brg + 180.0)
+        pt_fwd = self._offset_point(pt[0], pt[1], 20.0, brg)
+
+        b_left = self._offset_point(pt_back[0], pt_back[1], half_w, brg - 90.0)
+        b_right = self._offset_point(pt_back[0], pt_back[1], half_w, brg + 90.0)
+        f_right = self._offset_point(pt_fwd[0], pt_fwd[1], half_w, brg + 90.0)
+        f_left = self._offset_point(pt_fwd[0], pt_fwd[1], half_w, brg - 90.0)
+
+        return [b_left, f_left, f_right, b_right, b_left]
+
+    def generate_green_polygon_coords(
+        self,
+        tactical_hole: TacticalHole,
+        num_points: int = 24
+    ) -> Optional[List[Tuple[float, float]]]:
+        """
+        Genera la superficie circolare del green (diametro ~50m da dati Excel) in coordinate (lat, lon).
+        """
+        gc = tactical_hole.green_center
+        if not gc:
+            return None
+
+        radius_m = max(15.0, tactical_hole.green_diameter / 2.0)
+        pts = []
+        for i in range(num_points):
+            ang = (360.0 / num_points) * i
+            pts.append(self._offset_point(gc[0], gc[1], radius_m, ang))
+        pts.append(pts[0])
+        return pts
+
+    def get_hole_tactical_geojson(
+        self,
+        tactical_hole: TacticalHole,
+        tee_color: str = "gialli",
+        shots: Optional[List[Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Costruisce la FeatureCollection GeoJSON completa della buca con tutti i dati reali estratti da Excel:
+        - Corridoio Fairway vettoriale (larghezza reale es. 35m)
+        - Fascia Landing Area 1 (±20m) & Landing Area 2
+        - Superficie Green (diametro 50m)
+        - Playing Line
+        - 3 Tee di partenza (Bianchi, Gialli, Rossi) con rispettive distanze metriche
+        - Pin Bandiera
+        - Colpi registrati dal giocatore con colore di lie
+        """
+        features: List[Dict[str, Any]] = []
+
+        # 1. Corridoio Fairway
+        fw_poly = self.generate_fairway_polygon_coords(tactical_hole, tee_color)
+        if fw_poly:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "fairway",
+                    "label": f"Fairway Buca {tactical_hole.hole_number} (Larghezza {int(tactical_hole.fairway_width)}m)",
+                    "fill_color": "#10B981",
+                    "fill_opacity": 0.40,
+                    "stroke_color": "#059669",
+                    "stroke_weight": 2.5
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[p[1], p[0]] for p in fw_poly]]
+                }
+            })
+
+        # 2. Landing Area 1 (±20 metri)
+        lz1_poly = self.generate_landing_area_polygon_coords(tactical_hole, 1, tee_color)
+        if lz1_poly:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "landing_zone",
+                    "label": f"🎯 Landing Area 1 (Drive Target ±20m — Profondità 40m)",
+                    "fill_color": "#06B6D4",
+                    "fill_opacity": 0.60,
+                    "stroke_color": "#0891B2",
+                    "stroke_weight": 3
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[p[1], p[0]] for p in lz1_poly]]
+                }
+            })
+
+        # 3. Landing Area 2 (se presente per Par 5)
+        if tactical_hole.landing_2:
+            lz2_poly = self.generate_landing_area_polygon_coords(tactical_hole, 2, tee_color)
+            if lz2_poly:
+                features.append({
+                    "type": "Feature",
+                    "properties": {
+                        "feature_class": "landing_zone",
+                        "label": f"🎯 Landing Area 2 (Layup Target ±20m)",
+                        "fill_color": "#38BDF8",
+                        "fill_opacity": 0.60,
+                        "stroke_color": "#0284C7",
+                        "stroke_weight": 3
+                    },
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[p[1], p[0]] for p in lz2_poly]]
+                    }
+                })
+
+        # 4. Green (diametro 50m)
+        gr_poly = self.generate_green_polygon_coords(tactical_hole)
+        if gr_poly:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "green",
+                    "label": f"Green Buca {tactical_hole.hole_number} (Diametro {int(tactical_hole.green_diameter)}m)",
+                    "fill_color": "#22C55E",
+                    "fill_opacity": 0.70,
+                    "stroke_color": "#16A34A",
+                    "stroke_weight": 2.5
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[p[1], p[0]] for p in gr_poly]]
+                }
+            })
+
+        # 5. Playing Line
+        wps = self.get_playing_line_waypoints(tactical_hole, tee_color)
+        if len(wps) >= 2:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "playing_line",
+                    "label": f"Playing Line Ottimale ({int(tactical_hole.get_nominal_length(tee_color))}m)",
+                    "stroke_color": "#F59E0B",
+                    "stroke_weight": 3,
+                    "stroke_opacity": 0.9,
+                    "dash_array": "6, 6"
+                },
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[p[1], p[0]] for p in wps]
+                }
+            })
+
+        # 6. Battitori di Partenza (Tee Bianchi, Gialli, Rossi)
+        if tactical_hole.tee_bianchi:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "tee",
+                    "label": f"⚪ Tee Bianchi ({int(tactical_hole.dist_bianchi or 0)}m)",
+                    "marker_color": "#FFFFFF",
+                    "radius": 7
+                },
+                "geometry": {"type": "Point", "coordinates": [tactical_hole.tee_bianchi[1], tactical_hole.tee_bianchi[0]]}
+            })
+        if tactical_hole.tee_gialli:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "tee",
+                    "label": f"🟡 Tee Gialli ({int(tactical_hole.dist_gialli or 0)}m)",
+                    "marker_color": "#FBBF24",
+                    "radius": 8
+                },
+                "geometry": {"type": "Point", "coordinates": [tactical_hole.tee_gialli[1], tactical_hole.tee_gialli[0]]}
+            })
+        if tactical_hole.tee_rossi:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "tee",
+                    "label": f"🔴 Tee Rossi ({int(tactical_hole.dist_rossi or 0)}m)",
+                    "marker_color": "#EF4444",
+                    "radius": 7
+                },
+                "geometry": {"type": "Point", "coordinates": [tactical_hole.tee_rossi[1], tactical_hole.tee_rossi[0]]}
+            })
+
+        # 7. Pin Centro Green
+        if tactical_hole.green_center:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "feature_class": "pin",
+                    "label": f"⛳ Bandiera / Pin Centro Green (Buca {tactical_hole.hole_number})",
+                    "marker_color": "#DC2626",
+                    "radius": 8
+                },
+                "geometry": {"type": "Point", "coordinates": [tactical_hole.green_center[1], tactical_hole.green_center[0]]}
+            })
+
+        # 8. Colpi del Giocatore (se presenti)
+        if shots and len(shots) > 0:
+            cum_p = 0.0
+            for s in shots:
+                ps = self.project_shot_along_corridor(tactical_hole, s, tee_color=tee_color, prev_cumulative_dist=cum_p)
+                cum_p = ps["cum_dist_m"]
+                s_lat = getattr(s, "latitude", None)
+                s_lon = getattr(s, "longitude", None)
+                if not (s_lat and s_lon) and len(wps) >= 2:
+                    # Stima geodetica lungo la playing line
+                    frac = min(1.0, ps["cum_dist_m"] / max(1.0, tactical_hole.get_nominal_length(tee_color)))
+                    s_lat = wps[0][0] + (wps[-1][0] - wps[0][0]) * frac
+                    s_lon = wps[0][1] + (wps[-1][1] - wps[0][1]) * frac
+
+                if s_lat and s_lon:
+                    features.append({
+                        "type": "Feature",
+                        "properties": {
+                            "feature_class": "shot",
+                            "label": f"Colpo #{ps['shot_index']} — {ps['club']} ({ps['dist_m']}m in {ps['lie'].upper()})",
+                            "marker_color": ps["color"],
+                            "shot_index": ps["shot_index"],
+                            "radius": 8
+                        },
+                        "geometry": {"type": "Point", "coordinates": [s_lon, s_lat]}
+                    })
+
+        return {
+            "type": "FeatureCollection",
+            "features": features
+        }
+
 
 # Istanza singleton globale pronta all'uso
 tactical_course_manager = TacticalCourseManager()

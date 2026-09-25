@@ -102,6 +102,31 @@ class TestTacticalCorridor(unittest.TestCase):
         self.assertIn("BACK-LEFT", html_spec)
         self.assertIn("FRONT-RIGHT", html_spec)
 
+    def test_geodetic_polygons_and_geojson(self):
+        """Verifica la costruzione dei poligoni vettoriali e del GeoJSON reale da Excel."""
+        h1 = tactical_course_manager.get_tactical_hole("conero_golf_club", 1)
+        fw_poly = tactical_course_manager.generate_fairway_polygon_coords(h1)
+        self.assertGreaterEqual(len(fw_poly), 4)
+
+        lz_poly = tactical_course_manager.generate_landing_area_polygon_coords(h1, 1)
+        self.assertIsNotNone(lz_poly)
+        self.assertEqual(len(lz_poly), 5)  # Rettangolo chiuso (4 vertici + ritorno)
+
+        gr_poly = tactical_course_manager.generate_green_polygon_coords(h1)
+        self.assertIsNotNone(gr_poly)
+        self.assertEqual(len(gr_poly), 25)  # 24 punti + ritorno
+
+        gj = tactical_course_manager.get_hole_tactical_geojson(h1, tee_color="gialli")
+        self.assertEqual(gj["type"], "FeatureCollection")
+        f_classes = [f["properties"]["feature_class"] for f in gj["features"]]
+        self.assertIn("fairway", f_classes)
+        self.assertIn("landing_zone", f_classes)
+        self.assertIn("green", f_classes)
+        self.assertIn("playing_line", f_classes)
+        self.assertIn("tee", f_classes)
+        self.assertIn("pin", f_classes)
+
 
 if __name__ == "__main__":
     unittest.main()
+

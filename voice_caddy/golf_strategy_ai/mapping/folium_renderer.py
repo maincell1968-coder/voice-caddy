@@ -187,11 +187,11 @@ def render_hole_map_html(
             attributionControl: false
         }});
 
-        // 2. Tile Satellitare ad Alta Definizione (Esri World Imagery)
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+        // 2. Basemap Vettoriale Architettonico Scuro (Dark Blueprint)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-        }}).addTo(map);
+            attribution: '&copy; CartoDB &copy; OpenStreetMap'
+        }).addTo(map);
 
         // 3. Caricamento Dati GeoJSON Vettoriali
         const geojsonData = {geojson_json_str};

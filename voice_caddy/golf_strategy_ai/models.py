@@ -77,6 +77,7 @@ class HoleGeometry(BaseModel):
     stroke_index: int
     tee: GeoPoint
     green_center: GeoPoint
+    course_id: Optional[str] = None
     green_front: Optional[GeoPoint] = None
     green_back: Optional[GeoPoint] = None
     dogleg_apex: Optional[GeoPoint] = None
