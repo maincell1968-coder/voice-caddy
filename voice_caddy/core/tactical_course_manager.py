@@ -277,12 +277,14 @@ class TacticalCourseManager:
         except Exception:
             pass
 
-    def get_course(self, course_id_or_name: str) -> Optional[TacticalCourse]:
+    def get_course(self, course_id_or_name: Optional[str]) -> Optional[TacticalCourse]:
+        if not course_id_or_name:
+            return self.courses.get("conero_golf_club")
         cid = self._normalize_course_key(course_id_or_name)
         if cid in self.courses:
             return self.courses[cid]
         for key, c in self.courses.items():
-            if cid in key or key in cid or course_id_or_name.lower() in c.name.lower():
+            if cid in key or key in cid or (course_id_or_name and course_id_or_name.lower() in c.name.lower()):
                 return c
         return self.courses.get("conero_golf_club")
 

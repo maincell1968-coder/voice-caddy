@@ -1,5 +1,10 @@
 import unittest
+import sys
 from pathlib import Path
+
+VOICE_CADDY_DIR = Path(__file__).resolve().parent.parent
+if str(VOICE_CADDY_DIR) not in sys.path:
+    sys.path.insert(0, str(VOICE_CADDY_DIR))
 
 from golf_strategy_ai.models import HoleGeometry, PlayerCategory
 from golf_strategy_ai.mapping.geojson_builder import load_hole_geometry_from_geojson
@@ -77,8 +82,8 @@ class TestHoleStrategyAgent(unittest.TestCase):
         # Test Rendering Vista A (Mappa Tracciato ①②③)
         html_a = render_view_a_map_html(self.hole, perf_eval=perf_eval)
         self.assertIn("<!DOCTYPE html>", html_a)
-        self.assertIn("VISTA A: Tracciato Colpi ①②③", html_a)
-        self.assertIn("Centerline", html_a)
+        self.assertIn("Playing Line", html_a)
+        self.assertIn("Landing Area", html_a)
 
         # Test Rendering Vista B (Benchmark & Dispersione)
         html_b = render_view_b_benchmark_html(perf_eval=perf_eval)

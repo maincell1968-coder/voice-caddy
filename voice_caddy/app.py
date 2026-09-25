@@ -67,14 +67,29 @@ from golf_strategy_ai import (
 )
 from core.tactical_course_manager import tactical_course_manager, TacticalHole
 from golf_strategy_ai.mapping.tactical_corridor_3d import render_tactical_corridor_html, render_green_spectrum_html
-from core.advanced_golf_stats import AdvancedGolfStatsEngine
+try:
+    from core.advanced_golf_stats import AdvancedGolfStatsEngine
+except ImportError:
+    try:
+        from voice_caddy.core.advanced_golf_stats import AdvancedGolfStatsEngine
+    except ImportError:
+        AdvancedGolfStatsEngine = None
 
 try:
     from monitoring.runner import MonitoringOrchestrator
 except ImportError:
-    from voice_caddy.monitoring.runner import MonitoringOrchestrator
+    try:
+        from voice_caddy.monitoring.runner import MonitoringOrchestrator
+    except ImportError:
+        MonitoringOrchestrator = None
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+_this_file = Path(__file__).resolve()
+if _this_file.parent.name == "voice_caddy":
+    PROJECT_ROOT = _this_file.parent
+elif (_this_file.parent / "voice_caddy").exists():
+    PROJECT_ROOT = _this_file.parent / "voice_caddy"
+else:
+    PROJECT_ROOT = _this_file.parent
 live_session_mgr = LiveSessionManager()
 
 def get_asset_base64(filename: str) -> str:

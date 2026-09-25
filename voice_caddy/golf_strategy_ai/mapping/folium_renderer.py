@@ -188,10 +188,10 @@ def render_hole_map_html(
         }});
 
         // 2. Basemap Vettoriale Architettonico Scuro (Dark Blueprint)
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
             maxZoom: 19,
             attribution: '&copy; CartoDB &copy; OpenStreetMap'
-        }).addTo(map);
+        }}).addTo(map);
 
         // 3. Caricamento Dati GeoJSON Vettoriali
         const geojsonData = {geojson_json_str};

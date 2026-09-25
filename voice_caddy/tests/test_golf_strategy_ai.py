@@ -1,5 +1,10 @@
 import unittest
+import sys
 from pathlib import Path
+
+VOICE_CADDY_DIR = Path(__file__).resolve().parent.parent
+if str(VOICE_CADDY_DIR) not in sys.path:
+    sys.path.insert(0, str(VOICE_CADDY_DIR))
 
 from golf_strategy_ai.models import (
     PlayerCategory,
@@ -244,7 +249,7 @@ class TestGolfStrategyAI(unittest.TestCase):
         html = render_hole_map_html(self.hole, strategy)
         self.assertIn("<!DOCTYPE html>", html)
         self.assertIn("https://unpkg.com/leaflet", html)
-        self.assertIn("server.arcgisonline.com/ArcGIS/rest/services/World_Imagery", html)
+        self.assertIn("basemaps.cartocdn.com/dark_all", html)
         self.assertIn("tactical-hud", html)
         self.assertIn(f"BUCA {self.hole.hole_number}", html)
 

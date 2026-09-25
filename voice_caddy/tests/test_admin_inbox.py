@@ -2,8 +2,13 @@ import unittest
 import tempfile
 import os
 import json
+import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+VOICE_CADDY_DIR = Path(__file__).resolve().parent.parent
+if str(VOICE_CADDY_DIR) not in sys.path:
+    sys.path.insert(0, str(VOICE_CADDY_DIR))
 
 from core.admin_inbox import AdminInboxManager, AdminMessage
 

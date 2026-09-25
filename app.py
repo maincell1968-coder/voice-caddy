@@ -23,9 +23,11 @@ try:
 except Exception:
     pass
 
-# Esegue l'applicazione principale
+# Esegue l'applicazione principale con namespace corretto
 app_file = VC_DIR / "app.py"
 with open(app_file, "r", encoding="utf-8") as f:
     code = f.read()
 
-exec(code, globals())
+app_globals = dict(globals())
+app_globals["__file__"] = str(app_file)
+exec(compile(code, str(app_file), "exec"), app_globals)
