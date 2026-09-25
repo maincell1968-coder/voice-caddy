@@ -38,6 +38,7 @@ from core.whs_rules import RoundHandicapProfile, build_round_handicap_profile, c
 from core.green_distance_service import parse_green_distance_intent, calculate_green_distances, format_distance_response
 from core.club_distance_service import ClubDistanceService
 from core.caddy_personality import CaddyPersonalityEngine, CaddyTone
+from core.tactical_course_manager import tactical_course_manager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -92,6 +93,7 @@ class VoiceCaddyTelegramBot:
         self.session_mgr = LiveSessionManager()
         self.user_modes: Dict[str, str] = {}
         self.pending_weather: Dict[str, bool] = {}
+        self.pending_shotgun_detection: Dict[str, bool] = {}
         self.is_running = False
         self._instance_socket = None
 
@@ -219,11 +221,35 @@ class VoiceCaddyTelegramBot:
         """Restituisce la tastiera temporanea a 1 tocco per inviare la posizione all'avvio del round."""
         return {
             "keyboard": [
-                [{"text": "📍 Invia posizione per rilevare il vento", "request_location": True}]
+                [{"text": "📍 Invia posizione per rilevare il vento", "request_location": True}],
+                [{"text": "🎯 Partenza Shotgun da Buca Specifica"}]
             ],
             "resize_keyboard": True,
             "one_time_keyboard": True
         }
+
+    def get_shotgun_location_request_keyboard(self) -> dict:
+        """Restituisce la tastiera rapida a 1 tocco per inviare la posizione GPS e rilevare la buca Shotgun."""
+        return {
+            "keyboard": [
+                [{"text": "📍 Invia Posizione per Rilevare Buca Shotgun", "request_location": True}],
+                [{"text": "⛳ Scegli Buca da Elenco"}],
+                [{"text": "🔙 Torna in Campo"}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": True
+        }
+
+    def get_shotgun_inline_holes_keyboard(self) -> dict:
+        """Restituisce la tastiera inline con le 18 buche per selezione rapida della partenza Shotgun."""
+        rows = []
+        for r in range(0, 18, 3):
+            row = []
+            for h in range(r + 1, r + 4):
+                row.append({"text": f"Buca {h}", "callback_data": f"start_shotgun_hole_{h}"})
+            rows.append(row)
+        rows.append([{"text": "📍 Rileva da Posizione GPS", "callback_data": "detect_shotgun_gps"}])
+        return {"inline_keyboard": rows}
 
     def start_round_flow(self, chat_id: int | str, mode: Optional[str] = None, tee_name: Optional[str] = None):
         """
@@ -509,6 +535,7 @@ class VoiceCaddyTelegramBot:
     def get_interactive_start_hole_menu(self) -> dict:
         return {
             "inline_keyboard": [
+                [{"text": "📍 Rileva Buca da GPS (Shotgun)", "callback_data": "detect_shotgun_gps"}],
                 [{"text": "1", "callback_data": "start_hole_1"}, {"text": "2", "callback_data": "start_hole_2"}, {"text": "3", "callback_data": "start_hole_3"}],
                 [{"text": "4", "callback_data": "start_hole_4"}, {"text": "5", "callback_data": "start_hole_5"}, {"text": "6", "callback_data": "start_hole_6"}],
                 [{"text": "7", "callback_data": "start_hole_7"}, {"text": "8", "callback_data": "start_hole_8"}, {"text": "9", "callback_data": "start_hole_9"}],
@@ -853,8 +880,8 @@ class VoiceCaddyTelegramBot:
             )
 
         # 3. Selezione Buca di partenza
-        elif data.startswith("start_hole_"):
-            h_num = int(data.replace("start_hole_", ""))
+        elif data.startswith("start_hole_") or data.startswith("start_shotgun_hole_"):
+            h_num = int(data.replace("start_shotgun_hole_", "").replace("start_hole_", ""))
             cur_tee = self.session_mgr.get_selected_tee(chat_id)
             self.session_mgr.start_interactive_round(
                 chat_id=chat_id,
@@ -862,8 +889,27 @@ class VoiceCaddyTelegramBot:
                 start_hole=h_num,
                 course_id=active_course.course_id
             )
+            tot_h = active_course.holes_count or 18
+            shotgun_seq = list(range(h_num, tot_h + 1)) + list(range(1, h_num))
+            self.session_mgr.set_round_sequence(chat_id, shotgun_seq)
             self.answer_callback_query(cb_id, text=f"Partenza da Buca {h_num}!")
             return self.show_interactive_hole_screen(chat_id, message_id=message_id)
+
+        # 3b. Rilevamento GPS Shotgun su richiesta inline
+        elif data == "detect_shotgun_gps":
+            cid = str(chat_id)
+            self.pending_shotgun_detection[cid] = True
+            self.answer_callback_query(cb_id, text="Invia la tua posizione GPS")
+            text = (
+                "📍 <b>Rilevamento Partenza Shotgun da GPS:</b>\n\n"
+                "Tocca il pulsante qui sotto <b>[📍 Invia Posizione per Rilevare Buca Shotgun]</b> "
+                "per rilevare automaticamente da quale buca parti in base alle coordinate del Conero Golf Club."
+            )
+            return self.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=self.get_shotgun_location_request_keyboard()
+            )
 
         # 4. Scelta del colpo / bastone
         elif data.startswith("shot_"):
@@ -1045,7 +1091,12 @@ class VoiceCaddyTelegramBot:
             else:
                 sit = "BUCA_DISASTRO"
 
-            next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
+            seq = self.session_mgr.get_round_sequence(chat_id)
+            if seq and h_num in seq:
+                idx = seq.index(h_num)
+                next_h = seq[idx + 1] if idx + 1 < len(seq) else seq[0]
+            else:
+                next_h = 1 if h_num >= whs_profile.holes_count else h_num + 1
             caddy_quote = personality_engine.get_phrase(
                 sit,
                 tone=caddy_tone,
@@ -1336,19 +1387,26 @@ class VoiceCaddyTelegramBot:
             )
             return self.send_message(chat_id, msg, reply_markup=self.get_interactive_lie_menu())
 
-        # Controllo se è la posizione iniziale richiesta per meteo & vento
+        # Controllo se è la posizione iniziale richiesta per meteo & vento o rilevamento Shotgun
         cid = str(chat_id)
-        if self.pending_weather.get(cid, False):
+        is_pending_weather = self.pending_weather.get(cid, False)
+        is_pending_shotgun = self.pending_shotgun_detection.get(cid, False)
+
+        if is_pending_weather or is_pending_shotgun:
             self.pending_weather[cid] = False
+            self.pending_shotgun_detection[cid] = False
             user_rec, user_profile, active_course, _ = self._resolve_context(chat_id)
             user_mode = self.get_user_mode(chat_id)
             mode_label = "GARA (Regola 4.3)" if user_mode == "gara" else "TRAINING"
 
-            # Reset sessione alla Buca 1 per il nuovo giro
-            self.session_mgr.reset_session(chat_id)
+            # Rileva buca più vicina in base alle coordinate GPS reali del campo
+            course_ref = active_course.course_id if active_course else "conero_golf_club"
+            nearest = tactical_course_manager.detect_nearest_hole_from_gps(
+                course_ref, lat, lon, max_tee_distance_m=85.0
+            )
 
             # Rileva meteo e vento in tempo reale da Open-Meteo
-            w = weather_service.get_current_weather(lat, lon)
+            w = weather_service.get_current_weather(lat, lon) or {}
             cond = w.get("weather_desc", "Sereno ☀️")
             temp = w.get("temperature", 20.0)
             w_speed = w.get("wind_speed", 0.0)
@@ -1366,25 +1424,131 @@ class VoiceCaddyTelegramBot:
                     f"⚖️ <b>Modalità:</b> {user_mode.upper()}"
                 )
 
-            whs_profile = self._resolve_handicap_profile(chat_id)
-            h1_strokes = whs_profile.get_received_strokes(1)
-            h1_par = whs_profile.hole_pars.get(1, 4)
-            h1_net_par = whs_profile.get_net_par(1)
+            # Reset sessione per il nuovo giro
+            self.session_mgr.reset_session(chat_id)
 
-            reply_msg = (
-                f"🏌️‍♂️ <b>Modalità Round Attivata! ({mode_label})</b>\n\n"
-                f"🎯 <b>Playing HCP (WHS):</b> <b>{whs_profile.playing_hcp} colpi</b> ({whs_profile.tee_name.title()} • {whs_profile.format_name.title()})\n"
-                f"🌤️ <b>Meteo:</b> {cond}, {temp}°C\n"
-                f"💨 <b>Vento medio:</b> {w_speed} km/h da {w_card} {w_arrow}\n"
-                f"⚠️ <b>Raffiche:</b> fino a {w_gusts} km/h\n\n"
-                f"⛳ <i>Sei sul Tee della Buca 1 (Par {h1_par} • Colpi Ricevuti: {h1_strokes} ➔ Par Netto: {h1_net_par}).\n"
-                f"Tira il colpo di partenza e tocca <b>[📍 Calcola Distanza & Plays Like]</b> appena arrivi sulla palla!</i>"
-            )
-            # Rimuove il pulsante temporaneo e ripristina la tastiera da gioco persistente
-            return self.send_message(chat_id, reply_msg, reply_markup=self.get_on_course_keyboard(user_mode))
+            whs_profile = self._resolve_handicap_profile(chat_id)
+            tot_course_holes = active_course.holes_count or 18
+
+            if nearest.get("detected"):
+                start_hole = nearest["nearest_hole"]
+                tee_detected = nearest.get("tee_type", "gialli")
+                distance_to_tee = nearest.get("distance_to_tee_m", 0.0)
+                shotgun_seq = nearest.get("shotgun_sequence") or (
+                    list(range(start_hole, tot_course_holes + 1)) + list(range(1, start_hole))
+                )
+
+                self.session_mgr.set_round_sequence(chat_id, shotgun_seq)
+                self.session_mgr.set_current_hole(chat_id, start_hole)
+                self.session_mgr.set_round_state(chat_id, "IDLE")
+
+                h_strokes = whs_profile.get_received_strokes(start_hole)
+                h_par = whs_profile.hole_pars.get(start_hole, nearest.get("par", 4))
+                h_si = whs_profile.hole_stroke_indices.get(start_hole, nearest.get("hcp", start_hole))
+                h_net_par = whs_profile.get_net_par(start_hole)
+
+                if start_hole != 1:
+                    seq_summary = f"Buche {start_hole} ➔ {tot_course_holes}, poi 1 ➔ {start_hole - 1}"
+                    reply_msg = (
+                        f"🏌️‍♂️ <b>Modalità Round Attivata! ({mode_label})</b>\n\n"
+                        f"🎯 <b>PARTENZA SHOTGUN RILEVATA DA GPS!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📍 <b>Sei sul Tee della BUCA {start_hole}</b> (Tee {tee_detected.title()} • a {int(round(distance_to_tee))}m)\n"
+                        f"⛳ <b>Par {h_par} • HCP Buca {h_si}</b>\n"
+                        f"🎯 <b>Colpi Ricevuti:</b> {h_strokes} ➔ <b>Par Netto: {h_net_par}</b>\n"
+                        f"🔄 <b>Sequenza Shotgun (18 Buche):</b> {seq_summary}\n\n"
+                        f"🎯 <b>Playing HCP (WHS):</b> <b>{whs_profile.playing_hcp} colpi</b> ({whs_profile.tee_name.title()} • {whs_profile.format_name.title()})\n"
+                        f"🌤️ <b>Meteo:</b> {cond}, {temp}°C\n"
+                        f"💨 <b>Vento medio:</b> {w_speed} km/h da {w_card} {w_arrow}\n"
+                        f"⚠️ <b>Raffiche:</b> fino a {w_gusts} km/h\n\n"
+                        f"🏌️ <i>Tira il colpo di partenza della Buca {start_hole} e tocca <b>[📍 Calcola Distanza & Plays Like]</b> appena arrivi sulla palla!</i>"
+                    )
+                else:
+                    reply_msg = (
+                        f"🏌️‍♂️ <b>Modalità Round Attivata! ({mode_label})</b>\n\n"
+                        f"🎯 <b>Playing HCP (WHS):</b> <b>{whs_profile.playing_hcp} colpi</b> ({whs_profile.tee_name.title()} • {whs_profile.format_name.title()})\n"
+                        f"🌤️ <b>Meteo:</b> {cond}, {temp}°C\n"
+                        f"💨 <b>Vento medio:</b> {w_speed} km/h da {w_card} {w_arrow}\n"
+                        f"⚠️ <b>Raffiche:</b> fino a {w_gusts} km/h\n\n"
+                        f"⛳ <i>Sei sul Tee della Buca 1 (Par {h_par} • HCP Buca {h_si} • Colpi Ricevuti: {h_strokes} ➔ Par Netto: {h_net_par}).\n"
+                        f"Tira il colpo di partenza e tocca <b>[📍 Calcola Distanza & Plays Like]</b> appena arrivi sulla palla!</i>"
+                    )
+                return self.send_message(chat_id, reply_msg, reply_markup=self.get_on_course_keyboard(user_mode))
+
+            else:
+                # Distanza > 85m da qualunque battitore (es. Club House, parcheggio, campo pratica)
+                start_hole = 1
+                self.session_mgr.set_round_sequence(chat_id, list(range(1, tot_course_holes + 1)))
+                self.session_mgr.set_current_hole(chat_id, 1)
+                self.session_mgr.set_round_state(chat_id, "IDLE")
+
+                closest_h = nearest.get("nearest_hole", 1)
+                dist_c = nearest.get("distance_to_tee_m", 999.0)
+                h1_strokes = whs_profile.get_received_strokes(1)
+                h1_par = whs_profile.hole_pars.get(1, 4)
+                h1_net_par = whs_profile.get_net_par(1)
+
+                if is_pending_shotgun:
+                    reply_msg = (
+                        f"📍 <b>Posizione GPS Ricevuta (Fuori Battitore)</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"Sei a circa <b>{int(round(dist_c))} metri</b> dal battitore più vicino (Tee Buca {closest_h}).\n"
+                        f"Probabilmente sei ancora in Club House o al campo pratica.\n\n"
+                        f"🎯 <b>Playing HCP (WHS):</b> <b>{whs_profile.playing_hcp} colpi</b> ({whs_profile.tee_name.title()})\n"
+                        f"🌤️ <b>Meteo:</b> {cond}, {temp}°C\n"
+                        f"💨 <b>Vento medio:</b> {w_speed} km/h da {w_card} {w_arrow}\n"
+                        f"⚠️ <b>Raffiche:</b> fino a {w_gusts} km/h\n\n"
+                        f"👉 <b>Come impostare la buca Shotgun:</b>\n"
+                        f"• Quando arrivi sul tee della tua buca, rimanda la posizione (📎 ➔ Posizione)\n"
+                        f"• Oppure tocca la buca da cui parti qui sotto:"
+                    )
+                    return self.send_message(chat_id, reply_msg, reply_markup=self.get_shotgun_inline_holes_keyboard())
+                else:
+                    reply_msg = (
+                        f"🏌️‍♂️ <b>Modalità Round Attivata! ({mode_label})</b>\n\n"
+                        f"🎯 <b>Playing HCP (WHS):</b> <b>{whs_profile.playing_hcp} colpi</b> ({whs_profile.tee_name.title()} • {whs_profile.format_name.title()})\n"
+                        f"🌤️ <b>Meteo:</b> {cond}, {temp}°C\n"
+                        f"💨 <b>Vento medio:</b> {w_speed} km/h da {w_card} {w_arrow}\n"
+                        f"⚠️ <b>Raffiche:</b> fino a {w_gusts} km/h\n\n"
+                        f"⛳ <i>Sei sul Tee della Buca 1 (Par {h1_par} • Colpi Ricevuti: {h1_strokes} ➔ Par Netto: {h1_net_par}).\n"
+                        f"Tira il colpo di partenza e tocca <b>[📍 Calcola Distanza & Plays Like]</b> appena arrivi sulla palla!</i>\n\n"
+                        f"💡 <i>Nota: se parti in modalità Shotgun da un'altra buca, tocca <b>[🎯 Partenza Shotgun da Buca Specifica]</b> o scrivi <code>/shotgun</code>!</i>"
+                    )
+                    return self.send_message(chat_id, reply_msg, reply_markup=self.get_on_course_keyboard(user_mode))
 
         user_rec, user_profile, active_course, ai_cfg = self._resolve_context(chat_id)
         session = self.session_mgr.get_or_create_session(chat_id, user_id=user_rec.user_id, course_id=active_course.course_id)
+
+        # Se siamo all'avvio su Buca 1 senza colpi giocati, rileva se il giocatore è invece su un altro tee (Shotgun spontaneo)
+        if session.get("current_hole", 1) == 1 and session.get("current_shot_index", 1) == 1 and not session.get("last_latitude"):
+            course_ref = active_course.course_id if active_course else "conero_golf_club"
+            near_tee = tactical_course_manager.detect_nearest_hole_from_gps(course_ref, lat, lon, max_tee_distance_m=85.0)
+            if near_tee.get("detected") and near_tee.get("nearest_hole", 1) != 1:
+                start_h = near_tee["nearest_hole"]
+                tee_det = near_tee.get("tee_type", "gialli")
+                dist_t = near_tee.get("distance_to_tee_m", 0.0)
+                tot_c = active_course.holes_count or 18
+                shotgun_seq = near_tee.get("shotgun_sequence") or (list(range(start_h, tot_c + 1)) + list(range(1, start_h)))
+                self.session_mgr.set_round_sequence(chat_id, shotgun_seq)
+                self.session_mgr.set_current_hole(chat_id, start_h)
+
+                whs_p = self._resolve_handicap_profile(chat_id)
+                h_str = whs_p.get_received_strokes(start_h)
+                h_p = whs_p.hole_pars.get(start_h, near_tee.get("par", 4))
+                h_s = whs_p.hole_stroke_indices.get(start_h, near_tee.get("hcp", start_h))
+                h_np = whs_p.get_net_par(start_h)
+                user_m = self.get_user_mode(chat_id)
+
+                shotgun_msg = (
+                    f"🎯 <b>PARTENZA SHOTGUN RILEVATA DA GPS!</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📍 Rilevata presenza sul <b>Tee della BUCA {start_h}</b> (Tee {tee_det.title()} • a {int(round(dist_t))}m)\n"
+                    f"⛳ <b>Par {h_p} • HCP Buca {h_s}</b>\n"
+                    f"🎯 <b>Colpi Ricevuti:</b> {h_str} ➔ <b>Par Netto: {h_np}</b>\n"
+                    f"🔄 <b>Sequenza Impostata:</b> Buche {start_h} ➔ {tot_c}, poi 1 ➔ {start_h - 1}\n\n"
+                    f"🏌️ <i>Buca {start_h} impostata come partenza! Effettua il tee shot e tocca <b>[📍 Calcola Distanza & Plays Like]</b> appena arrivi sulla palla.</i>"
+                )
+                return self.send_message(chat_id, shotgun_msg, reply_markup=self.get_on_course_keyboard(user_m))
 
         # Aggiorna posizione e recupera metratura percorsa dal colpo precedente
         distance_covered, current_hole, current_shot = self.session_mgr.update_position(chat_id, lat, lon, altitude)
@@ -2568,6 +2732,53 @@ class VoiceCaddyTelegramBot:
                 new_mode = self.get_user_mode(chat_id)
             return self.start_round_flow(chat_id, new_mode)
 
+        # Rilevamento / Configurazione Shotgun
+        shotgun_triggers = [
+            "shotgun", "shot gun", "partenza shotgun", "da che buca parto",
+            "da quale buca parto", "da dove parto", "rileva buca", "trova buca",
+            "dove mi trovo", "modalità shotgun", "modalita shotgun", "gps shotgun"
+        ]
+        if clean in ["🎯 Partenza Shotgun", "🎯 Partenza Shotgun da Buca Specifica", "⛳ Scegli Buca da Elenco", "⛳ Scegli Buca Manuale"]:
+            if "elenco" in clean_lower or "manuale" in clean_lower:
+                return self.send_message(
+                    chat_id,
+                    "⛳ <b>Seleziona la buca da cui parti in modalità Shotgun:</b>",
+                    reply_markup=self.get_shotgun_inline_holes_keyboard()
+                )
+            cid = str(chat_id)
+            self.pending_shotgun_detection[cid] = True
+            msg = (
+                "🎯 <b>RILEVAMENTO AUTOMATICO PARTENZA SHOTGUN (GPS)</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"Tocca il pulsante in basso per inviare la tua <b>posizione GPS</b>:\n"
+                "Voice Caddy verificherà la distanza dai battitori del Conero Golf Club e imposterà automaticamente la buca di partenza e la sequenza completa a 18 buche!"
+            )
+            return self.send_message(chat_id, msg, reply_markup=self.get_shotgun_location_request_keyboard())
+
+        if any(trig in clean_lower for trig in shotgun_triggers):
+            # Se è già specificata una buca numerica (es. "shotgun da buca 7"), parse_round_sequence_intent se ne occupa sotto
+            if not any(char.isdigit() for char in clean):
+                cid = str(chat_id)
+                self.pending_shotgun_detection[cid] = True
+                user_rec, _, active_course, _ = self._resolve_context(chat_id)
+                msg = (
+                    "🎯 <b>RILEVAMENTO AUTOMATICO PARTENZA SHOTGUN (GPS)</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    f"Sei sul campo al <b>{active_course.name}</b>?\n\n"
+                    "📍 Tocca il pulsante qui sotto <b>[📍 Invia Posizione per Rilevare Buca Shotgun]</b>:\n"
+                    "Voice Caddy calcolerà la distanza da tutti i battitori (1..18) del percorso e configurerà:\n"
+                    "1. La tua <b>buca di partenza esatta</b>\n"
+                    "2. <b>Par, Stroke Index e colpi ricevuti</b>\n"
+                    "3. La <b>sequenza circolare</b> del giro (es. Buche 7 ➔ 18, poi 1 ➔ 6)\n"
+                    "4. <b>Vento e meteo reale</b> sul campo\n\n"
+                    "<i>Oppure tocca [⛳ Scegli Buca da Elenco] per impostarla manualmente.</i>"
+                )
+                return self.send_message(
+                    chat_id,
+                    msg,
+                    reply_markup=self.get_shotgun_location_request_keyboard()
+                )
+
         if clean in ["⏩ Prossima Buca", "📊 Stato & Buca", "🎭 Tono Caddie", "🎒 Profilo & Sacca", "🔄 Nuovo Giro"] or any(t in clean_lower for t in ["tono caddie", "tono professionale", "tono arrabbiato", "tono spensierato", "tono psicologo", "torna in campo"]):
             return self.handle_command(chat_id, clean)
 
@@ -3148,17 +3359,34 @@ class VoiceCaddyTelegramBot:
                     if seq_intent["tee"]:
                         self.session_mgr.set_selected_tee(chat_id, seq_intent["tee"])
                     self.session_mgr.set_round_state(chat_id, "IDLE")
+                    if seq_intent["sequence"]:
+                        self.session_mgr.set_current_hole(chat_id, seq_intent["sequence"][0])
                     whs_p = self._resolve_handicap_profile(chat_id, tee_name=seq_intent["tee"])
                     t_name = self.session_mgr.get_selected_tee(chat_id)
+                    start_h_desc = f"• <b>Buca di Partenza:</b> Buca {seq_intent['sequence'][0]}\n" if seq_intent["sequence"] else ""
                     msg = (
                         f"🏌️‍♂️ <b>Sequenza Buche Impostata!</b>\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"• <b>Percorso:</b> {seq_intent['description']}\n"
                         f"• <b>Tee:</b> {t_name.title()} ({whs_p.gender})\n"
+                        f"{start_h_desc}"
                         f"• <b>Buche totali:</b> {seq_intent['total_holes']}\n\n"
                         f"💬 <i>Usa i pulsanti interattivi o scrivi in chat per segnare i colpi giocati!</i>"
                     )
                     return self.send_message(chat_id, msg, reply_markup=self.get_on_course_keyboard(self.get_user_mode(chat_id)))
+
+            if cmd == "/shotgun":
+                cid = str(chat_id)
+                self.pending_shotgun_detection[cid] = True
+                return self.send_message(
+                    chat_id,
+                    "🎯 <b>Rilevamento Automatico Partenza Shotgun da GPS</b>\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "Invia la tua posizione GPS dal campo: Voice Caddy rileverà su quale battitore ti trovi e configurerà automaticamente la tua buca di partenza e l'intero giro a 18 buche!\n\n"
+                    "📍 Tocca il pulsante in basso per inviare la posizione GPS:",
+                    reply_markup=self.get_shotgun_location_request_keyboard()
+                )
+
             return self.send_message(
                 chat_id,
                 "⛳ <b>Imposta la sequenza di buche giocate:</b>\n"
@@ -3166,7 +3394,7 @@ class VoiceCaddyTelegramBot:
                 "• <code>/sequenza 1-18</code> (Giro standard)\n"
                 "• <code>/sequenza prime 9</code> (Buche 1-9)\n"
                 "• <code>/sequenza shotgun 7</code> (Da buca 7 a 18, poi 1 a 6)\n"
-                "• <code>/sequenza 1-6 e 15-18</code> (Giro parziale)",
+                "• <code>/shotgun</code> (Rilevamento GPS automatico della buca)",
                 reply_markup=self.get_round_sequence_keyboard()
             )
 

@@ -294,6 +294,85 @@ class TacticalCourseManager:
             return c.get_hole(hole_number)
         return None
 
+    def detect_nearest_hole_from_gps(
+        self,
+        course_id_or_name: Optional[str],
+        lat: float,
+        lon: float,
+        max_tee_distance_m: float = 85.0
+    ) -> Dict[str, Any]:
+        """
+        Rileva automaticamente la buca di partenza più vicina in base alle coordinate GPS reali.
+        Fondamentale per partenze in modalità Shotgun da qualsiasi buca del percorso (1..18).
+        Calcola la distanza geodetica (Haversine) da tutti i battitori (gialli, bianchi, rossi).
+        """
+        c = self.get_course(course_id_or_name)
+        if not c or not c.holes:
+            return {
+                "detected": False,
+                "nearest_hole": 1,
+                "distance_to_tee_m": 99999.0,
+                "reason": "course_not_found",
+                "shotgun_sequence": list(range(1, 19))
+            }
+
+        all_distances = []
+        for h_num, h in c.holes.items():
+            best_d = 99999.0
+            best_tee_type = "gialli"
+            best_tee_coords = None
+
+            for t_type, t_coords in [("gialli", h.tee_gialli), ("bianchi", h.tee_bianchi), ("rossi", h.tee_rossi)]:
+                if t_coords:
+                    d = haversine_distance(lat, lon, t_coords[0], t_coords[1])
+                    if d < best_d:
+                        best_d = d
+                        best_tee_type = t_type
+                        best_tee_coords = t_coords
+
+            if best_tee_coords:
+                all_distances.append({
+                    "hole_number": h_num,
+                    "distance_m": round(best_d, 1),
+                    "tee_type": best_tee_type,
+                    "tee_coords": best_tee_coords,
+                    "green_coords": h.green_center,
+                    "par": h.par,
+                    "hcp": h.hcp,
+                    "dist_nominal": h.get_nominal_length(best_tee_type)
+                })
+
+        if not all_distances:
+            return {
+                "detected": False,
+                "nearest_hole": 1,
+                "distance_to_tee_m": 99999.0,
+                "reason": "no_tee_coords",
+                "shotgun_sequence": list(range(1, 19))
+            }
+
+        all_distances.sort(key=lambda x: x["distance_m"])
+        closest = all_distances[0]
+
+        is_detected = (closest["distance_m"] <= max_tee_distance_m)
+        start_h = closest["hole_number"]
+        total_holes = c.holes_count or 18
+        shotgun_sequence = list(range(start_h, total_holes + 1)) + list(range(1, start_h))
+
+        return {
+            "detected": is_detected,
+            "nearest_hole": start_h,
+            "distance_to_tee_m": closest["distance_m"],
+            "tee_type": closest["tee_type"],
+            "tee_coords": closest["tee_coords"],
+            "green_coords": closest["green_coords"],
+            "par": closest["par"],
+            "hcp": closest["hcp"],
+            "dist_nominal": closest["dist_nominal"],
+            "shotgun_sequence": shotgun_sequence,
+            "all_distances": all_distances[:3]
+        }
+
     def get_playing_line_waypoints(
         self,
         tactical_hole: TacticalHole,

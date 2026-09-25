@@ -153,7 +153,12 @@ class LiveSessionManager:
         c_id = str(chat_id)
         session = self.get_or_create_session(c_id, user_id="default_user")
         curr = session.get("current_hole", 1)
-        next_h = 1 if curr >= 18 else curr + 1
+        seq = self.get_round_sequence(c_id)
+        if seq and curr in seq:
+            idx = seq.index(curr)
+            next_h = seq[idx + 1] if idx + 1 < len(seq) else seq[0]
+        else:
+            next_h = 1 if curr >= 18 else curr + 1
         self.set_current_hole(c_id, next_h)
         return next_h
 
@@ -1235,7 +1240,12 @@ class LiveSessionManager:
         """Avanza alla buca successiva, azzerando i colpi e le penalità temporanee."""
         state = self.get_interactive_state(chat_id)
         cur_h = state.get("current_hole", 1)
-        next_h = 1 if cur_h >= 18 else cur_h + 1
+        seq = self.get_round_sequence(chat_id)
+        if seq and cur_h in seq:
+            idx = seq.index(cur_h)
+            next_h = seq[idx + 1] if idx + 1 < len(seq) else seq[0]
+        else:
+            next_h = 1 if cur_h >= 18 else cur_h + 1
 
         state["current_hole"] = next_h
         state["current_shot_number"] = 1
