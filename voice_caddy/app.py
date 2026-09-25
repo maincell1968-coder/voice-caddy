@@ -83,6 +83,14 @@ except ImportError:
     except ImportError:
         MonitoringOrchestrator = None
 
+try:
+    from core.project_inspector import project_inspector
+except ImportError:
+    try:
+        from voice_caddy.core.project_inspector import project_inspector
+    except ImportError:
+        project_inspector = None
+
 _this_file = Path(__file__).resolve()
 if _this_file.parent.name == "voice_caddy":
     PROJECT_ROOT = _this_file.parent
@@ -2829,9 +2837,12 @@ with nav_chat:
     """, unsafe_allow_html=True)
 
     # Quick Suggestion Chips
-    st.markdown("<div style='font-size:0.82rem; color:#94A3B8; margin-bottom:6px;'>⚡ <i>Domande rapide:</i></div>", unsafe_allow_html=True)
-    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+    st.markdown("<div style='font-size:0.82rem; color:#94A3B8; margin-bottom:6px;'>⚡ <i>Azioni e domande rapide:</i></div>", unsafe_allow_html=True)
+    q_col0, q_col1, q_col2, q_col3, q_col4 = st.columns([1.3, 1, 1, 1, 1])
     quick_prompt = None
+    with q_col0:
+        if st.button("📋 Resume Progetto", key="qp_resume", use_container_width=True, type="primary"):
+            quick_prompt = "resume"
     with q_col1:
         if st.button("🏌️ Bastone da 145m?", key="qp_dist", use_container_width=True):
             quick_prompt = "Ho 145 metri alla bandiera in leggera salita con un po' di vento contrario. Quale bastone mi consigli dalla mia sacca?"
@@ -2856,17 +2867,19 @@ with nav_chat:
         st.session_state.caddy_chat_history.append({
             "role": "assistant",
             "content": welcome_phrase,
-            "tone": st.session_state.active_chat_tone
+            "tone": st.session_state.active_chat_tone,
+            "is_inspector_report": False
         })
 
     # Render chat messages
-    for msg in st.session_state.caddy_chat_history:
+    for idx_msg, msg in enumerate(st.session_state.caddy_chat_history):
         if msg["role"] == "user":
             with st.chat_message("user", avatar="🏌️‍♂️"):
                 st.markdown(msg["content"])
         else:
+            is_report = msg.get("is_inspector_report", False)
             msg_tone = msg.get("tone", st.session_state.active_chat_tone)
-            tone_avatar = {
+            tone_avatar = "🛠️" if is_report else {
                 "professionale": "👔",
                 "arrabbiato": "🤬",
                 "spensierato": "🍻",
@@ -2874,28 +2887,52 @@ with nav_chat:
             }.get(msg_tone, "⛳")
             with st.chat_message("assistant", avatar=tone_avatar):
                 st.markdown(msg["content"])
+                if is_report and "PROMPT DI INTERVENTO PER IA" in msg["content"]:
+                    st.download_button(
+                        label="📥 Scarica Report di Audit per IA (.md)",
+                        data=msg["content"],
+                        file_name=f"voice_caddy_project_resume_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                        mime="text/markdown",
+                        key=f"dl_rep_{idx_msg}"
+                    )
 
     # Chat Input Box
-    user_input = st.chat_input("Scrivi al caddie (es. 'che bastone tiro da 130m?', 'come gioco questa buca?')...")
+    user_input = st.chat_input("Scrivi al caddie (es. 'resume' per stato del progetto, 'che bastone tiro da 130m?')...")
     prompt_to_process = quick_prompt or user_input
 
     if prompt_to_process:
         st.session_state.caddy_chat_history.append({"role": "user", "content": prompt_to_process})
-        with st.spinner(f"Il caddie ({active_tone_enum.short_label}) sta valutando..."):
-            reply = CaddyPersonalityEngine.get_instance().chat_with_caddy(
-                message=prompt_to_process,
-                tone=st.session_state.active_chat_tone,
-                history=[{"role": m["role"], "content": m["content"]} for m in st.session_state.caddy_chat_history[:-1]],
-                user_profile=st.session_state.user_profile,
-                ai_config=user_ai,
-                active_course=active_course
-            )
-        st.session_state.caddy_chat_history.append({
-            "role": "assistant",
-            "content": reply,
-            "tone": st.session_state.active_chat_tone
-        })
-        st.rerun()
+        clean_p = prompt_to_process.strip().lower()
+        inspector_triggers = ["resume", "/resume", "stato", "status", "audit", "report", "criticit", "alert", "safevault", "diagnosi"]
+
+        # ZERO TOKEN ROUTING per diagnosi e resume progetto
+        if project_inspector and any(clean_p == trig or clean_p.startswith(trig) for trig in inspector_triggers):
+            with st.spinner("🔍 Analisi diagnostica del progetto in corso (Zero Token)..."):
+                reply = project_inspector.chat_response(prompt_to_process)
+            st.session_state.caddy_chat_history.append({
+                "role": "assistant",
+                "content": reply,
+                "tone": "professionale",
+                "is_inspector_report": True
+            })
+            st.rerun()
+        else:
+            with st.spinner(f"Il caddie ({active_tone_enum.short_label}) sta valutando..."):
+                reply = CaddyPersonalityEngine.get_instance().chat_with_caddy(
+                    message=prompt_to_process,
+                    tone=st.session_state.active_chat_tone,
+                    history=[{"role": m["role"], "content": m["content"]} for m in st.session_state.caddy_chat_history[:-1]],
+                    user_profile=st.session_state.user_profile,
+                    ai_config=user_ai,
+                    active_course=active_course
+                )
+            st.session_state.caddy_chat_history.append({
+                "role": "assistant",
+                "content": reply,
+                "tone": st.session_state.active_chat_tone,
+                "is_inspector_report": False
+            })
+            st.rerun()
 
 
 # ---------------------------------------------------------
@@ -3626,11 +3663,12 @@ if current_user.is_admin and nav_admin:
         st.caption("Pannello unificato per la gestione dei membri, il monitoraggio continuo dell'infrastruttura (Zero Token) e l'analisi statistica avanzata di Golf Intelligence.")
 
         # Sotto-schede immediatamente visibili per l'Amministratore
-        adm_sub_users, adm_sub_mon, adm_sub_golf, adm_sub_agents = st.tabs([
+        adm_sub_users, adm_sub_mon, adm_sub_golf, adm_sub_agents, adm_sub_inspector = st.tabs([
             "👥 Registro Membri & Circolo",
             "🛡️ Monitoraggio Telemetria & Server (Zero Token)",
             "📊 Analisi Statistica Golf Intelligence (8 Aree)",
-            "🤖 Suite Agenti Specializzati Gratuiti"
+            "🤖 Suite Agenti Specializzati Gratuiti",
+            "🛠️ Chat Ispettore Progetto & Resume (Zero Token)"
         ])
 
         # ----------------- SOTTO-SCHEDA 1: MEMBRI & CREDENZIALI -----------------
@@ -3996,6 +4034,80 @@ if current_user.is_admin and nav_admin:
             st.markdown("---")
             st.markdown("#### Endpoint Prometheus Scraped (`/metrics`)")
             st.code(mon_orchestrator.prom_hook.render_prometheus_text(), language="text")
+
+        # ----------------- SOTTO-SCHEDA 5: CHAT ISPETTORE PROGETTO (ZERO TOKEN) -----------------
+        with adm_sub_inspector:
+            st.markdown("### 🛠️ Console Ispettore Progetto Voice Caddy (Zero Token)")
+            st.caption("Motore diagnostico deterministico: scansiona in tempo reale lo stato dell'intero progetto, rileva anomalie o configurazioni incomplete e genera report e prompt pronti per qualsiasi IA.")
+
+            if "inspector_chat_history" not in st.session_state:
+                st.session_state.inspector_chat_history = []
+
+            # Pulsanti di azione rapida
+            act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns(5)
+            insp_cmd = None
+            with act_col1:
+                if st.button("📋 Esegui Resume Progetto", key="adm_btn_resume", type="primary", use_container_width=True):
+                    insp_cmd = "resume"
+            with act_col2:
+                if st.button("🚨 Mostra Solo Alert", key="adm_btn_alert", use_container_width=True):
+                    insp_cmd = "alert"
+            with act_col3:
+                if st.button("🛡️ Verifica SafeVault", key="adm_btn_sv", use_container_width=True):
+                    insp_cmd = "safevault"
+            with act_col4:
+                if st.button("☁️ Verifica Git & Cloud", key="adm_btn_git", use_container_width=True):
+                    insp_cmd = "git"
+            with act_col5:
+                if st.button("🧹 Pulisci Console", key="adm_btn_clear_insp", use_container_width=True):
+                    st.session_state.inspector_chat_history = []
+                    st.rerun()
+
+            # Messaggio iniziale se la cronologia è vuota
+            if not st.session_state.inspector_chat_history:
+                st.session_state.inspector_chat_history.append({
+                    "role": "assistant",
+                    "content": (
+                        "👋 **Benvenuto nella Console Ispettore Progetto Voice Caddy (Zero Token).**\n\n"
+                        "Digita `resume` o clicca sul pulsante **📋 Esegui Resume Progetto** per avviare l'analisi deterministica dell'intero progetto:\n"
+                        "- 🛡️ **Integrità SafeVault & SQLite** (`voice_caddy.db`, profili JSON, coordinate)\n"
+                        "- ☁️ **Readiness Streamlit Cloud & Git** (file non tracciati, allineamento commit, crash prevention)\n"
+                        "- 📦 **Dipendenze e Sincronizzazione requirements.txt**\n"
+                        "- 🐍 **Compilazione e sintassi di tutti i file Python del progetto**\n"
+                        "- 🤖 **Prompt di intervento per IA pronto da copiare in caso di anomalie**"
+                    )
+                })
+
+            # Rendering messaggi chat ispettore
+            for idx_m, m in enumerate(st.session_state.inspector_chat_history):
+                if m["role"] == "user":
+                    with st.chat_message("user", avatar="👨‍💻"):
+                        st.markdown(m["content"])
+                else:
+                    with st.chat_message("assistant", avatar="🛠️"):
+                        st.markdown(m["content"])
+                        if "PROMPT DI INTERVENTO PER IA" in m["content"]:
+                            st.download_button(
+                                label="📥 Scarica Report di Audit per IA (.md)",
+                                data=m["content"],
+                                file_name=f"voice_caddy_project_resume_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                                mime="text/markdown",
+                                key=f"adm_dl_{idx_m}"
+                            )
+
+            # Input chat ispettore
+            insp_input = st.chat_input("Scrivi un comando (es. 'resume', 'alert', 'safevault', 'git', 'ai')...", key="insp_chat_box")
+            active_insp_prompt = insp_cmd or insp_input
+
+            if active_insp_prompt:
+                st.session_state.inspector_chat_history.append({"role": "user", "content": active_insp_prompt})
+                if project_inspector:
+                    with st.spinner("🔍 Analisi deterministica del progetto in corso (Zero Token)..."):
+                        reply = project_inspector.chat_response(active_insp_prompt)
+                else:
+                    reply = "⚠️ Modulo ProjectInspector non disponibile."
+                st.session_state.inspector_chat_history.append({"role": "assistant", "content": reply})
+                st.rerun()
 
 
 # =========================================================
