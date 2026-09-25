@@ -2801,7 +2801,7 @@ with nav_chat:
     top_col1, top_col2 = st.columns([3.2, 0.8])
     with top_col1:
         st.markdown("<div style='font-size:0.85rem; font-weight:bold; color:#94A3B8; margin-bottom:4px;'>🎭 PERSONALITÀ ATTIVA DEL CADDIE:</div>", unsafe_allow_html=True)
-        tone_cols = st.columns(4)
+        tone_cols = st.columns(len(CaddyTone))
         for idx, t_enum in enumerate(CaddyTone):
             is_active = (st.session_state.active_chat_tone == t_enum.value)
             btn_type = "primary" if is_active else "secondary"
@@ -2883,7 +2883,8 @@ with nav_chat:
                 "professionale": "👔",
                 "arrabbiato": "🤬",
                 "spensierato": "🍻",
-                "psicologo": "🧘"
+                "psicologo": "🧘",
+                "spiritoso": "😄"
             }.get(msg_tone, "⛳")
             with st.chat_message("assistant", avatar=tone_avatar):
                 st.markdown(msg["content"])
