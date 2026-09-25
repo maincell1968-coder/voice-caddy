@@ -227,7 +227,7 @@ class GolfIntelligenceAdvisorAgent(ZeroCostBaseAgent):
 
         self.state["last_run"] = cycle_start
         self.state["last_telemetry"] = telemetry
-        self.state["cycle_count"] = self.state.get("cycle_count", 0) + 1
+        self.state["cycle_count"] = int(self.state.get("cycle_count") or 0) + 1
         self.persist_state()
 
         return {

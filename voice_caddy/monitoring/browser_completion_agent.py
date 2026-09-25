@@ -185,9 +185,24 @@ class BrowserCompletionAgent(ZeroCostBaseAgent):
         # 2. Controllo log accessi web
         web_logs = self.execute_tool("scan_web_access_logs", log_path=self.web_log_path)
 
-        # Se non passati esplicitamente, tenta di usare i valori dallo stato o dalle stime
-        t_started = max(telegram_started, browser_count, self.state.get("last_telegram_started", 0))
-        t_completed = max(telegram_completed, browser_count, self.state.get("last_telegram_completed", 0))
+        # Se non passati esplicitamente, tenta di usare i valori dallo stato o dalle stime con casting sicuro
+        raw_tg_started = self.state.get("last_telegram_started")
+        try:
+            st_tg_started = int(raw_tg_started) if raw_tg_started is not None else 0
+        except (ValueError, TypeError):
+            st_tg_started = 0
+
+        raw_tg_completed = self.state.get("last_telegram_completed")
+        try:
+            st_tg_completed = int(raw_tg_completed) if raw_tg_completed is not None else 0
+        except (ValueError, TypeError):
+            st_tg_completed = 0
+
+        cur_tg_started = int(telegram_started) if telegram_started is not None else 0
+        cur_tg_completed = int(telegram_completed) if telegram_completed is not None else 0
+
+        t_started = max(cur_tg_started, browser_count, st_tg_started)
+        t_completed = max(cur_tg_completed, browser_count, st_tg_completed)
 
         # 3. Calcolo del Funnel
         funnel_res = self.execute_tool(
@@ -202,7 +217,7 @@ class BrowserCompletionAgent(ZeroCostBaseAgent):
 
         # Emissione metriche per Prometheus
         self.emit_metric("voice_caddy_browser_completions_total", float(browser_count))
-        self.emit_metric("voice_caddy_funnel_completion_rate_percent", float(funnel_res["overall_completion_rate_pct"]))
+        self.emit_metric("voice_caddy_funnel_completion_rate_percent", float(funnel_res.get("overall_completion_rate_pct", 0.0)))
         self.emit_metric("voice_caddy_web_dashboard_views_total", float(web_logs.get("dashboard_views", 0)))
         self.emit_metric("voice_caddy_pdf_downloads_total", float(web_logs.get("pdf_downloads", 0)))
 
@@ -212,7 +227,7 @@ class BrowserCompletionAgent(ZeroCostBaseAgent):
         self.state["last_telegram_started"] = t_started
         self.state["last_telegram_completed"] = t_completed
         self.state["funnel"] = funnel_res
-        self.state["cycle_count"] = self.state.get("cycle_count", 0) + 1
+        self.state["cycle_count"] = int(self.state.get("cycle_count") or 0) + 1
 
         self.persist_state()
 

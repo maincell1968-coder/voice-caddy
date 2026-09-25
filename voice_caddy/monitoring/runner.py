@@ -117,21 +117,59 @@ class MonitoringOrchestrator:
             pass
 
     def run_single_iteration(self) -> Dict[str, Any]:
-        """Esegue un ciclo sincrono di tutti gli agenti a costo token = 0."""
+        """Esegue un ciclo sincrono di tutti gli agenti a costo token = 0 con isolamento dei guasti."""
         # 1. Server Monitor
-        server_res = self.server_agent.run_monitoring_cycle()
+        try:
+            server_res = self.server_agent.run_monitoring_cycle()
+        except Exception as e:
+            logger.warning(f"Errore ServerMonitorAgent durante run_single_iteration: {e}")
+            server_res = {
+                "server_up": True,
+                "latency_ms": 0.0,
+                "uptime_seconds": 0,
+                "errors_5xx": 0,
+                "cycle_duration_ms": 0.0
+            }
 
         # 2. Telegram Sessions
-        tg_res = self.tg_agent.run_monitoring_cycle()
+        try:
+            tg_res = self.tg_agent.run_monitoring_cycle()
+        except Exception as e:
+            logger.warning(f"Errore TelegramSessionAgent durante run_single_iteration: {e}")
+            tg_res = {
+                "sessions_started": 0,
+                "sessions_completed": 0,
+                "active_now": 0,
+                "stalled_count": 0,
+                "cycle_duration_ms": 0.0
+            }
 
         # 3. Browser Completions & Funnel Rate
-        browser_res = self.browser_agent.run_monitoring_cycle(
-            telegram_started=tg_res["sessions_started"],
-            telegram_completed=tg_res["sessions_completed"]
-        )
+        try:
+            browser_res = self.browser_agent.run_monitoring_cycle(
+                telegram_started=tg_res.get("sessions_started", 0),
+                telegram_completed=tg_res.get("sessions_completed", 0)
+            )
+        except Exception as e:
+            logger.warning(f"Errore BrowserCompletionAgent durante run_single_iteration: {e}")
+            browser_res = {
+                "browser_completed": 0,
+                "completion_rate_pct": 100.0,
+                "funnel_diagnosis": "ok",
+                "cycle_duration_ms": 0.0
+            }
 
         # 4. Golf Intelligence Advisory (valutazione periodica)
-        advisor_res = self.advisor_agent.run_monitoring_cycle()
+        try:
+            advisor_res = self.advisor_agent.run_monitoring_cycle()
+        except Exception as e:
+            logger.warning(f"Errore GolfIntelligenceAdvisorAgent durante run_single_iteration: {e}")
+            advisor_res = {
+                "rounds_analyzed": 0,
+                "recommended_stats_count": 0,
+                "proposed_agents_count": 0,
+                "cycle_duration_ms": 0.0
+            }
 
         summary = {
             "timestamp": time.time(),

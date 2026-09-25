@@ -162,6 +162,67 @@ class TestZeroCostMonitoringSuite(unittest.TestCase):
         # Verifica zero token
         self.assertEqual(agent.tokens_used, 0)
 
+    def test_server_monitor_agent_initial_run_none_last_run(self):
+        """Verifica che ServerMonitorAgent non sollevi TypeError al primo avvio quando last_run è None e il server è ONLINE."""
+        agent = ServerMonitorAgent(
+            target_url="http://127.0.0.1:8501",
+            guardrail=self.guardrail,
+            state_dir=self.temp_path
+        )
+        # Assicura che last_run sia esplicitamente None (default da base_agent.py)
+        agent.state["last_run"] = None
+        agent.state["uptime_seconds"] = None
+
+        # Simula server ONLINE (porta 8501 aperta o HTTP 200)
+        original_execute_tool = agent.execute_tool
+        def mock_execute_tool(tool_name, **kwargs):
+            if tool_name == "check_http_endpoint":
+                return {"is_up": True, "latency_ms": 12.5, "status_code": 200}
+            if tool_name == "check_local_port_listening":
+                return True
+            if tool_name == "scan_log_errors_5xx":
+                return {"error_count_5xx": 0, "errors": []}
+            return original_execute_tool(tool_name, **kwargs)
+
+        agent.execute_tool = mock_execute_tool
+
+        # Primo ciclo (non deve sollevare TypeError: unsupported operand type(s) for -: 'float' and 'NoneType')
+        cycle1 = agent.run_monitoring_cycle()
+        self.assertTrue(cycle1["server_up"])
+        self.assertEqual(cycle1["uptime_seconds"], 0)
+        self.assertIsInstance(agent.state["last_run"], float)
+
+        # Secondo ciclo (uptime deve incrementarsi regolarmente senza errori)
+        agent.state["last_run"] = time.time() - 10  # 10 secondi fa
+        cycle2 = agent.run_monitoring_cycle()
+        self.assertGreaterEqual(cycle2["uptime_seconds"], 10)
+
+    def test_server_monitor_agent_corrupted_state_resilience(self):
+        """Verifica che stati anomali (stringhe al posto di numeri, None, tipi non validi) non mandino in crash l'agente."""
+        agent = ServerMonitorAgent(
+            target_url="http://127.0.0.1:8501",
+            guardrail=self.guardrail,
+            state_dir=self.temp_path
+        )
+        agent.state["last_run"] = "invalid_timestamp_string"
+        agent.state["uptime_seconds"] = "not_a_number"
+        agent.state["cycle_count"] = None
+
+        def mock_execute_tool(tool_name, **kwargs):
+            if tool_name == "check_http_endpoint":
+                return {"is_up": True, "latency_ms": 15.0, "status_code": 200}
+            if tool_name == "check_local_port_listening":
+                return False
+            if tool_name == "scan_log_errors_5xx":
+                return {"error_count_5xx": 0, "errors": []}
+            return {}
+
+        agent.execute_tool = mock_execute_tool
+        res = agent.run_monitoring_cycle()
+        self.assertTrue(res["server_up"])
+        self.assertEqual(res["uptime_seconds"], 0)
+        self.assertEqual(agent.state["cycle_count"], 1)
+
     def test_telegram_session_agent_isolated(self):
         """Verifica estrazione sessioni attive e completate dal DB temporaneo."""
         agent = TelegramSessionAgent(

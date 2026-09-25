@@ -180,24 +180,42 @@ class ServerMonitorAgent(ZeroCostBaseAgent):
         # 3. Controllo log errori 5xx
         log_res = self.execute_tool("scan_log_errors_5xx", log_path=self.log_file_path)
 
-        # Calcolo Uptime continuativo
-        uptime_seconds = self.state.get("uptime_seconds", 0)
-        if http_res["is_up"] or port_open:
-            uptime_seconds += int(time.time() - self.state.get("last_run", cycle_start))
+        # Calcolo Uptime continuativo con gestione difensiva dei tipi (evita TypeError con None)
+        raw_uptime = self.state.get("uptime_seconds")
+        try:
+            uptime_seconds = int(raw_uptime) if raw_uptime is not None else 0
+        except (ValueError, TypeError):
+            uptime_seconds = 0
+
+        raw_last_run = self.state.get("last_run")
+        try:
+            last_run = float(raw_last_run) if raw_last_run is not None else None
+        except (ValueError, TypeError):
+            last_run = None
+
+        if http_res.get("is_up") or port_open:
+            if last_run is not None:
+                elapsed = max(0, int(time.time() - last_run))
+                # Se l'intervallo tra due cicli supera i 5 minuti (300s), resettiamo per evitare salti anomali
+                if elapsed > 300:
+                    elapsed = 0
+            else:
+                elapsed = 0
+            uptime_seconds += elapsed
         else:
             uptime_seconds = 0
 
         # Emissione metriche per Prometheus e Grafana
-        server_up_val = 1.0 if (http_res["is_up"] or port_open) else 0.0
+        server_up_val = 1.0 if (http_res.get("is_up") or port_open) else 0.0
         self.emit_metric("voice_caddy_server_status_up", server_up_val)
-        self.emit_metric("voice_caddy_server_latency_milliseconds", float(http_res["latency_ms"]))
+        self.emit_metric("voice_caddy_server_latency_milliseconds", float(http_res.get("latency_ms", 0.0)))
         self.emit_metric("voice_caddy_server_uptime_seconds", float(uptime_seconds))
         self.emit_metric("voice_caddy_http_5xx_errors_total", float(log_res.get("error_count_5xx", 0)))
 
         # Aggiornamento dello stato persistente
         self.state["last_run"] = cycle_start
         self.state["uptime_seconds"] = uptime_seconds
-        self.state["cycle_count"] = self.state.get("cycle_count", 0) + 1
+        self.state["cycle_count"] = int(self.state.get("cycle_count") or 0) + 1
         self.state["last_http_check"] = http_res
         self.state["port_8501_open"] = port_open
         self.state["errors_5xx_count"] = log_res.get("error_count_5xx", 0)
@@ -206,7 +224,7 @@ class ServerMonitorAgent(ZeroCostBaseAgent):
 
         return {
             "server_up": bool(server_up_val),
-            "latency_ms": http_res["latency_ms"],
+            "latency_ms": http_res.get("latency_ms", 0.0),
             "uptime_seconds": uptime_seconds,
             "errors_5xx": log_res.get("error_count_5xx", 0),
             "cycle_duration_ms": round((time.time() - cycle_start) * 1000.0, 2)

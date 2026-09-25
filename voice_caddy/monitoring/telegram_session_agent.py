@@ -209,26 +209,40 @@ class TelegramSessionAgent(ZeroCostBaseAgent):
         summary = self.execute_tool("get_session_summary")
 
         # Calcolo contatori cumulativi basandosi su log ed estrazione DB
-        # I valori storici cumulativi vengono mantenuti nello stato
-        prev_started = self.state.get("sessions_started_total", 0)
-        prev_completed = self.state.get("sessions_completed_total", 0)
+        # I valori storici cumulativi vengono mantenuti nello stato con casting difensivo
+        raw_prev_started = self.state.get("sessions_started_total")
+        try:
+            prev_started = int(raw_prev_started) if raw_prev_started is not None else 0
+        except (ValueError, TypeError):
+            prev_started = 0
 
-        new_started = max(prev_started, summary["total_registered_chats"] + log_events.get("sessions_started", 0))
-        new_completed = max(prev_completed, summary["completed_sessions"] + log_events.get("sessions_completed", 0))
+        raw_prev_completed = self.state.get("sessions_completed_total")
+        try:
+            prev_completed = int(raw_prev_completed) if raw_prev_completed is not None else 0
+        except (ValueError, TypeError):
+            prev_completed = 0
+
+        chats_count = summary.get("total_registered_chats", 0) if isinstance(summary, dict) else 0
+        log_started = log_events.get("sessions_started", 0) if isinstance(log_events, dict) else 0
+        comp_count = summary.get("completed_sessions", 0) if isinstance(summary, dict) else 0
+        log_completed = log_events.get("sessions_completed", 0) if isinstance(log_events, dict) else 0
+
+        new_started = max(prev_started, chats_count + log_started)
+        new_completed = max(prev_completed, comp_count + log_completed)
 
         # Emissione metriche per Prometheus
         self.emit_metric("voice_caddy_telegram_sessions_started_total", float(new_started))
         self.emit_metric("voice_caddy_telegram_sessions_completed_total", float(new_completed))
-        self.emit_metric("voice_caddy_telegram_sessions_active", float(summary["active_sessions"]))
+        self.emit_metric("voice_caddy_telegram_sessions_active", float(summary.get("active_sessions", 0) if isinstance(summary, dict) else 0))
         self.emit_metric("voice_caddy_telegram_sessions_stalled", float(len(stalled)))
 
         # Aggiornamento stato
         self.state["last_run"] = cycle_start
         self.state["sessions_started_total"] = new_started
         self.state["sessions_completed_total"] = new_completed
-        self.state["active_sessions"] = summary["active_sessions"]
+        self.state["active_sessions"] = summary.get("active_sessions", 0) if isinstance(summary, dict) else 0
         self.state["stalled_sessions_count"] = len(stalled)
-        self.state["cycle_count"] = self.state.get("cycle_count", 0) + 1
+        self.state["cycle_count"] = int(self.state.get("cycle_count") or 0) + 1
 
         self.persist_state()
 
